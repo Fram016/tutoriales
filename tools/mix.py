@@ -67,17 +67,22 @@ def mix_variant(pdir, variant: str, music) -> dict:
     premix = out_dir / "premix.wav"
     ffmpeg(*inputs, "-filter_complex", ";".join(graph), "-map", "[pre]", "-t", f"{total}",
            "-ar", "48000", "-ac", "2", str(premix))
-    # Two-pass loudnorm: measure, then apply linear normalization to the target.
-    m = measure(premix)
-    target = env("LOUDNESS_TARGET", "-14")
+    # Measured gain + true-peak limiter. loudnorm's linear mode gives up on speech with
+    # high peaks (falls back to dynamic mode and lands ~1.5 LU off), so we normalize
+    # ourselves and re-correct once for the loudness the limiter shaved off.
+    target = float(env("LOUDNESS_TARGET", "-14"))
     out = out_dir / "mix.wav"
-    ffmpeg("-i", str(premix), "-af",
-           f"loudnorm=I={target}:TP=-1.5:LRA=11:measured_I={m['input_i']}:measured_TP={m['input_tp']}"
-           f":measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}"
-           f":offset={m['target_offset']}:linear=true,aresample=48000",
-           "-ar", "48000", "-ac", "2", str(out))
+    gain = target - float(measure(premix)["input_i"])
+    for _ in range(3):
+        ffmpeg("-i", str(premix), "-af",
+               f"volume={gain:.2f}dB,alimiter=limit=0.79:attack=5:release=60:level=disabled,"
+               "aresample=48000", "-ar", "48000", "-ac", "2", str(out))
+        final = measure(out)
+        miss = target - float(final["input_i"])
+        if abs(miss) <= 0.3:
+            break
+        gain += miss
     premix.unlink()
-    final = measure(out)
     print(f"[mix] {variant}: {float(final['input_i']):.1f} LUFS, pico {float(final['input_tp']):.1f} dBTP"
           f"{'' if music else ' (sin música)'}")
     return final
