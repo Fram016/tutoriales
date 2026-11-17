@@ -1,0 +1,7 @@
+# Python 3.12 (uv venv --python 3.12 .venv). 3.13+ lacks faster-whisper/ctranslate2 wheels on Windows.
+google-genai>=2.25.0
+faster-whisper>=1.1
+pyyaml>=6
+python-dotenv>=1
+numpy>=2
+pillow>=11

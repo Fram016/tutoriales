@@ -1,0 +1,53 @@
+# Demo tutorial used by the smoke test (python tools/smoke.py).
+# Serve the demo app first: python -m http.server 8765 --directory demo-app
+title: Cómo crear un cliente en DemoCRM
+subtitle: Tutorial rápido
+app_url: http://127.0.0.1:8765/
+viewport: [1920, 1080]
+language: es
+
+brand:
+  dir: brand            # proyectos/_demo/brand/ (logo.png optional)
+  primary: "#2563eb"
+  accent: "#facc15"
+  background: "#0f172a"
+  text: "#ffffff"
+  font: "Segoe UI"
+
+intro: { seconds: 3 }
+outro: { text: "¡Listo! Ya sabés crear clientes en DemoCRM.", seconds: 3 }
+
+music:
+  prompt: "Corporate ambient background, soft synth pads and light percussion, positive and calm, instrumental, no vocals"
+
+steps:
+  - id: login
+    summary: true
+    narration: "Primero ingresamos a DemoCRM con nuestro correo y contraseña."
+    actions:
+      - type: { into: "#email", text: "env:DEMO_USER" }
+      - type: { into: "#password", text: "env:DEMO_PASSWORD" }
+      - click: "#btn-login"
+      - wait: "#btn-new"
+
+  - id: nuevo
+    summary: true
+    narration: "En la lista de clientes, tocamos el botón Nuevo cliente."
+    actions:
+      - click: "text=Nuevo cliente"
+      - wait: "#c-name"
+
+  - id: datos
+    narration: "Completamos el nombre, el correo y el teléfono del cliente."
+    actions:
+      - type: { into: "#c-name", text: "María González" }
+      - type: { into: "#c-email", text: "maria@empresa.com" }
+      - type: { into: "#c-phone", text: "099 555 1234" }
+
+  - id: guardar
+    summary: true
+    narration: "Guardamos, y el cliente aparece al principio de la lista."
+    actions:
+      - click: "#btn-save"
+      - wait: "#toast"
+      - pause: 1200
