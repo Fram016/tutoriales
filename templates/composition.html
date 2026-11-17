@@ -1,0 +1,213 @@
+<!doctype html>
+<!-- HyperFrames composition skeleton filled by tools/compose.py: every double-brace placeholder is replaced verbatim. -->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width={{WIDTH}}, height={{HEIGHT}}" />
+    <script src="assets/gsap.min.js"></script>
+    <style>
+      :root {
+        --primary: {{PRIMARY}};
+        --accent: {{ACCENT}};
+        --ground: {{BACKGROUND}};
+        --ink: {{TEXT}};
+        --font: {{FONT}};
+        --cap-size: {{CAPTION_SIZE}}px;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: {{WIDTH}}px;
+        height: {{HEIGHT}}px;
+        overflow: hidden;
+        background: var(--ground);
+      }
+      #root {
+        position: relative;
+        width: {{WIDTH}}px;
+        height: {{HEIGHT}}px;
+        overflow: hidden;
+        font-family: var(--font);
+        color: var(--ink);
+        background: var(--ground);
+      }
+      .clip { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+
+      /* Screen: a fixed viewport clipping the camera that pans/zooms the 1920x1080 recording. */
+      #viewport {
+        position: absolute;
+        left: {{VIEW_X}}px;
+        top: {{VIEW_Y}}px;
+        width: {{VIEW_W}}px;
+        height: {{VIEW_H}}px;
+        overflow: hidden;
+        background: #000;
+        z-index: 1;
+      }
+      .portrait #viewport { border-radius: 28px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45); }
+      #cam {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+        transform-origin: 0 0;
+      }
+      #screen { object-fit: fill; }
+      #cursor-layer { pointer-events: none; }
+      #cursor { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+      #cursor-arrow {
+        position: absolute;
+        left: -4px;
+        top: -2px;
+        width: 34px;
+        height: 46px;
+        transform-origin: 4px 2px;
+        filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45));
+      }
+      .ripple {
+        position: absolute;
+        width: 72px;
+        height: 72px;
+        margin: -36px 0 0 -36px;
+        border-radius: 50%;
+        border: 5px solid var(--accent);
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
+        opacity: 0;
+      }
+
+      /* Portrait chrome around the viewport. */
+      #topband {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: {{VIEW_Y}}px;
+        display: flex;
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 24px;
+        padding: 48px 120px 0;
+        text-align: center;
+      }
+      #topband img { height: 96px; max-width: 220px; object-fit: contain; }
+      #topband h2 { font-size: 56px; font-weight: 800; line-height: 1.12; }
+      .portrait #root::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 12px;
+        background: var(--primary);
+      }
+
+      /* Step chip. */
+      .chip-layer { z-index: 3; }
+      .chip {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 26px;
+        border-radius: 999px;
+        background: var(--primary);
+        color: #ffffff;
+        font-weight: 700;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      }
+      .landscape .chip { left: 48px; top: 44px; font-size: 34px; }
+      .portrait .chip { left: 50%; top: {{CHIP_Y}}px; transform: translateX(-50%); font-size: 40px; white-space: nowrap; }
+      .chip b { color: var(--accent); }
+
+      /* Captions. */
+      .cap-layer {
+        z-index: 4;
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        padding: 0 80px {{CAPTION_BOTTOM}}px;
+      }
+      .portrait .cap-layer { top: {{CAPTION_TOP}}px; bottom: 0; height: auto; align-items: flex-start; padding: 0 70px; }
+      .cap {
+        display: inline-block;
+        max-width: {{CAPTION_MAX_W}}px;
+        padding: 18px 34px;
+        border-radius: 22px;
+        background: rgba(0, 0, 0, 0.72);
+        color: var(--ink);
+        font-size: var(--cap-size);
+        font-weight: 800;
+        line-height: 1.25;
+        text-align: center;
+      }
+
+      /* Intro / outro scenes. */
+      .scene {
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 30px;
+        padding: 0 120px;
+        text-align: center;
+        background: var(--ground);
+      }
+      .portrait .scene { padding: 0 200px; }
+      .scene .logo { height: {{LOGO_H}}px; max-width: 70%; object-fit: contain; }
+      .scene .bar { width: 160px; height: 12px; border-radius: 6px; background: var(--accent); }
+      .scene h1 { font-size: {{TITLE_SIZE}}px; font-weight: 800; line-height: 1.1; }
+      .scene p { font-size: {{SUBTITLE_SIZE}}px; font-weight: 600; color: var(--accent); }
+      #outro h1 { font-size: {{OUTRO_SIZE}}px; }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      class="{{ORIENTATION}}"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="{{TOTAL}}"
+      data-width="{{WIDTH}}"
+      data-height="{{HEIGHT}}"
+    >
+{{TOPBAND}}
+      <div id="viewport">
+        <div id="cam" data-layout-allow-overflow>
+          <video id="screen" class="clip" src="assets/screen.mp4" muted playsinline
+                 data-start="{{INTRO}}" data-duration="{{SCREEN}}"></video>
+          <div id="cursor-layer" class="clip" data-start="{{INTRO}}" data-duration="{{SCREEN}}">
+{{RIPPLES}}
+            <div id="cursor">
+              <svg id="cursor-arrow" viewBox="0 0 34 46" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 2 L4 36 L12.5 28.5 L18.5 42.5 L24.5 40 L18.5 26 L30 26 Z"
+                      fill="#ffffff" stroke="#111827" stroke-width="2.6" stroke-linejoin="round" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+{{CHIPS}}
+{{CAPTIONS}}
+      <div id="intro" class="clip scene" data-start="0" data-duration="{{INTRO}}">
+{{INTRO_LOGO}}
+        <div class="bar" id="intro-bar"></div>
+        <h1 id="intro-title">{{TITLE}}</h1>
+        <p id="intro-subtitle">{{SUBTITLE}}</p>
+      </div>
+      <div id="outro" class="clip scene" data-start="{{OUTRO_START}}" data-duration="{{OUTRO}}">
+{{OUTRO_LOGO}}
+        <h1 id="outro-text">{{OUTRO_TEXT}}</h1>
+        <div class="bar" id="outro-bar"></div>
+      </div>
+      <audio id="mix" src="assets/mix.wav" data-start="0" data-duration="{{TOTAL}}"></audio>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+{{TIMELINE}}
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
