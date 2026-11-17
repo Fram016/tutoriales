@@ -24,7 +24,7 @@ Windows 11, no NVIDIA GPU, starting from zero. Brand assets arrive per tutorial.
 - [x] T5c S4,S6 — Tools: pipeline.py, transcribe.py (mode B), qa.py, doctor.py, smoke.py — worker W1 — commit "feat: add orchestrator, replication, QA, doctor and smoke tools plus agent skills"
 - [x] T6 S1,S5,S6 — Skills in .agents/skills/ (orchestrator + per stage) + README.md — worker W2 — same commit
 - [x] T7 S4 — doctor exit 0 (2 warnings: .env, GEMINI_API_KEY); smoke PASS offline (238 s) — parent
-- [ ] T8 S4 — Online verification (doctor --online, real TTS + Lyria on _demo) — blocked: user creates .env with GEMINI_API_KEY
+- [x] T8 S4 — Online verification: doctor --online OK, real TTS + Lyria (26 s) on _demo, QA PASS (-14.0 LUFS both) — commits "fix: call Lyria through the v1beta Interactions API", "fix: normalize mixes with measured gain and limiter"
 - [ ] T9 S6 — Pilot tutorial on a real app chosen by the user — blocked: user provides app/flow/brand
 
 ## Log
