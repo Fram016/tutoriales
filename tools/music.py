@@ -46,7 +46,8 @@ def music(slug: str, offline: bool = False, force: bool = False):
         print(f"[music] offline: pad de prueba de {seconds} s")
         return out
     from google import genai
-    client = genai.Client(api_key=require_env("GEMINI_API_KEY"))
+    # Lyria is only served by the v1beta Interactions API (v1 answers 404).
+    client = genai.Client(api_key=require_env("GEMINI_API_KEY"), http_options={"api_version": "v1beta"})
     cfg = tut.get("music", {})
     model = cfg.get("model", env("MUSIC_MODEL", "lyria-3.5"))
     prompt = (f"{cfg.get('prompt', DEFAULT_PROMPT)}. Instrumental only, no vocals, no lyrics. "
