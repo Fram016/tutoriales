@@ -30,7 +30,9 @@ def music(slug: str, offline: bool = False, force: bool = False):
     tut = load_tutorial(slug)
     audio_dir = project_dir(slug) / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
-    existing = [p for p in (audio_dir / "music.mp3", audio_dir / "music.wav") if p.exists()]
+    # music.wav is only ever the offline placeholder: an online run must replace it.
+    candidates = [audio_dir / "music.wav"] if offline else [audio_dir / "music.mp3"]
+    existing = [p for p in candidates if p.exists()]
     if existing and not force:
         print(f"[music] reutilizo {existing[0].name} (--force para regenerar)")
         return existing[0]
@@ -55,6 +57,7 @@ def music(slug: str, offline: bool = False, force: bool = False):
         raise PipelineError("Lyria no devolvió audio")
     out = audio_dir / "music.mp3"
     out.write_bytes(base64.b64decode(interaction.output_audio.data))
+    (audio_dir / "music.wav").unlink(missing_ok=True)
     print(f"[music] ok: {out.name}")
     return out
 

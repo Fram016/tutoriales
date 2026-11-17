@@ -15,7 +15,7 @@ brand:
   font: "Segoe UI"
 
 intro: { seconds: 3 }
-outro: { text: "¡Listo! Ya sabés crear clientes en DemoCRM.", seconds: 3 }
+outro: { text: "¡Listo! Ya sabes crear clientes en DemoCRM.", seconds: 3 }
 
 music:
   prompt: "Corporate ambient background, soft synth pads and light percussion, positive and calm, instrumental, no vocals"
