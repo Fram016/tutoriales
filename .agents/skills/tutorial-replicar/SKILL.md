@@ -15,7 +15,9 @@ Use when the user provides an existing tutorial video to replicate with better q
 
 - Command: `.venv/Scripts/python.exe tools/transcribe.py <video> --slug <slug>` → `proyectos/<slug>/replica/{audio.wav, transcript.json, transcript.txt, frames/*.jpg, frames.json}`. Whisper runs on CPU (`WHISPER_MODEL`, default small); long videos take minutes.
 - The original video is a reference only: never reuse its audio or frames in the output.
-- You still need the live app URL and demo credentials; the flow is re-recorded, not copied.
+- You still need the live app URL and demo credentials (`proyectos/<slug>/acceso.local.yaml`, see `tutorial-brief`); the flow is re-recorded, not copied.
+- If the video only teaches how the app works (a usage video, not one to reproduce), use `tutorial-brief` with `transcribe.py <video> --slug <slug> --ref <name>` (→ `referencias/<name>/`) instead of this skill.
+- When `proyectos/<slug>/brief.md` exists, its Objetivo, Audiencia and Enfoque win over the original video.
 
 ## Execution Steps
 
@@ -23,7 +25,7 @@ Use when the user provides an existing tutorial video to replicate with better q
 2. Look at the frames in `replica/frames/` (use `frames.json` for their times) with the image-reading tool: identify screens, buttons clicked, fields typed, order of steps, and any brand (logo, colors).
 3. Reconstruct the flow: one step per visible outcome, aligned to transcript segments. Note selectors to discover (visible labels → `text=`).
 4. Improve the narration: remove fillers, repetitions and errors; apply the `tutorial-guion` style; keep the original meaning and order. Data seen on screen that looks real → replace with demo data.
-5. Write `proyectos/<slug>/tutorial.yaml` via `tutorial-guion`; ask the user for the app URL, credentials (`.env`) and brand if not in the video.
+5. Write `proyectos/<slug>/tutorial.yaml` via `tutorial-guion`; ask the user for the app URL, demo credentials (by chat → `acceso.local.yaml`) and brand if not in the video.
 6. Continue as mode A from `tutorial-ensayo-captura`.
 
 ## Output Contract

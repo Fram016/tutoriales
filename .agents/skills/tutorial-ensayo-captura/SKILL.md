@@ -17,6 +17,8 @@ Use after tutorial.yaml exists and before tts/edit. Two phases: REHEARSAL (inter
 - Snapshot `@refs` are not stable and the recorder does not understand them or `loc=`. Write only raw CSS (`document.querySelector`, first match, top document), `text=…` or `xpath=…`. Prefer `#id`, `[name=…]`, `[data-testid=…]`, then `text="Exact label"`.
 - The recorder does not reach into iframes or shadow DOM; use `goto` to the frame/page URL instead.
 - 2FA, CAPTCHA or SSO: call `task.handOff()` during rehearsal, explain what the user must do, resume with `takeOverTaskSpace(id)`. capture.py has no handOff: prefer a demo account without 2FA; otherwise rely on the session the rehearsal left in the profile and start the steps after login. Check that in rehearsal.
+- Credentials come from `proyectos/<slug>/acceso.local.yaml` (or `.env`); capture.py loads them via `env:NAME`. In rehearsal, read the file inside your own ego-browser script only at the step that types them and never print, log, snapshot-report or return the values.
+- When the brief lists selectors learned from source code (`id`, `name`, `data-testid`, `aria-label`), try those first and confirm them in rehearsal.
 - Never record personal tabs or real data. The take uses its own task space with a 1920x1080 emulated viewport.
 
 ## Execution Steps

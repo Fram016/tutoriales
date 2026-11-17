@@ -15,7 +15,7 @@ a usage video + instructions as reference, a running project's source code as kn
 
 - [x] T1 S1 — Per-project access file `acceso.local.yaml` loaded by load_tutorial + gitignore + unittest — inline — commit "feat: load per-tutorial demo credentials and keep reference videos apart"
 - [x] T2 S2 — transcribe.py `--ref NAME` → proyectos/<slug>/referencias/NAME/ (gitignored); default replica/ unchanged — inline — same commit
-- [ ] T3 S2-S5 — templates/brief.md + skill `tutorial-brief`; update `tutorial`, `tutorial-guion`, `tutorial-ensayo-captura`, `tutorial-replicar`, README — inline
+- [x] T3 S1-S5 — templates/brief.md + skill `tutorial-brief`; update `tutorial`, `tutorial-guion`, `tutorial-ensayo-captura`, `tutorial-replicar`, README — worker — commit "feat: add tutorial brief skill for credentials, reference videos, source code and focus"
 
 ## Log
 
