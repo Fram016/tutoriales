@@ -79,8 +79,28 @@ def project_dir(slug: str) -> Path:
     return path
 
 
+ACCESS_FILE = "acceso.local.yaml"
+
+
+def load_access(slug: str) -> None:
+    """Load demo credentials from proyectos/<slug>/acceso.local.yaml (gitignored) into the env.
+
+    A flat NAME: value map; tutorial.yaml references it as env:NAME. It overrides .env
+    for this tutorial. Values are never printed.
+    """
+    path = PROJECTS / slug / ACCESS_FILE
+    if not path.exists():
+        return
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict) or not all(isinstance(k, str) for k in data):
+        raise PipelineError(f"{path}: tiene que ser un mapa NOMBRE: valor")
+    for name, value in data.items():
+        os.environ[name] = "" if value is None else str(value)
+
+
 def load_tutorial(slug: str) -> dict:
     data = yaml.safe_load((project_dir(slug) / "tutorial.yaml").read_text(encoding="utf-8"))
+    load_access(slug)
     for key in ("title", "steps"):
         if key not in data:
             raise PipelineError(f"tutorial.yaml: falta la clave '{key}'")

@@ -1,8 +1,10 @@
-"""Mode B: prepares an existing video for replication (transcript + keyframes).
+"""Transcript + keyframes of an existing video, to replicate it or to learn the app from it.
 
-Usage: python tools/transcribe.py <video> --slug <slug> [--model small] [--language es]
+Usage: python tools/transcribe.py <video> --slug <slug> [--ref NAME] [--model small] [--language es]
 
-Writes proyectos/<slug>/replica/:
+Writes proyectos/<slug>/replica/ (mode B: replicate the video), or with --ref NAME
+proyectos/<slug>/referencias/NAME/ (a usage video that only teaches how the app works;
+keep one NAME per video):
   audio.wav        16 kHz mono extracted with FFmpeg
   transcript.json  faster-whisper (CPU) segments with start/end/text and word timestamps
   transcript.txt   one "[mm:ss] text" line per segment
@@ -78,11 +80,20 @@ def extract_frames(video: Path, frames_dir: Path) -> list[dict]:
     return [{"file": f.name, "t": round(t, 3)} for f, t in zip(files, times)]
 
 
-def transcribe(video: Path, slug: str, model_name: str | None = None, language: str = "es") -> dict:
+def output_dir(slug: str, ref: str | None = None) -> Path:
+    if ref is None:
+        return PROJECTS / slug / "replica"
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", ref):
+        raise PipelineError(f"--ref '{ref}': usá solo letras, números, '-' y '_'")
+    return PROJECTS / slug / "referencias" / ref
+
+
+def transcribe(video: Path, slug: str, model_name: str | None = None, language: str = "es",
+               ref: str | None = None) -> dict:
     if not video.exists():
         raise PipelineError(f"No existe el video {video}")
     model_name = model_name or env("WHISPER_MODEL", "small")
-    out_dir = PROJECTS / slug / "replica"
+    out_dir = output_dir(slug, ref)
     out_dir.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     duration = media_duration(video)
@@ -108,8 +119,10 @@ def main() -> None:
     ap.add_argument("--slug", required=True)
     ap.add_argument("--model", help="tiny | base | small | medium (default: WHISPER_MODEL o small)")
     ap.add_argument("--language", default="es")
+    ap.add_argument("--ref", metavar="NAME",
+                    help="video de referencia: guarda en referencias/NAME/ en lugar de replica/")
     a = ap.parse_args()
-    transcribe(a.video.resolve(), a.slug, a.model, a.language)
+    transcribe(a.video.resolve(), a.slug, a.model, a.language, a.ref)
 
 
 if __name__ == "__main__":

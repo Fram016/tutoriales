@@ -1,5 +1,7 @@
 # Secrets
 .env
+# Per-tutorial demo credentials written by the agent (see tutorial-brief skill)
+acceso.local.yaml
 
 # Tooling
 .venv/
@@ -18,3 +20,4 @@ proyectos/*/hf-*/
 proyectos/*/out/
 proyectos/*/build/
 proyectos/*/replica/
+proyectos/*/referencias/
