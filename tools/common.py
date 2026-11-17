@@ -37,7 +37,7 @@ def env(name: str, default: str | None = None) -> str | None:
 def require_env(name: str) -> str:
     value = env(name)
     if not value:
-        raise PipelineError(f"Falta la variable {name} en .env (ver .env.example).")
+        raise PipelineError(f"Falta la variable {name} en .env (ver env.template).")
     return value
 
 

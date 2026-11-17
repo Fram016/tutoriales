@@ -49,10 +49,12 @@ def capture(slug: str) -> dict:
         "startUrl": resolve_env_ref(tut.get("app_url")),
     }
     take = build / "take.mjs"
+    # Config on its own line: a Node error that echoes the failing call line shows no secrets.
     take.write_text(
         f"const {{ take }} = await import({json.dumps(RECORDER.as_uri())});\n"
+        f"const config = {json.dumps(config, ensure_ascii=False)};\n"
         f"const task = await taskSpace({json.dumps('tutorial ' + slug)});\n"
-        f"try {{\n  await take(task, {json.dumps(config, ensure_ascii=False)});\n"
+        f"try {{\n  await take(task, config);\n"
         f"}} finally {{\n  await task.finish({{ keep: [] }});\n}}\n",
         encoding="utf-8",
     )

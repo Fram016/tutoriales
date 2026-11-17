@@ -107,7 +107,8 @@ export async function runSteps(page, rec, steps, { typeDelay = 45 } = {}) {
         case "goto":
           await page.goto(arg, { timeout: 30000 });
           await page.waitForLoadState("load").catch(() => {});
-          ev.push({ type: "goto", t: rec.now(), url: arg });
+          // No URL in the log: it may come from env:NAME and carry a token.
+          ev.push({ type: "goto", t: rec.now() });
           break;
         case "click": {
           const p = await pointAt(page, rec, ev, "click", arg, `click ${arg}`.slice(0, 40));
