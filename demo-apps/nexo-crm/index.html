@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Nexo CRM</title>
+<style>
+  :root { --brand: #7c3aed; --brand-d: #5b21b6; --ink: #111827; --muted: #6b7280; --line: #e5e7eb; --bg: #f6f7fb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); background: var(--bg); }
+  .hidden { display: none !important; }
+  button { font: inherit; cursor: pointer; }
+  input, select, textarea { font: inherit; width: 100%; padding: 11px 13px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand); border-color: transparent; }
+  label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+  .btn { background: var(--brand); color: #fff; border: 0; border-radius: 8px; padding: 11px 18px; font-weight: 600; }
+  .btn:hover { background: var(--brand-d); }
+  .btn-ghost { background: #fff; color: var(--ink); border: 1px solid #d1d5db; border-radius: 8px; padding: 11px 18px; }
+
+  /* Login */
+  #login { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; }
+  .hero { background: linear-gradient(140deg, #4c1d95, #7c3aed 60%, #a78bfa); color: #fff; padding: 72px; display: flex; flex-direction: column; justify-content: center; }
+  .hero h1 { font-size: 46px; margin: 0 0 16px; }
+  .hero p { font-size: 20px; opacity: .9; max-width: 460px; line-height: 1.5; }
+  .login-box { display: grid; place-items: center; }
+  .login-card { width: 420px; }
+  .login-card h2 { font-size: 28px; margin: 0 0 6px; }
+  .login-card .sub { color: var(--muted); margin: 0 0 28px; }
+  .field { margin-bottom: 18px; }
+  .error { color: #b91c1c; background: #fee2e2; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+
+  /* Shell */
+  #app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  aside { background: #1f1235; color: #e9d5ff; padding: 24px 16px; }
+  aside .logo { font-size: 22px; font-weight: 800; color: #fff; margin: 0 8px 28px; }
+  aside a { display: block; padding: 11px 12px; border-radius: 8px; color: #ddd6fe; text-decoration: none; margin-bottom: 4px; cursor: pointer; }
+  aside a.active, aside a:hover { background: #3b2463; color: #fff; }
+  header { height: 68px; background: #fff; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 32px; }
+  header .user { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+  header .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; font-weight: 700; }
+  main { padding: 28px 32px; }
+  .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .page-head h1 { margin: 0; font-size: 26px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .card .k { color: var(--muted); font-size: 14px; } .card .v { font-size: 30px; font-weight: 700; margin-top: 6px; }
+  .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
+  .toolbar input { max-width: 360px; }
+  table { width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 12px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
+  th, td { text-align: left; padding: 14px 18px; border-bottom: 1px solid #f1f2f6; }
+  th { background: #fafafa; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .03em; }
+  tr.new td { background: #f5f3ff; }
+  .tag { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .tag.Prospecto { background: #fef3c7; color: #92400e; } .tag.Cliente { background: #dcfce7; color: #166534; } .tag.Negociación { background: #dbeafe; color: #1e40af; }
+
+  /* Form */
+  .form { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 28px; max-width: 880px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 22px; }
+  .full { grid-column: 1 / -1; }
+  .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
+  .hint { color: #b91c1c; font-size: 13px; margin-top: 4px; }
+  .toast { position: fixed; right: 32px; bottom: 32px; background: #16a34a; color: #fff; padding: 14px 22px; border-radius: 10px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.15); }
+</style>
+</head>
+<body>
+  <!-- Login -->
+  <section id="login">
+    <div class="hero">
+      <h1>Nexo CRM</h1>
+      <p>Organizá tus contactos, oportunidades y ventas en un solo lugar.</p>
+    </div>
+    <div class="login-box">
+      <form class="login-card" id="login-form" novalidate>
+        <h2>Iniciar sesión</h2>
+        <p class="sub">Ingresá con tu cuenta de Nexo CRM</p>
+        <div id="login-error" class="error hidden">Correo o contraseña incorrectos.</div>
+        <div class="field"><label for="login-email">Correo electrónico</label>
+          <input id="login-email" name="email" type="email" placeholder="nombre@empresa.com" autocomplete="off" /></div>
+        <div class="field"><label for="login-password">Contraseña</label>
+          <input id="login-password" name="password" type="password" placeholder="••••••••" /></div>
+        <button class="btn" id="btn-login" type="submit" style="width:100%">Ingresar</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- App shell -->
+  <section id="app" class="hidden">
+    <aside>
+      <div class="logo">◆ Nexo CRM</div>
+      <a id="nav-inicio" data-view="inicio" class="active">Inicio</a>
+      <a id="nav-contactos" data-view="contactos">Contactos</a>
+      <a id="nav-oportunidades" data-view="oportunidades">Oportunidades</a>
+      <a id="nav-reportes" data-view="reportes">Reportes</a>
+    </aside>
+    <div>
+      <header><span id="crumb">Inicio</span>
+        <div class="user"><span id="user-email"></span><div class="avatar">V</div></div></header>
+      <main>
+        <!-- Inicio -->
+        <div id="view-inicio">
+          <div class="page-head"><h1>Hola, equipo de ventas 👋</h1></div>
+          <div class="cards">
+            <div class="card"><div class="k">Contactos</div><div class="v" id="kpi-contactos">0</div></div>
+            <div class="card"><div class="k">Oportunidades abiertas</div><div class="v">12</div></div>
+            <div class="card"><div class="k">Ventas del mes</div><div class="v">$ 18.450</div></div>
+          </div>
+        </div>
+        <!-- Contactos -->
+        <div id="view-contactos" class="hidden">
+          <div class="page-head"><h1>Contactos</h1>
+            <button class="btn" id="btn-nuevo-contacto">+ Nuevo contacto</button></div>
+          <div class="toolbar"><input id="buscar" placeholder="Buscar por nombre o empresa..." /></div>
+          <table><thead><tr><th>Nombre</th><th>Empresa</th><th>Correo</th><th>Teléfono</th><th>Etapa</th></tr></thead>
+            <tbody id="rows"></tbody></table>
+        </div>
+        <!-- Nuevo contacto -->
+        <div id="view-nuevo" class="hidden">
+          <div class="page-head"><h1>Nuevo contacto</h1></div>
+          <form class="form" id="contact-form" novalidate>
+            <div class="grid2">
+              <div><label for="c-nombre">Nombre *</label><input id="c-nombre" name="nombre" /></div>
+              <div><label for="c-apellido">Apellido *</label><input id="c-apellido" name="apellido" /></div>
+              <div><label for="c-empresa">Empresa</label><input id="c-empresa" name="empresa" /></div>
+              <div><label for="c-cargo">Cargo</label><input id="c-cargo" name="cargo" /></div>
+              <div><label for="c-email">Correo electrónico *</label><input id="c-email" name="email" type="email" /></div>
+              <div><label for="c-telefono">Teléfono</label><input id="c-telefono" name="telefono" /></div>
+              <div><label for="c-etapa">Etapa</label>
+                <select id="c-etapa" name="etapa"><option>Prospecto</option><option>Negociación</option><option>Cliente</option></select></div>
+              <div><label for="c-origen">Origen</label>
+                <select id="c-origen" name="origen"><option>Sitio web</option><option>Referido</option><option>Feria</option><option>Llamada</option></select></div>
+              <div class="full"><label for="c-notas">Notas</label><textarea id="c-notas" name="notas" rows="3"></textarea></div>
+            </div>
+            <div id="form-error" class="hint hidden">Completá nombre, apellido y un correo válido.</div>
+            <div class="actions">
+              <button type="button" class="btn-ghost" id="btn-cancelar">Cancelar</button>
+              <button type="submit" class="btn" id="btn-guardar">Guardar contacto</button>
+            </div>
+          </form>
+        </div>
+        <div id="view-oportunidades" class="hidden"><div class="page-head"><h1>Oportunidades</h1></div><p>Próximamente.</p></div>
+        <div id="view-reportes" class="hidden"><div class="page-head"><h1>Reportes</h1></div><p>Próximamente.</p></div>
+      </main>
+    </div>
+  </section>
+  <div id="toast" class="toast hidden">Contacto guardado correctamente</div>
+
+<script>
+  // Demo-only account. In-memory data: every page load starts clean (repeatable takes).
+  const DEMO = { email: "ventas@nexocrm.demo", password: "NexoDemo2026" };
+  const $ = (id) => document.getElementById(id);
+  const contacts = [
+    { nombre: "Ana", apellido: "Torres", empresa: "Andes Foods", email: "ana.torres@andesfoods.com", telefono: "099 111 2222", etapa: "Cliente" },
+    { nombre: "Luis", apellido: "Pérez", empresa: "Grupo Litoral", email: "lperez@litoral.ec", telefono: "098 333 4444", etapa: "Negociación" },
+    { nombre: "Carla", apellido: "Mena", empresa: "Ferretería Sur", email: "carla@ferresur.com", telefono: "097 555 6666", etapa: "Prospecto" },
+  ];
+  let fresh = null;
+
+  function render(filter = "") {
+    const f = filter.toLowerCase();
+    $("rows").innerHTML = contacts
+      .filter((c) => `${c.nombre} ${c.apellido} ${c.empresa}`.toLowerCase().includes(f))
+      .map((c) => `<tr class="${c === fresh ? "new" : ""}"><td>${c.nombre} ${c.apellido}</td><td>${c.empresa || "—"}</td>
+        <td>${c.email}</td><td>${c.telefono || "—"}</td><td><span class="tag ${c.etapa}">${c.etapa}</span></td></tr>`).join("");
+    $("kpi-contactos").textContent = contacts.length;
+  }
+  function show(view) {
+    for (const v of ["inicio", "contactos", "nuevo", "oportunidades", "reportes"]) $("view-" + v).classList.toggle("hidden", v !== view);
+    document.querySelectorAll("aside a").forEach((a) => a.classList.toggle("active", a.dataset.view === (view === "nuevo" ? "contactos" : view)));
+    $("crumb").textContent = { inicio: "Inicio", contactos: "Contactos", nuevo: "Contactos / Nuevo", oportunidades: "Oportunidades", reportes: "Reportes" }[view];
+  }
+  $("login-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if ($("login-email").value.trim() !== DEMO.email || $("login-password").value !== DEMO.password) {
+      $("login-error").classList.remove("hidden"); return;
+    }
+    $("user-email").textContent = DEMO.email;
+    $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+    render(); show("inicio");
+  });
+  document.querySelectorAll("aside a").forEach((a) => a.addEventListener("click", () => show(a.dataset.view)));
+  $("btn-nuevo-contacto").addEventListener("click", () => { $("contact-form").reset(); $("form-error").classList.add("hidden"); show("nuevo"); });
+  $("btn-cancelar").addEventListener("click", () => show("contactos"));
+  $("buscar").addEventListener("input", (e) => render(e.target.value));
+  $("contact-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target));
+    if (!d.nombre.trim() || !d.apellido.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) {
+      $("form-error").classList.remove("hidden"); return;
+    }
+    fresh = d; contacts.unshift(d); render(); show("contactos");
+    $("toast").classList.remove("hidden"); setTimeout(() => $("toast").classList.add("hidden"), 2500);
+  });
+</script>
+</body>
+</html>
