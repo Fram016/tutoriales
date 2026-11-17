@@ -13,7 +13,7 @@ App: demo-apps/nexo-crm/index.html served at http://127.0.0.1:8766/ (in-memory d
 ## Tasks
 
 - [x] T1 S3,S4 — Build and serve demo-apps/nexo-crm (login, sidebar, contacts list, new-contact form with validation) — parent
-- [ ] T2 S1,S2,S3 — Subagent produces proyectos/nexo-crm-contacto: brief → guion → ensayo → captura → voz → edición → render → QA, plus work log — worker
+- [x] T2 S1,S2,S3 — Subagent produces proyectos/nexo-crm-contacto (brief, guion, take, voice, edit, render delivery, QA PASS 17/17 visual) + worklog.md — worker — commit "docs: add Nexo CRM trial tutorial sources and work log"
 
 ## Log
 

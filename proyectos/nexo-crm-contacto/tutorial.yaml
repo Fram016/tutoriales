@@ -1,0 +1,92 @@
+# Tutorial: crear el primer contacto (prospecto) en Nexo CRM. Fuente: brief.md.
+# App local: demo-apps/nexo-crm/index.html servida en http://127.0.0.1:8766/ (datos en memoria).
+title: Cómo crear tu primer contacto en Nexo CRM
+subtitle: Guía rápida para vendedores nuevos
+app_url: http://127.0.0.1:8766/
+viewport: [1920, 1080]
+language: es
+
+brand:
+  dir: brand            # proyectos/nexo-crm-contacto/brand/ (sin logo en esta prueba)
+  primary: "#7c3aed"
+  accent: "#a78bfa"
+  background: "#1f1235"
+  text: "#ffffff"
+  font: "Segoe UI"
+
+intro: { seconds: 3 }
+outro: { text: "¡Listo! Ya puedes cargar tus prospectos en Nexo CRM.", seconds: 4 }
+
+voice:
+  voice: Aoede
+  style: "voz cálida y cercana, como un compañero que te enseña, español latinoamericano neutro, ritmo ágil y claro"
+
+music:
+  prompt: "Light corporate pop background, soft plucked synths, warm pads and gentle percussion, friendly, optimistic and relaxed, medium-low energy"
+
+steps:
+  - id: login
+    summary: true
+    narration: "Primero ingresamos a Nexo CRM con el correo y la contraseña de nuestra cuenta."
+    actions:
+      - type: { into: "#login-email", text: "env:NEXO_CRM_CONTACTO_USER" }
+      - type: { into: "#login-password", text: "env:NEXO_CRM_CONTACTO_PASSWORD" }
+      - click: "#btn-login"
+      - wait: "#nav-contactos"
+
+  - id: contactos
+    narration: "En el menú lateral abrimos Contactos, donde está la lista de nuestros clientes."
+    actions:
+      - click: "#nav-contactos"
+      - wait: "#btn-nuevo-contacto"
+
+  - id: nuevo
+    summary: true
+    narration: "Para cargar a alguien nuevo, tocamos el botón Nuevo contacto."
+    actions:
+      - click: "#btn-nuevo-contacto"
+      - wait: "#c-nombre"
+      # QA r1: sin esto la cámara queda en el botón (arriba a la derecha) y el formulario sale cortado.
+      - hover: "#c-nombre"
+
+  - id: obligatorios
+    summary: true
+    narration: "Completamos nombre, apellido y correo. Son los campos con asterisco, así que no pueden faltar."
+    actions:
+      - type: { into: "#c-nombre", text: "Sofía" }
+      - type: { into: "#c-apellido", text: "Ramírez" }
+      - type: { into: "#c-email", text: "sofia.ramirez@cafemontana.com" }
+
+  - id: empresa
+    narration: "Sumamos la empresa, el cargo y el teléfono, para saber a quién llamamos."
+    actions:
+      - type: { into: "#c-empresa", text: "Café Montaña" }
+      - type: { into: "#c-cargo", text: "Jefa de compras" }
+      - type: { into: "#c-telefono", text: "099 456 7890" }
+
+  - id: etapa
+    narration: "En Etapa dejamos Prospecto, elegimos el origen Feria y anotamos lo que conversamos."
+    actions:
+      - select: { in: "#c-etapa", option: "Prospecto" }
+      - select: { in: "#c-origen", option: "Feria" }
+      - type: { into: "#c-notas", text: "Nos conocimos en la feria de Quito. Quiere una cotización para el próximo mes." }
+
+  - id: guardar
+    summary: true
+    narration: "Tocamos Guardar contacto. Sale el aviso verde y nuestro prospecto aparece primero en la lista, resaltado."
+    hold_ms: 1200
+    actions:
+      - click: "#btn-guardar"
+      - wait: "#toast"
+      - wait: "tr.new"
+      # QA r1: llevar la cámara (y la ventana 9:16) al aviso y luego a la fila nueva.
+      - hover: "#toast"
+      - hover: "tr.new td"
+
+  - id: buscar
+    summary: true
+    narration: "Y para encontrarlo después, escribimos su apellido en el buscador. ¡Ahí está Sofía!"
+    hold_ms: 1200
+    actions:
+      - type: { into: "#buscar", text: "Ramírez" }
+      - wait: "tr.new"
