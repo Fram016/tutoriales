@@ -1,9 +1,11 @@
-"""Stage: voice. One Gemini TTS clip per step narration.
+"""Stage: voice. One Gemini TTS clip per narration of every video.
 
 Usage: python tools/tts.py <slug> [--offline]
 
-Writes proyectos/<slug>/audio/voice/<step>.wav and durations.json. Clips are cached by
-text+voice+style hash, so editing one narration only re-synthesizes that step.
+For each video V writes proyectos/<slug>/audio/voice/V/{opening,requirements?,<step>,closing}.wav
+and V/durations.json {name: seconds}. Clips are cached in audio/voice/_cache/ by
+text+voice+style hash, so the same text in two videos is synthesized once and editing one
+narration only re-synthesizes that clip.
 --offline writes silent clips of estimated length (smoke tests without an API key).
 """
 from __future__ import annotations
@@ -11,9 +13,10 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import shutil
 
 from common import (env, ffmpeg, load_tutorial, main_guard, media_duration, project_dir,
-                    read_json, require_env, write_json)
+                    require_env, videos, write_json)
 
 
 def estimate_seconds(text: str) -> float:
@@ -40,44 +43,60 @@ def synthesize(client, model: str, text: str, voice: str, style: str) -> bytes:
     return base64.b64decode(interaction.output_audio.data)
 
 
+def clips(video: dict) -> list[tuple[str, str]]:
+    """(name, text) in video order: opening, requirements?, each step, closing."""
+    out = [("opening", video["opening"].get("narration", ""))]
+    if video.get("requirements"):
+        out.append(("requirements", video["requirements"].get("narration", "")))
+    out += [(step["id"], step["narration"]) for step in video["steps"]]
+    out.append(("closing", video["closing"].get("narration", "")))
+    return [(name, (text or "").strip()) for name, text in out]
+
+
 def tts(slug: str, offline: bool = False) -> dict:
     tut = load_tutorial(slug)
-    voice_dir = project_dir(slug) / "audio" / "voice"
-    voice_dir.mkdir(parents=True, exist_ok=True)
+    voice_root = project_dir(slug) / "audio" / "voice"
+    cache_dir = voice_root / "_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
     cfg = tut.get("voice", {})
     model = cfg.get("model", env("TTS_MODEL", "gemini-3.8-flash-tts"))
     voice = cfg.get("voice", env("TTS_VOICE", "Kore"))
     style = cfg.get("style", env("TTS_STYLE", "voz comercial cálida, español latinoamericano neutro"))
-    cache_file = voice_dir / "cache.json"
-    cache = read_json(cache_file) if cache_file.exists() else {}
     client = None
-    durations = {}
-    for step in tut["steps"]:
-        text = (step.get("narration") or "").strip()
-        out = voice_dir / f"{step['id']}.wav"
-        if not text:
-            durations[step["id"]] = 0.0
-            continue
-        key = hashlib.sha256(f"{'offline' if offline else model}|{voice}|{style}|{text}".encode()).hexdigest()
-        if out.exists() and cache.get(step["id"]) == key:
-            durations[step["id"]] = media_duration(out)
-            continue
-        if offline:
-            ffmpeg("-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", f"{estimate_seconds(text):.2f}", str(out))
-        else:
-            if client is None:
-                from google import genai
-                client = genai.Client(api_key=require_env("GEMINI_API_KEY"),
-                                      http_options={"api_version": "v1beta"})
-            print(f"[tts] {step['id']}: {text[:60]}")
-            out.write_bytes(synthesize(client, model, text, voice, style))
-        cache[step["id"]] = key
-        durations[step["id"]] = media_duration(out)
-    write_json(cache_file, cache)
-    write_json(voice_dir / "durations.json", durations)
-    total = sum(durations.values())
-    print(f"[tts] ok: {len(durations)} clips, {total:.1f} s de voz{' (offline: silencio)' if offline else ''}")
-    return durations
+    seconds = {}  # cache key -> clip length, shared by every video
+    result = {}
+    for video in videos(tut):
+        vdir = voice_root / video["id"]
+        vdir.mkdir(parents=True, exist_ok=True)
+        durations = {}
+        for name, text in clips(video):
+            if not text:
+                durations[name] = 0.0
+                continue
+            key = hashlib.sha256(f"{'offline' if offline else model}|{voice}|{style}|{text}".encode()).hexdigest()
+            cached = cache_dir / f"{key[:32]}.wav"
+            if not cached.exists():
+                if offline:
+                    ffmpeg("-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t",
+                           f"{estimate_seconds(text):.2f}", str(cached))
+                else:
+                    if client is None:
+                        from google import genai
+                        client = genai.Client(api_key=require_env("GEMINI_API_KEY"),
+                                              http_options={"api_version": "v1beta"})
+                    print(f"[tts] {video['id']}/{name}: {text[:60]}")
+                    cached.write_bytes(synthesize(client, model, text, voice, style))
+            out = vdir / f"{name}.wav"
+            if not out.exists() or out.read_bytes() != cached.read_bytes():
+                shutil.copyfile(cached, out)
+            if key not in seconds:
+                seconds[key] = media_duration(cached)
+            durations[name] = seconds[key]
+        write_json(vdir / "durations.json", durations)
+        result[video["id"]] = durations
+        print(f"[tts] {video['id']}: {len(durations)} clips, {sum(durations.values()):.1f} s de voz"
+              f"{' (offline: silencio)' if offline else ''}")
+    return result
 
 
 def main() -> None:

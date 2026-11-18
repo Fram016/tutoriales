@@ -1,15 +1,19 @@
 """Orchestrator: runs the stages of one tutorial in order.
 
 Usage: python tools/pipeline.py <slug> [--from S] [--to S] [--only S] [--offline]
-                                       [--quality draft|looks|delivery]
+                                       [--quality draft|looks|delivery] [--video ID]
 
-Stages: capture → tts → edit → music → mix → compose → render.
+Stages: lint → capture → tts → edit → music → mix → compose → render.
+lint validates tutorial.yaml against reglas/reglas-video.md before anything is recorded.
+capture and tts always cover every video (one take, shared voice cache);
+--video ID limits edit, music, mix, compose and render to that video.
 --offline applies to tts and music (silent voice + test pad, no API key needed).
 Stops at the first failing stage and names it in the error.
 """
 from __future__ import annotations
 
 import argparse
+import inspect
 import time
 from pathlib import Path
 
@@ -20,9 +24,9 @@ import mix
 import music
 import render
 import tts
-from common import ROOT, PipelineError, load_tutorial, main_guard
+from common import ROOT, PipelineError, load_tutorial, main_guard, videos
 
-STAGES = ["capture", "tts", "edit", "music", "mix", "compose", "render"]
+STAGES = ["lint", "capture", "tts", "edit", "music", "mix", "compose", "render"]
 
 
 def select(start: str | None, stop: str | None, only: str | None) -> list[str]:
@@ -37,39 +41,61 @@ def select(start: str | None, stop: str | None, only: str | None) -> list[str]:
     return STAGES[first:last + 1]
 
 
-def run_stage(name: str, slug: str, offline: bool, quality: str):
+def run_lint(slug: str) -> list[str]:
+    try:
+        import lint  # written separately (tools/lint.py); the pipeline still imports without it
+    except ImportError as exc:
+        raise PipelineError(f"no encontré tools/lint.py ({exc}); sin lint no se valida tutorial.yaml "
+                            "contra las reglas. Usa --from capture para saltarla.") from exc
+    warnings = lint.lint(slug) or []
+    for w in warnings:
+        print(f"  aviso: {w}")
+    return warnings
+
+
+def run_stage(name: str, slug: str, offline: bool, quality: str, video: str | None = None):
+    if name == "lint":
+        return run_lint(slug)
     if name == "capture":
         return capture.capture(slug)
     if name == "tts":
         return tts.tts(slug, offline)
     if name == "edit":
-        return edit.edit(slug)
+        return edit.edit(slug, video)
     if name == "music":
-        return music.music(slug, offline)
+        return music.music(slug, offline, video=video)
     if name == "mix":
-        return mix.mix(slug)
+        return mix.mix(slug, video)
     if name == "compose":
+        if video and "video" in inspect.signature(compose.compose).parameters:
+            return compose.compose(slug, video=video)
         return compose.compose(slug)
-    return render.render(slug, quality)
+    return render.render(slug, quality, video)
 
 
-def pipeline(slug: str, stages: list[str], offline: bool = False, quality: str = "looks") -> dict:
+def pipeline(slug: str, stages: list[str], offline: bool = False, quality: str = "looks",
+             video: str | None = None) -> dict:
     tut = load_tutorial(slug)
+    if video:
+        videos(tut, video)  # unknown id fails before any stage runs
     print(f"[pipeline] {tut['title']} ({slug}): {' → '.join(stages)}"
-          f"{' [offline]' if offline else ''}")
+          f"{f' [video {video}]' if video else ''}{' [offline]' if offline else ''}")
     started = time.monotonic()
     results = {}
     for i, name in enumerate(stages, 1):
         print(f"\n=== [{i}/{len(stages)}] {name} ===")
         t0 = time.monotonic()
         try:
-            results[name] = run_stage(name, slug, offline, quality)
+            results[name] = run_stage(name, slug, offline, quality, video)
         except PipelineError as exc:
             raise PipelineError(f"etapa '{name}' falló: {exc}") from exc
         print(f"--- {name}: {time.monotonic() - t0:.1f} s")
     print(f"\n[pipeline] ok en {time.monotonic() - started:.1f} s")
-    for variant, info in (results.get("render") or {}).items():
-        print(f"  {variant}: {Path(info['path']).relative_to(ROOT)} ({info['duration']:.1f} s)")
+    rendered = results.get("render")
+    if isinstance(rendered, dict):
+        for vid, info in rendered.items():
+            if isinstance(info, dict) and info.get("path"):
+                print(f"  {vid}: {Path(info['path']).relative_to(ROOT)} ({info.get('duration', 0):.1f} s)")
     return results
 
 
@@ -81,8 +107,9 @@ def main() -> None:
     ap.add_argument("--only", choices=STAGES)
     ap.add_argument("--offline", action="store_true")
     ap.add_argument("--quality", choices=["draft", "looks", "delivery"], default="looks")
+    ap.add_argument("--video", help="solo este video en edit..render (id de tutorial.yaml)")
     a = ap.parse_args()
-    pipeline(a.slug, select(a.start, a.stop, a.only), a.offline, a.quality)
+    pipeline(a.slug, select(a.start, a.stop, a.only), a.offline, a.quality, a.video)
 
 
 if __name__ == "__main__":

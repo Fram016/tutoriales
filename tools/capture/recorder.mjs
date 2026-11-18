@@ -86,6 +86,14 @@ async function locate(page, selector) {
 
 const center = (b) => ({ x: Math.round(b.x + b.w / 2), y: Math.round(b.y + b.h / 2) });
 
+// Camera-only target (focus/result/highlight): wait until visible, log its box, no pointer.
+async function markAt(page, rec, events, type, selector) {
+  await page.waitForSelector(selector, { state: "visible", timeout: 20000 });
+  const box = await locate(page, selector);
+  if (!box) throw new Error(`No encontré el elemento: ${selector}`);
+  events.push({ type, t: rec.now(), selector, box, point: center(box) });
+}
+
 async function pointAt(page, rec, events, type, selector, label) {
   const box = await locate(page, selector);
   if (!box) throw new Error(`No encontré el elemento: ${selector}`);
@@ -96,7 +104,8 @@ async function pointAt(page, rec, events, type, selector, label) {
   return p;
 }
 
-export async function runSteps(page, rec, steps, { typeDelay = 45 } = {}) {
+// Typing is captured fast on purpose: edit.py retimes it to 13.5 chars/s (C6).
+export async function runSteps(page, rec, steps, { typeDelay = 10 } = {}) {
   const log = [];
   for (const step of steps) {
     const entry = { id: step.id, t0: rec.now(), events: [] };
@@ -128,19 +137,33 @@ export async function runSteps(page, rec, steps, { typeDelay = 45 } = {}) {
             await page.keyboard.press("ControlOrMeta+a");
             await page.keyboard.press("Backspace");
           }
-          for (const ch of String(arg.text)) {
+          const text = [...String(arg.text)];
+          // Length only: the text itself (it may be a secret) never reaches the log.
+          ev.at(-1).chars = text.length;
+          ev.at(-1).ts = rec.now();
+          for (const ch of text) {
             await page.keyboard.type(ch);
             await sleep(typeDelay);
           }
           ev.at(-1).t_end = rec.now();
           if (arg.secret) ev.at(-1).secret = true;
-          await sleep(250);
+          await sleep(200);
           break;
         }
         case "select":
-          await pointAt(page, rec, ev, "click", arg.in, "choose option");
+          await pointAt(page, rec, ev, "select", arg.in, "choose option");
           await page.selectOption(arg.in, arg.option);
+          ev.at(-1).t = rec.now();
           await sleep(350);
+          break;
+        case "focus":
+          await markAt(page, rec, ev, "focus", arg);
+          await sleep(400);
+          break;
+        case "result":
+        case "highlight":
+          await markAt(page, rec, ev, kind, arg);
+          await sleep(300);
           break;
         case "press":
           await page.keyboard.press(arg);

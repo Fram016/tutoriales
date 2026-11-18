@@ -70,7 +70,7 @@ def capture(slug: str) -> dict:
     actions = read_json(out_dir / "actions.json")
     frames = read_json(out_dir / "frames.json")["frames"]
     if actions.get("failure"):
-        raise PipelineError(f"La toma se cortó: {actions['failure']}. Revisá el selector en tutorial.yaml y repetí.")
+        raise PipelineError(f"La toma se cortó: {actions['failure']}. Revisa el selector en tutorial.yaml y repite.")
     if len(frames) < 10:
         raise PipelineError(f"Solo se capturaron {len(frames)} cuadros")
     fps = len(frames) / max(frames[-1]["t"], 0.001)

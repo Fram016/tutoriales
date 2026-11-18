@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -47,7 +48,7 @@ def which(tool: str) -> str:
     if not found and (WINGET_LINKS / f"{tool}.exe").exists():
         found = str(WINGET_LINKS / f"{tool}.exe")
     if not found:
-        raise PipelineError(f"No se encontró '{tool}'. Corré: python tools/doctor.py")
+        raise PipelineError(f"No se encontró '{tool}'. Corre: python tools/doctor.py")
     return found
 
 
@@ -98,17 +99,165 @@ def load_access(slug: str) -> None:
         os.environ[name] = "" if value is None else str(value)
 
 
-def load_tutorial(slug: str) -> dict:
-    data = yaml.safe_load((project_dir(slug) / "tutorial.yaml").read_text(encoding="utf-8"))
-    load_access(slug)
+ACTION_KINDS = {"goto", "click", "hover", "press", "scroll", "wait", "pause", "type", "select",
+                "focus", "result", "highlight"}
+VIDEO_TYPES = ("TUT", "RED", "PRO", "NOV")
+FORMATS = ("16:9", "9:16")
+DEFAULT_FORMAT = {"TUT": "16:9", "RED": "9:16", "PRO": "16:9", "NOV": "16:9"}
+REMOVED_KEYS = {"intro": "videos[].opening", "outro": "videos[].closing"}
+VIDEO_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def _fail(where: str, msg: str):
+    raise PipelineError(f"tutorial.yaml: {where}: {msg}")
+
+
+def _validate_card(where: str, card) -> None:
+    if not isinstance(card, dict):
+        _fail(where, "falta; necesita {narration: ..., text: ...} (E1)")
+    for key in ("narration", "text"):
+        if not isinstance(card.get(key), str) or not card[key].strip():
+            _fail(where, f"falta '{key}' (E1)")
+
+
+def _validate_steps(steps) -> list[str]:
+    if not isinstance(steps, list) or not steps:
+        raise PipelineError("tutorial.yaml: 'steps' tiene que ser una lista con al menos un paso")
+    ids = []
+    for i, step in enumerate(steps):
+        if not isinstance(step, dict) or not isinstance(step.get("id"), str) or not step["id"]:
+            raise PipelineError("tutorial.yaml: cada paso necesita un 'id' único")
+        sid = step["id"]
+        if sid in ids:
+            raise PipelineError("tutorial.yaml: cada paso necesita un 'id' único")
+        ids.append(sid)
+        if "summary" in step:
+            _fail(f"paso {sid}", "'summary' ya no existe en v2; usa videos[].steps")
+        if step.get("chapter") is not None and not isinstance(step["chapter"], int):
+            _fail(f"paso {sid}", "'chapter' tiene que ser un número")
+        actions = step.get("actions", [])
+        if not isinstance(actions, list):
+            _fail(f"paso {sid}", "'actions' tiene que ser una lista")
+        for action in actions:
+            if not isinstance(action, dict) or len(action) != 1:
+                _fail(f"paso {sid}", "cada acción es un mapa de una sola clave, p.ej. {click: '#btn'}")
+            kind, arg = next(iter(action.items()))
+            if kind not in ACTION_KINDS:
+                _fail(f"paso {sid}", f"acción desconocida '{kind}' (válidas: {', '.join(sorted(ACTION_KINDS))})")
+            if kind == "type" and not (isinstance(arg, dict) and arg.get("into") and "text" in arg):
+                _fail(f"paso {sid}", "'type' necesita {into: SELECTOR, text: TEXTO}")
+            if kind == "select" and not (isinstance(arg, dict) and arg.get("in") and "option" in arg):
+                _fail(f"paso {sid}", "'select' necesita {in: SELECTOR, option: VALOR}")
+    return ids
+
+
+def _validate_videos(videos, step_ids: list[str]) -> None:
+    if not isinstance(videos, list) or not videos:
+        raise PipelineError("tutorial.yaml: 'videos' tiene que ser una lista con al menos un video")
+    seen = set()
+    for i, video in enumerate(videos):
+        if not isinstance(video, dict):
+            _fail(f"videos[{i}]", "tiene que ser un mapa")
+        vid = video.get("id")
+        if not isinstance(vid, str) or not VIDEO_ID.match(vid):
+            _fail(f"videos[{i}]", "necesita un 'id' en minúsculas (letras, números, - o _)")
+        if vid in seen:
+            _fail(f"video {vid}", "el 'id' está repetido")
+        seen.add(vid)
+        where = f"video {vid}"
+        vtype = video.get("type")
+        if vtype not in VIDEO_TYPES:
+            _fail(where, f"'type' tiene que ser uno de {', '.join(VIDEO_TYPES)} (Parte 3)")
+        if video.get("format", DEFAULT_FORMAT[vtype]) not in FORMATS:
+            _fail(where, "'format' tiene que ser \"16:9\" o \"9:16\"")
+        chosen = video.get("steps", "all")
+        if chosen != "all":
+            if not isinstance(chosen, list) or not chosen:
+                _fail(where, "'steps' tiene que ser \"all\" o una lista de ids de pasos")
+            unknown = [str(s) for s in chosen if s not in step_ids]
+            if unknown:
+                _fail(where, f"pasos que no existen en 'steps': {', '.join(unknown)}")
+            if len(set(chosen)) != len(chosen):
+                _fail(where, "un paso aparece dos veces en 'steps'")
+            order = [step_ids.index(s) for s in chosen]
+            if order != sorted(order):
+                _fail(where, "los pasos tienen que seguir el orden de la lista principal (E2)")
+        _validate_card(f"{where}: opening", video.get("opening"))
+        _validate_card(f"{where}: closing", video.get("closing"))
+        if video.get("requirements") is not None:
+            if vtype != "TUT":
+                _fail(where, "'requirements' solo existe en videos TUT (TUT1)")
+            _validate_card(f"{where}: requirements", video["requirements"])
+        overrides = video.get("narration") or {}
+        if not isinstance(overrides, dict):
+            _fail(where, "'narration' tiene que ser un mapa {id_de_paso: texto}")
+        allowed = step_ids if chosen == "all" else chosen
+        stray = [str(k) for k in overrides if k not in allowed]
+        if stray:
+            _fail(where, f"'narration' nombra pasos que este video no usa: {', '.join(stray)}")
+        if video.get("music") is not None and not isinstance(video["music"], dict):
+            _fail(where, "'music' tiene que ser un mapa {prompt: ..., none: true|false}")
+
+
+def validate_tutorial(data) -> None:
+    """tutorial.yaml v2 (odd/tasks/reglas-video.md L2). Raises PipelineError in Spanish."""
+    if not isinstance(data, dict):
+        raise PipelineError("tutorial.yaml: tiene que ser un mapa de claves")
     for key in ("title", "steps"):
         if key not in data:
             raise PipelineError(f"tutorial.yaml: falta la clave '{key}'")
-    ids = [s.get("id") for s in data["steps"]]
-    if None in ids or len(set(ids)) != len(ids):
-        raise PipelineError("tutorial.yaml: cada paso necesita un 'id' único")
+    for key, repl in REMOVED_KEYS.items():
+        if key in data:
+            raise PipelineError(f"tutorial.yaml: '{key}' ya no existe en v2; usa {repl}")
+    if data.get("device", "desktop") not in ("desktop", "mobile"):
+        raise PipelineError("tutorial.yaml: 'device' tiene que ser desktop o mobile (L2)")
+    if data.get("glossary") is not None and not isinstance(data["glossary"], dict):
+        raise PipelineError("tutorial.yaml: 'glossary' tiene que ser un mapa {término: [sinónimos prohibidos]}")
+    step_ids = _validate_steps(data["steps"])
+    # Checked when present; a tutorial without it fails in videos(), where stages need it.
+    if "videos" in data:
+        _validate_videos(data["videos"], step_ids)
+
+
+def load_tutorial(slug: str) -> dict:
+    data = yaml.safe_load((project_dir(slug) / "tutorial.yaml").read_text(encoding="utf-8"))
+    load_access(slug)
+    validate_tutorial(data)
     data.setdefault("slug", slug)
     return data
+
+
+def videos(tut: dict, only: str | None = None) -> list[dict]:
+    """Normalized videos: steps resolved from "all", per-video narration, original numbering (E2)."""
+    if not tut.get("videos"):
+        raise PipelineError("tutorial.yaml: falta la clave 'videos' (cada video declara su tipo, Parte 3)")
+    numbered = {s["id"]: (i + 1, s) for i, s in enumerate(tut["steps"])}
+    out = []
+    for video in tut["videos"]:
+        if only and video["id"] != only:
+            continue
+        chosen = [s["id"] for s in tut["steps"]] if video.get("steps", "all") == "all" else video["steps"]
+        overrides = video.get("narration") or {}
+        steps = []
+        for sid in chosen:
+            number, step = numbered[sid]
+            narration = overrides.get(sid, step.get("narration")) or ""
+            steps.append({**step, "number": number, "chapter": step.get("chapter"),
+                          "narration": narration.strip()})
+        out.append({
+            "id": video["id"],
+            "type": video["type"],
+            "format": video.get("format", DEFAULT_FORMAT[video["type"]]),
+            "steps": steps,
+            "opening": dict(video["opening"]),
+            "requirements": dict(video["requirements"]) if video.get("requirements") else None,
+            "closing": dict(video["closing"]),
+            "music": dict(video.get("music") or {}),
+        })
+    if only and not out:
+        known = ", ".join(v["id"] for v in tut["videos"])
+        raise PipelineError(f"No existe el video '{only}' en tutorial.yaml (hay: {known})")
+    return out
 
 
 def resolve_env_ref(value):
