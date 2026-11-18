@@ -1,18 +1,24 @@
 """Stage: render. Renders the HyperFrames projects from compose.py to the final MP4s.
 
 Usage: python tools/render.py <slug> [--quality draft|looks|delivery] [--video ID]
-       python tools/render.py --project DIR [--out FILE.mp4] [--quality ...] [--snap 1.5,4,9.2]
+       python tools/render.py --project DIR [--project DIR2 ...] [--out FILE.mp4] [--quality ...]
+       python tools/render.py --project DIR --snap 1.5,4,9.2
 
-Writes proyectos/<slug>/out/<slug>-<video>.mp4 for every hf-<video>/, then verifies each with
-ffprobe: resolution (16:9 -> 1920x1080, 9:16 -> 1080x1920), duration ≈ timeline total (±0.3 s)
-and an audio track. Renders with --page-motion-blur off (C2: no smeared or doubled frames) and
-PNG frame extraction (crisp UI text).
+Writes proyectos/<slug>/out/<slug>-<video>.mp4 for every hf-<video>/ (or only --video ID), then
+verifies each with ffprobe: resolution (16:9 -> 1920x1080, 9:16 -> 1080x1920), duration ≈ timeline
+total (±0.3 s) and an audio track. All the requested videos render at the same time, one HyperFrames
+process each with the CPU cores split between them (S2: fast workflow); the elapsed time of every
+video is printed. Renders with --page-motion-blur off (C2: no smeared or doubled frames) and PNG
+frame extraction (crisp UI text).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from common import ROOT, PipelineError, load_tutorial, main_guard, project_dir, read_json, run, which
@@ -61,19 +67,61 @@ def verify(path: Path, size: list[int], total: float) -> dict:
             "video": video["codec_name"], "audio": audio["codec_name"]}
 
 
-def render_project(src: Path, out: Path, quality: str) -> dict:
+def render_project(src: Path, out: Path, quality: str, workers: int | None = None,
+                   parallel: bool = False) -> dict:
     """Renders one hf-* project to `out` and checks it against its layout.json."""
     layout = read_json(src / "layout.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[render] {src.name}: renderizando ({quality})...")
-    hyperframes("render", src, "-o", out, "--quality", quality, "--video-frame-format", "png",
-                "--page-motion-blur", "off", "--quiet")
+    start = time.monotonic()
+    print(f"[render] {src.name}: renderizando ({quality}{f', {workers} workers' if workers else ''})...", flush=True)
+    args = ["render", src, "-o", out, "--quality", quality, "--video-frame-format", "png",
+            "--page-motion-blur", "off", "--quiet"]
+    if workers:
+        args += ["--workers", str(workers)]
+    # Side by side renders: HyperFrames would otherwise queue the second one behind the first.
+    hyperframes(*args, extra_env={"HYPERFRAMES_RENDER_LOCK": "off"} if parallel else None)
     if not out.exists():
         raise PipelineError(f"HyperFrames terminó sin escribir {out}")
     result = verify(out, expected_size(layout), layout["total"])
+    result["elapsed"] = round(time.monotonic() - start, 1)
     print(f"[render] {src.name}: {result['width']}x{result['height']}, {result['duration']:.2f} s, "
-          f"{result['video']} + {result['audio']} -> {out}")
+          f"{result['video']} + {result['audio']} en {result['elapsed']:.0f} s -> {out}", flush=True)
     return result
+
+
+def workers_per_video(videos: int, cores: int | None = None) -> int:
+    """CPU cores split between the videos that render at the same time."""
+    cores = cores or os.cpu_count() or 2
+    return max(1, cores // max(1, videos))
+
+
+def video_name(src: Path) -> str:
+    return src.name[3:] if src.name.startswith("hf-") else src.name
+
+
+def render_many(jobs: list[tuple[Path, Path]], quality: str, runner=None, cores: int | None = None) -> dict:
+    """Renders every (project, mp4) at the same time, one process per video (S2). {video: result}."""
+    parallel = len(jobs) > 1
+    workers = workers_per_video(len(jobs), cores)
+
+    def default(src, out, q, w):
+        return render_project(src, out, q, w, parallel)
+
+    runner = runner or default
+    start = time.monotonic()
+    with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as pool:
+        futures = {video_name(src): pool.submit(runner, src, out, quality, workers) for src, out in jobs}
+        results, errors = {}, []
+        for name, future in futures.items():
+            try:
+                results[name] = future.result()
+            except PipelineError as exc:
+                errors.append(f"{name}: {exc}")
+    if errors:
+        raise PipelineError("\n".join(errors))
+    if parallel and runner is default:
+        print(f"[render] {len(jobs)} videos en paralelo: {time.monotonic() - start:.0f} s en total", flush=True)
+    return results
 
 
 def videos(pdir: Path) -> list[str]:
@@ -86,7 +134,7 @@ def render(slug: str, quality: str = "looks", video: str | None = None) -> dict:
     names = [video] if video else videos(pdir)
     if not names:
         raise PipelineError("No hay proyectos hf-*/ con layout.json. Corré antes compose.py.")
-    return {v: render_project(hf_dir(pdir, v), pdir / "out" / f"{slug}-{v}.mp4", quality) for v in names}
+    return render_many([(hf_dir(pdir, v), pdir / "out" / f"{slug}-{v}.mp4") for v in names], quality)
 
 
 def snapshot_project(src: Path, times: list[float]) -> list[Path]:
@@ -115,16 +163,20 @@ def main() -> None:
     ap.add_argument("slug", nargs="?")
     ap.add_argument("--quality", choices=["draft", "looks", "delivery"], default="looks")
     ap.add_argument("--video", help="id del video (por defecto: todos los hf-*/)")
-    ap.add_argument("--project", type=Path, help="render a single hf-* folder (e.g. a compose --fixture)")
-    ap.add_argument("--out", type=Path, help="output mp4 for --project (default: <project>.mp4)")
-    ap.add_argument("--snap", help="with --project: comma-separated seconds to snapshot instead of rendering")
+    ap.add_argument("--project", type=Path, action="append",
+                    help="render an hf-* folder (e.g. a compose --fixture); repeat it to render several in parallel")
+    ap.add_argument("--out", type=Path, help="output mp4 for a single --project (default: <project>.mp4)")
+    ap.add_argument("--snap", help="with one --project: comma-separated seconds to snapshot instead of rendering")
     args = ap.parse_args()
     if args.project:
+        if (args.snap or args.out) and len(args.project) > 1:
+            ap.error("--snap y --out van con un solo --project")
         if args.snap:
-            for path in snapshot_project(args.project, [float(t) for t in args.snap.split(",")]):
+            for path in snapshot_project(args.project[0], [float(t) for t in args.snap.split(",")]):
                 print(path)
         else:
-            render_project(args.project, args.out or args.project.with_suffix(".mp4"), args.quality)
+            outs = [args.out] if args.out else [p.with_suffix(".mp4") for p in args.project]
+            render_many(list(zip(args.project, outs)), args.quality)
     elif args.slug:
         render(args.slug, args.quality, args.video)
     else:

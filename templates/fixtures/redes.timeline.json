@@ -10,7 +10,7 @@
     1080,
     1920
   ],
-  "total": 24.66,
+  "total": 26.16,
   "product": "Nexo CRM",
   "title": "Cómo crear un contacto en Nexo CRM",
   "opening": {
@@ -23,15 +23,15 @@
   },
   "requirements": null,
   "closing": {
-    "start": 22.66,
+    "start": 24.16,
     "duration": 2.0,
-    "text": "Mira el tutorial completo",
-    "narration": "Mira el tutorial completo.",
-    "voice_start": 22.66,
+    "text": "Mira el tutorial completo en el enlace del perfil",
+    "narration": "Mira el tutorial completo en el enlace del perfil.",
+    "voice_start": 24.16,
     "voice_duration": 1.7
   },
   "screen_start": 1.5,
-  "screen_end": 22.66,
+  "screen_end": 24.16,
   "steps": [
     {
       "id": "nuevo",
@@ -40,13 +40,13 @@
       "title": "Abre el formulario",
       "narration": "Abre Nuevo contacto.",
       "start": 1.5,
-      "duration": 4.52,
+      "duration": 6.02,
       "voice_start": 1.75,
-      "voice_duration": 3.92,
+      "voice_duration": 5.42,
       "events": [
         {
           "type": "click",
-          "t": 2.675,
+          "t": 4.03,
           "selector": "#btn-nuevo-contacto",
           "box": {
             "x": 1721.1,
@@ -57,11 +57,12 @@
           "point": {
             "x": 1805,
             "y": 118
-          }
+          },
+          "screen_at": 4.067
         },
         {
           "type": "focus",
-          "t": 3.487,
+          "t": 4.987,
           "selector": "#c-nombre",
           "box": {
             "x": 301,
@@ -72,6 +73,12 @@
           "point": {
             "x": 501,
             "y": 226
+          },
+          "frame_box": {
+            "x": 301,
+            "y": 181,
+            "w": 400,
+            "h": 67
           }
         }
       ]
@@ -82,15 +89,15 @@
       "chapter": null,
       "title": "Completa los datos",
       "narration": "Escribe nombre, apellido y correo.",
-      "start": 6.02,
+      "start": 7.52,
       "duration": 7.8,
-      "voice_start": 6.27,
+      "voice_start": 7.77,
       "voice_duration": 7.2,
       "events": [
         {
           "type": "type",
-          "t": 6.315,
-          "t_end": 7.22,
+          "t": 7.815,
+          "t_end": 8.72,
           "chars": 5,
           "selector": "#c-nombre",
           "box": {
@@ -102,12 +109,18 @@
           "point": {
             "x": 501,
             "y": 226
+          },
+          "frame_box": {
+            "x": 301,
+            "y": 181,
+            "w": 400,
+            "h": 67
           }
         },
         {
           "type": "type",
-          "t": 7.582,
-          "t_end": 8.866,
+          "t": 9.082,
+          "t_end": 10.366,
           "chars": 7,
           "selector": "#c-apellido",
           "box": {
@@ -119,12 +132,18 @@
           "point": {
             "x": 923,
             "y": 226
+          },
+          "frame_box": {
+            "x": 723,
+            "y": 181,
+            "w": 400,
+            "h": 67
           }
         },
         {
           "type": "type",
-          "t": 9.272,
-          "t_end": 13.236,
+          "t": 10.772,
+          "t_end": 14.736,
           "chars": 29,
           "selector": "#c-email",
           "box": {
@@ -136,6 +155,12 @@
           "point": {
             "x": 501,
             "y": 398
+          },
+          "frame_box": {
+            "x": 301,
+            "y": 353,
+            "w": 400,
+            "h": 67
           }
         }
       ]
@@ -146,14 +171,14 @@
       "chapter": null,
       "title": "Guarda el contacto",
       "narration": "Guarda y tu contacto aparece primero en la lista de Nexo CRM.",
-      "start": 13.82,
+      "start": 15.32,
       "duration": 8.84,
-      "voice_start": 14.07,
+      "voice_start": 15.57,
       "voice_duration": 8.24,
       "events": [
         {
           "type": "click",
-          "t": 14.723,
+          "t": 16.1,
           "selector": "#btn-guardar",
           "box": {
             "x": 960.75,
@@ -164,11 +189,12 @@
           "point": {
             "x": 1042,
             "y": 687
-          }
+          },
+          "screen_at": 16.134
         },
         {
           "type": "result",
-          "t": 15.751,
+          "t": 17.251,
           "selector": "#toast",
           "box": {
             "x": 1594,
@@ -179,7 +205,7 @@
         },
         {
           "type": "highlight",
-          "t": 17.18,
+          "t": 18.68,
           "selector": "tr.new",
           "box": {
             "x": 273,

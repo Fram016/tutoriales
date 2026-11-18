@@ -7,8 +7,10 @@ Cuts three steps (nuevo, datos, guardar) out of proyectos/nexo-crm-contacto/edit
   screen.mp4               1920x1080, 30 fps, shared by both videos
   tutorial.timeline.json   TUT 16:9 (opening 3.0 s, closing 2.5 s)
   redes.timeline.json      RED 9:16 (hook 1.5 s, CTA 2.0 s)
-  brand.json               brand colors of the demo
-The boxes and points are the real ones recorded by capture for those frames.
+  brand.json               brand colors of the demo (no accent: it defaults to the primary, N5)
+The boxes and points are the real ones recorded by capture for those frames. Like edit's output (N1,
+C10), the first step opens with a hold before its click, clicks happen just before the page changes,
+clicks carry `screen_at` (the new screen) and fields carry `frame_box` (control + label, C9).
 """
 from __future__ import annotations
 
@@ -23,25 +25,31 @@ SOURCE = ROOT / "proyectos" / "nexo-crm-contacto" / "edit" / "full" / "screen.mp
 
 # (step id, source start, source end) in seconds of SOURCE.
 SEGMENTS = [("nuevo", 12.76, 17.28), ("datos", 17.28, 25.08), ("guardar", 39.68, 48.52)]
+# N1: edit holds the first frame of a step while the narration asks for the action.
+PRE_HOLD = {"nuevo": 1.5}
 
 # Events per step, times in seconds of SOURCE.
 EVENTS = {
     "nuevo": [
-        {"type": "click", "t": 13.935, "selector": "#btn-nuevo-contacto",
+        {"type": "click", "t": 13.79, "screen_c": 13.827, "selector": "#btn-nuevo-contacto",
          "box": {"x": 1721.1, "y": 96, "w": 166.9, "h": 43}, "point": {"x": 1805, "y": 118}},
         {"type": "focus", "t": 14.747, "selector": "#c-nombre",
-         "box": {"x": 301, "y": 203, "w": 400, "h": 45}, "point": {"x": 501, "y": 226}},
+         "box": {"x": 301, "y": 203, "w": 400, "h": 45}, "point": {"x": 501, "y": 226},
+         "frame_box": {"x": 301, "y": 181, "w": 400, "h": 67}},
     ],
     "datos": [
         {"type": "type", "t": 17.575, "t_end": 18.48, "chars": 5, "selector": "#c-nombre",
-         "box": {"x": 301, "y": 203, "w": 400, "h": 45}, "point": {"x": 501, "y": 226}},
+         "box": {"x": 301, "y": 203, "w": 400, "h": 45}, "point": {"x": 501, "y": 226},
+         "frame_box": {"x": 301, "y": 181, "w": 400, "h": 67}},
         {"type": "type", "t": 18.842, "t_end": 20.126, "chars": 7, "selector": "#c-apellido",
-         "box": {"x": 723, "y": 203, "w": 400, "h": 45}, "point": {"x": 923, "y": 226}},
+         "box": {"x": 723, "y": 203, "w": 400, "h": 45}, "point": {"x": 923, "y": 226},
+         "frame_box": {"x": 723, "y": 181, "w": 400, "h": 67}},
         {"type": "type", "t": 20.532, "t_end": 24.496, "chars": 29, "selector": "#c-email",
-         "box": {"x": 301, "y": 375, "w": 400, "h": 45}, "point": {"x": 501, "y": 398}},
+         "box": {"x": 301, "y": 375, "w": 400, "h": 45}, "point": {"x": 501, "y": 398},
+         "frame_box": {"x": 301, "y": 353, "w": 400, "h": 67}},
     ],
     "guardar": [
-        {"type": "click", "t": 40.583, "selector": "#btn-guardar",
+        {"type": "click", "t": 40.46, "screen_c": 40.494, "selector": "#btn-guardar",
          "box": {"x": 960.75, "y": 664, "w": 162.25, "h": 45}, "point": {"x": 1042, "y": 687}},
         {"type": "result", "t": 41.611, "selector": "#toast",
          "box": {"x": 1594, "y": 999, "w": 294, "h": 49}},
@@ -72,16 +80,17 @@ VIDEOS = {
     "redes": {"type": "RED", "format": "9:16", "output": [1080, 1920], "opening": 1.5, "closing": 2.0,
               "opening_text": "¿Conociste a alguien en una feria?",
               "opening_narration": "¿Conociste a alguien en una feria?",
-              "closing_text": "Mira el tutorial completo",
-              "closing_narration": "Mira el tutorial completo."},
+              "closing_text": "Mira el tutorial completo en el enlace del perfil",
+              "closing_narration": "Mira el tutorial completo en el enlace del perfil."},
 }
 
-BRAND = {"primary": "#7c3aed", "accent": "#a78bfa", "background": "#1f1235", "text": "#ffffff",
-         "font": "Segoe UI"}
+BRAND = {"primary": "#7c3aed", "background": "#1f1235", "text": "#ffffff", "font": "Segoe UI"}
 
 
 def cut_screen() -> None:
-    parts = "".join(f"[0:v]trim={a}:{b},setpts=PTS-STARTPTS[v{i}];" for i, (_, a, b) in enumerate(SEGMENTS))
+    parts = "".join(f"[0:v]trim={a}:{b},setpts=PTS-STARTPTS"
+                    + (f",tpad=start_duration={PRE_HOLD[sid]}:start_mode=clone" if sid in PRE_HOLD else "")
+                    + f"[v{i}];" for i, (sid, a, b) in enumerate(SEGMENTS))
     chain = "".join(f"[v{i}]" for i in range(len(SEGMENTS)))
     graph = f"{parts}{chain}concat=n={len(SEGMENTS)}:v=1:a=0,fps=30,format=yuv420p[out]"
     subprocess.run([shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(SOURCE),
@@ -94,14 +103,17 @@ def timeline(video: str) -> dict:
     start = spec["opening"]
     steps, cursor = [], start
     for sid, a, b in SEGMENTS:
-        dur = round(b - a, 3)
+        hold = PRE_HOLD.get(sid, 0)
+        dur = round(b - a + hold, 3)
         meta = STEPS[sid]
         events = []
         for ev in EVENTS[sid]:
             ev = dict(ev)
-            ev["t"] = round(cursor + ev["t"] - a, 3)
+            ev["t"] = round(cursor + hold + ev["t"] - a, 3)
             if "t_end" in ev:
-                ev["t_end"] = round(cursor + ev["t_end"] - a, 3)
+                ev["t_end"] = round(cursor + hold + ev["t_end"] - a, 3)
+            if "screen_c" in ev:
+                ev["screen_at"] = round(cursor + hold + ev.pop("screen_c") - a, 3)
             events.append(ev)
         steps.append({"id": sid, "number": meta["number"], "chapter": None, "title": meta["title"],
                       "narration": meta[spec["type"]], "start": round(cursor, 3), "duration": dur,

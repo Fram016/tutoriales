@@ -19,7 +19,7 @@
 | id | Tipo (TUT/RED/PRO/NOV) | Formato | Duración objetivo | Apertura | Cierre |
 | --- | --- | --- | --- | --- | --- |
 | tutorial | TUT | 16:9 | libre (capítulos si > 5 min) | En este video aprendes a… | Siguiente video: … |
-| redes | RED | 9:16 | 15–35 s | Gancho: ¿…? | Mira el tutorial completo |
+| redes | RED | 9:16 | 15–35 s | Gancho: ¿…? | Mira el tutorial completo + destino (N8) |
 
 ## Enfoque
 
@@ -39,6 +39,32 @@
      Idioma: español neutro de Ecuador, trato de tú, sin voseo ni modismos (L1, L4). -->
 
 - contacto — no usar: cliente, prospecto, registro
+
+## Paleta (de la app)
+
+<!-- N5: extraída de la app, nunca inventada: variables CSS (--primary…), botón primario, encabezado,
+     fondo. Sin acento aparte: acento = primario. Cada color con su fuente (código <ruta>:<línea> / ensayo). -->
+
+- primary (botón primario / marca):
+- background (color oscuro de la marca, tarjetas):
+- surface (banda de subtítulos; por defecto = background):
+- on_surface (texto de la banda; por defecto #ffffff):
+
+## Historia / escenario
+
+<!-- N4: una frase. El gancho, los datos de ejemplo y la narración la cumplen y explican cada dato
+     (p. ej. feria → Origen "Feria", nota "Conocido en la feria …" de 30 caracteres o menos, C6).
+     Si no hay escenario: "ninguna". -->
+
+- Escenario:
+- Datos que la cuentan:
+
+## Destino del CTA
+
+<!-- N8: dónde ver el tutorial completo o hacer la acción (perfil, canal de YouTube, web).
+     Preguntar al usuario; si no se sabe: "en el enlace de nuestro perfil" (propuesto). -->
+
+- Dónde ver el tutorial completo / destino del CTA:
 
 ## Fuentes
 
@@ -68,6 +94,9 @@
 ## Flujo propuesto
 
 1. 
+
+<!-- Marca login, navegación obvia y campos opcionales (con su selector): RED los omite
+     (videos[].steps / videos[].omit, RED3). -->
 
 ## Datos de la serie
 
