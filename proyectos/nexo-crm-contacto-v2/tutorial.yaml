@@ -1,0 +1,95 @@
+# Nexo CRM: crear un contacto. TUT 16:9 + RED 9:16 from one step list (reglas/reglas-video.md).
+# Brief: proyectos/nexo-crm-contacto-v2/brief.md. Selectors from demo-apps/nexo-crm/index.html (read-only).
+title: "Cómo crear un contacto en Nexo CRM"
+product: "Nexo CRM"
+app_url: http://127.0.0.1:8766/
+viewport: [1920, 1080]
+language: es-EC
+device: desktop                      # L2: "haz clic"
+
+brand:
+  dir: brand                         # no logo (user: "No logo")
+  primary: "#7c3aed"
+  accent: "#ea580c"
+  background: "#1f1235"
+  text: "#ffffff"
+  font: "Segoe UI"
+
+glossary:                            # L3, from the brief
+  contacto: [cliente, prospecto, registro]
+  etapa: [estado, fase]
+  origen: [fuente, canal]
+  aviso: [notificación]
+
+voice:
+  voice: Kore
+  style: "voz cálida y clara, español neutro de Ecuador, trato de tú"
+
+steps:                               # E2: one action with a visible result per step
+  - id: login                        # TUT5: first video of the series; RED omits it (RED3)
+    title: "Inicia sesión"
+    narration: "Primero, ingresa a Nexo CRM con tu correo y tu contraseña, y haz clic en Ingresar."
+    actions:
+      - wait: "#login-email"
+      - focus: "#login-form"                     # QA round 2 (C4): frame the whole card, not the empty page around one field
+      - type: {into: "#login-email", text: "env:NEXO_CRM_CONTACTO_V2_USER"}
+      - type: {into: "#login-password", text: "env:NEXO_CRM_CONTACTO_V2_PASSWORD"}
+      - click: "#btn-login"
+      - wait: "#nav-contactos"
+
+  - id: contactos                    # obvious navigation: RED omits it (RED3)
+    title: "Abre Contactos"
+    narration: "En el menú lateral, haz clic en Contactos. Aquí ves la lista de tus contactos."
+    actions:
+      - click: "#nav-contactos"
+      - wait: "#btn-nuevo-contacto"
+      - focus: "#view-contactos table"
+
+  - id: nuevo
+    title: "Abre el formulario"
+    narration: "Haz clic en Nuevo contacto para abrir el formulario."
+    actions:
+      - click: "#btn-nuevo-contacto"
+      - wait: "#c-nombre"
+
+  - id: datos                        # the whole form is ONE step (E2)
+    title: "Completa los datos"
+    narration: "Completa los campos obligatorios: nombre, apellido y correo. Luego agrega la empresa y elige el origen del contacto."
+    actions:
+      - type: {into: "#c-nombre", text: "Sofía"}
+      - type: {into: "#c-apellido", text: "Vera"}
+      - type: {into: "#c-email", text: "sofia@cafemontana.ec"}
+      - type: {into: "#c-empresa", text: "Café Montaña"}
+      - select: {in: "#c-origen", option: "Feria"}
+
+  - id: guardar
+    title: "Guarda el contacto"
+    narration: "Haz clic en Guardar contacto. Tu contacto nuevo queda primero en la lista, resaltado."
+    actions:
+      - click: "#btn-guardar"
+      # QA round 1 (L7, R2 vs C4): zoomed in, the toast sits alone in an empty corner (qa C4: 90-94 % empty).
+      # The result is the new row (R1, R3); the toast is neither framed nor named in the narration.
+      # QA round 2 (C4): wait for the new row itself, not the toast, so the camera moves to it at once.
+      - wait: "#rows tr.new"
+      - highlight: "#rows tr:first-child"        # R1/R3: new row in detail, outlined in accent
+
+videos:
+  - id: tutorial
+    type: TUT
+    format: "16:9"
+    steps: all
+    opening: {narration: "Aquí aprendes a crear contactos.", text: "Aprende a crear un contacto"}
+    closing: {narration: "Siguiente: el buscador.", text: "Siguiente video: buscar un contacto"}
+    music: {prompt: "Soft corporate ambient, warm pads, gentle piano, calm and positive"}   # TUT: suave
+
+  - id: redes
+    type: RED
+    format: "9:16"
+    steps: [nuevo, datos, guardar]   # no login, no obvious navigation; numbering stays 3, 4, 5
+    opening: {narration: "¿Contacto de feria?", text: "¿Conociste a alguien en una feria?"}
+    closing: {narration: "Mira el tutorial.", text: "Mira el tutorial completo"}
+    narration:
+      nuevo: "En Contactos, haz clic en el botón Nuevo contacto."
+      datos: "Escribe los datos del contacto y elige Feria como origen, para recordar dónde lo conociste."
+      guardar: "Haz clic en Guardar contacto y tu contacto nuevo queda primero, resaltado."
+    music: {prompt: "Upbeat rhythmic pop, punchy drums, bright synths, energetic"}          # RED: rítmica

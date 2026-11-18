@@ -17,7 +17,7 @@ Normative source (verbatim): reglas/reglas-video.md — rule IDs E1-E3, C1-C6, O
 - [x] T3 S1,S2,S3 — Validation: lint.py + qa.py + smoke — worker WC — commit fd426a7
 - [x] T4 S1,S2,S3 — Skills, README, brief, _demo v2, demo apps in tú — worker WD — commit 7f858f9
 - [x] T5 S1-S3 — Integration: 152 unit tests OK + offline smoke PASS (fix worker: blank detector, click lag, screen_at cuts, place_voices) — commits 8d26c48/196431b
-- [ ] T6 S4 — Fresh subagent from scratch produces Nexo CRM TUT 16:9 + RED 9:16 — worker
+- [ ] T6 S4 — Fresh run done, QA partial: 21/26 fixed, 3 present (#4 C4, #16 A2, #23 V2); waiting user feedback and decisions L7 (R2 vs C4), E2 vs RED3 — worker — commit "docs: add fresh Nexo CRM v2 run sources and work log"
 
 ## Log
 
