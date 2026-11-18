@@ -1,10 +1,10 @@
 ---
 name: tutorial-brief
-description: "Trigger: brief, enfoque, enfoque específico, tipo de video, glosario, credenciales, cuenta demo, te paso las credenciales, video de referencia, video de uso, instrucciones de cómo funciona, proyecto, código fuente, ya está levantado, cómo funciona la app, audiencia, focus, credentials, reference video, usage video, source code, project. paleta, colores, historia, escenario, destino del CTA. Collects and merges every tutorial input (live app, demo credentials, usage video, instructions, project source, focus, video types, glossary, app palette, story, CTA destination) into proyectos/<slug>/brief.md before any script."
+description: "Trigger: brief, enfoque, enfoque específico, tipo de video, glosario, credenciales, cuenta demo, te paso las credenciales, video de referencia, video de uso, instrucciones de cómo funciona, proyecto, código fuente, ya está levantado, cómo funciona la app, audiencia, focus, credentials, reference video, usage video, source code, project. paleta, colores, logo, historia, escenario, destino del CTA, datos sensibles, difuminar. Collects and merges every tutorial input (live app, demo credentials, usage video, instructions, project source, focus, video types, glossary, app palette, story, CTA destination) into proyectos/<slug>/brief.md before any script."
 license: Apache-2.0
 metadata:
   author: tutoriales
-  version: "2.1"
+  version: "2.2"
 ---
 
 ## Activation Contract
@@ -32,6 +32,8 @@ Use at the start of every video, whatever the input: live app URL, demo credenti
 - **Datos de la serie** (TUT7): the same fictitious company, people and products for every video of the series; short values (C6). Reuse the existing series data if the brief of a sibling video has it.
 - **Idioma** (L1, L4): español neutro de Ecuador, trato de tú, no voseo, no regional idioms ("aquí", "registrar"). If the demo app itself shows voseo, report it as an open question (L1 covers interface data).
 - **Paleta** (N5): extract it from the app, never invent it. Read CSS variables (`--primary`, `--brand`…), the primary button background, the header/sidebar color and the page background (source CSS, or `getComputedStyle` in the rehearsal). Fill `primary` (main button/brand), `background` (dark brand color for cards), `surface` (caption band, default = the dark color), `on_surface` (band text, default `#ffffff`). No separate accent: accent = primary. Goes to `brand:`.
+- **Logo** (N24): note the variant that reads on `background` (contrast ≥ 3:1). A dark logo on a dark card needs the light variant (`brand/logo-light.*` or a white version); ask for it if missing.
+- **Datos sensibles** (N25): choose ONE criterion for the whole video: all demo data, or blur uniformly everywhere. List the categories (taxpayer identity: RUC, name, email, phone; third-party RUC/name; claves de acceso; amounts; browser paths with the OS user) and where each appears (every table, profile, header, chrome:// pages). Goes to `censor:`.
 - **Historia / escenario** (N4): one sentence (e.g. "conociste a una persona en una feria"). The hook, the demo data and the narration all carry it: Origen "Feria", a note "Conocido en la feria …" ≤ 30 chars (C6). No scenario → write "ninguna"; the hook then states a plain problem.
 - **Destino del CTA** (N8): where to watch the full tutorial / do the action (perfil, canal de YouTube, web). Ask the user; if unknown, propose "en el enlace de nuestro perfil" marked as proposed.
 - **Flujo propuesto**: numbered, one action with a visible result per step (E2); mark login and optional fields (with their selectors) so RED can omit them (RED3, `videos[].omit`).
@@ -53,11 +55,11 @@ Use at the start of every video, whatever the input: live app URL, demo credenti
 3. Store credentials (if any); fill Acceso with `env:NAME` names and the account role.
 4. Each reference video: read `transcript.txt` whole, view the keyframes; record screens, terms and flow with source `(video <name> mm:ss)`.
 5. Read the project source; record features, rules and selectors with source `(código <path>:<line>)`.
-6. Fill Objetivo, Audiencia, Tipo de video, Enfoque, Dispositivo, Glosario, Paleta, Historia, Destino del CTA, Flujo propuesto, Datos de la serie and Datos de ejemplo.
+6. Fill Objetivo, Audiencia, Tipo de video, Enfoque, Dispositivo, Glosario, Paleta (+ logo variant), Datos sensibles, Historia, Destino del CTA, Flujo propuesto, Datos de la serie and Datos de ejemplo.
 7. Verify access: rehearse the login in ego-browser (`tutorial-ensayo-captura` rehearsal rules). Mark "Login verificado"; note 2FA/CAPTCHA/SSO.
 8. Write remaining doubts under Preguntas abiertas; ask only those that block the script.
 9. Hand off to `tutorial-guion`.
 
 ## Output Contract
 
-Report: brief path, objective and audience (proposed or given), video types per output, device, glossary terms, palette (hex + source), story, CTA destination, sources used, credential names stored (names only), login verification result, open questions.
+Report: brief path, objective and audience (proposed or given), video types per output, device, glossary terms, palette (hex + source), logo variant, sensitive-data criterion, story, CTA destination, sources used, credential names stored (names only), login verification result, open questions.

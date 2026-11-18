@@ -14,7 +14,7 @@ Use after the take, or whenever any narration, voice or style changes. Rules by 
 ## Hard Rules
 
 - Command: `.venv/Scripts/python.exe tools/tts.py <slug>` (online, needs GEMINI_API_KEY) or `--offline` (silent clips of estimated length, no cost; smoke tests and timing drafts only).
-- Output per video id: `proyectos/<slug>/audio/voice/<id>/{opening, requirements?, <step>, closing}.wav` + `durations.json`. Each step uses `videos[].narration[step]` when set, else the step's `narration`. The cache keys clips by text hash + voice + style, so identical text in two videos is synthesized once. Every clip is trimmed of leading/trailing silence (~60 ms kept) before measuring, so `durations.json` is the real spoken length (N1, A2).
+- Output per video id: `proyectos/<slug>/audio/voice/<id>/{opening, requirements?, <step>, closing?}.wav` (TUT closing optional, N27) + `durations.json`. Each step uses `videos[].narration[step]` when set, else the step's `narration`. The cache keys clips by text hash + voice + style, so identical text in two videos is synthesized once. Every clip is trimmed of leading/trailing silence (~60 ms kept) before measuring, so `durations.json` is the real spoken length (N1, A2).
 - Do not delete the voice directory to "refresh": changing one narration re-synthesizes only that clip. Changing `voice` or `style` regenerates every clip of every video (billed per character): confirm with the user first.
 - Style must keep español neutro de Ecuador and trato de tú (L1, L4); never a voseo or regional style.
 - Never ship offline (silent) clips: rerun online before the final render.

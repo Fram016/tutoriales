@@ -7,15 +7,17 @@ Pipeline local que convierte **una app + un flujo** (modo A, también a partir d
 
 Incluye voz comercial en español neutro de Ecuador con trato de tú (Gemini TTS), música por tipo de video (Lyria) que baja sola cuando habla la voz, audio a -14 LUFS con picos < -1 dBTP, cámara con zoom de detalle, cursor de tamaño constante, subtítulos y la marca de cada tutorial.
 
-**Reglas normativas:** [`reglas/reglas-video.md`](reglas/reglas-video.md) (IDs E, C, O, R, T, L, A, V, TUT, RED, PRO, NOV; de la segunda prueba, C7–C10 y N1–N9; de la tercera, C1 revisada y N10–N12). Los skills, `tools/lint.py` y `tools/qa.py` las citan por ID.
+**Reglas normativas:** [`reglas/reglas-video.md`](reglas/reglas-video.md) (IDs E, C, O, R, T, L, A, V, TUT, RED, PRO, NOV; de la segunda prueba, C7–C10 y N1–N9; de la tercera, C1 revisada y N10–N12; del tutorial Perseo XML, N13–N27). Los skills, `tools/lint.py` y `tools/qa.py` las citan por ID.
 
 **Zoom y formularios:** detalle 1,4–1,8× (C1). En un formulario la cámara no se mueve campo por campo: un solo plano ajustado al formulario completo (1,1–1,5×, nunca > 1,8×; N10), el campo activo con recuadro del color primario y un leve oscurecimiento del resto (N11) y, en 9:16, el formulario entero a lo ancho (N12).
+
+**Ronda 4 (N13–N27):** cada resaltado se verifica visible y con el texto que nombra la narración (la toma falla si no); un paso = una acción del usuario; 2+ flujos se dividen en partes (`parts`, "Parte N · Paso M"); un indicador muestra si se trabaja en la página o en la extensión (`context`); un subtítulo = una oración; banda ≤ 135 px; sin bordes negros; la ventana de la extensión entera y sin anuncios (`surfaces.<name>.hide`); logo en variante clara; censura uniforme definida en el brief (también en páginas `chrome://`); el cierre del TUT es opcional.
 
 ## Tipos de video
 
 | Tipo | Para qué | Formato | Duración | Apertura → cierre |
 | --- | --- | --- | --- | --- |
-| TUT | completar una tarea | 16:9 | libre (capítulos si > 5 min) | objetivo → siguiente video |
+| TUT | completar una tarea | 16:9 | libre (partes si hay 2+ flujos o > 5 min) | objetivo → resultado final (siguiente video solo si se pide) |
 | RED | atraer y llevar al tutorial | 9:16 | 15–35 s | gancho → llamado a la acción |
 | PRO | convencer de usar el producto | según canal | 20–60 s | problema → logo y llamado a la acción |
 | NOV | anunciar un cambio | 16:9 o 9:16 | 15–30 s | qué cambió → enlace al tutorial |

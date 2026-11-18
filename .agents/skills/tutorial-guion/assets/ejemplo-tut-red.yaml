@@ -65,7 +65,7 @@ videos:
     steps: all
     opening: {narration: "Aprendes a registrar productos."}     # <= 4 words; the card shows only `title` (N2)
     requirements: {narration: "Necesitas una cuenta con permiso de inventario.", text: "Requisito: permiso de inventario"}
-    closing: {narration: "Siguiente: ajustar stock.", text: "Siguiente video: ajustar el stock"}   # <= 3 words spoken
+    # no closing (N27): the video ends on the final result; add one only if the user asks
     music: {prompt: "Calm mood, soft warm pads, gentle piano, slow tempo"}     # TUT: suave o ninguna
   - id: redes
     type: RED

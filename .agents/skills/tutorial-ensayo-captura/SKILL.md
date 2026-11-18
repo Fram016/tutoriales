@@ -1,10 +1,10 @@
 ---
 name: tutorial-ensayo-captura
-description: "Trigger: ensayo, ensayar, grabar pantalla, captura, grabar la toma, toma, selectores, capture, rehearsal, record screen, take, selectors, ego-browser, ego lite. Rehearses the flow in ego-browser to find robust selectors (including focus/result/highlight targets), then records the single take for every video with tools/capture.py."
+description: "Trigger: ensayo, ensayar, grabar pantalla, captura, grabar la toma, toma, selectores, capture, rehearsal, record screen, take, selectors, ego-browser, ego lite, censura, difuminar, anuncios, hide. Rehearses the flow in ego-browser to find robust selectors (including focus/result/highlight targets), then records the single take for every video with tools/capture.py."
 license: Apache-2.0
 metadata:
   author: tutoriales
-  version: "2.1"
+  version: "2.2"
 ---
 
 ## Activation Contract
@@ -18,7 +18,10 @@ Use after tutorial.yaml passes `tools/lint.py` and before tts/edit. Two phases: 
 - Snapshot `@refs` are not stable and the recorder does not understand them or `loc=`. Write only raw CSS (`document.querySelector`, first match, top document), `text=…` or `xpath=…`. Prefer `#id`, `[name=…]`, `[data-testid=…]`, then `text="Exact label"`.
 - The camera only follows logged boxes (C1, C3, R1–R3, V1, V2): every element the narration mentions or the viewer must read needs a selector in an action. Use `result: SEL` for every confirmation (toast, saved message), `highlight: SEL` for every new element (new row, card, menu item), `focus: SEL` for something read without a click.
 - `result`/`highlight` targets must exist and be visible when the action runs: put `wait: SEL` first, and check transient elements (a toast that hides after ~2.5 s) are still on screen in rehearsal.
-- The recorder does not reach into iframes or shadow DOM; use `goto` to the frame/page URL instead.
+- N13: rehearse EVERY clicked/highlighted/focused selector and confirm it is VISIBLE (non-empty box, `elementFromPoint` at its center hits it or a descendant) and its visible text is what the narration names. Pages often keep hidden duplicates (the SRI side menu repeats "Consultas", "Comprobantes electrónicos recibidos"): scope to the visible container (`xpath=//li[contains(@class,'sri-listaLinks')]/a[...]`), never the first DOM match. The recorder logs `target_ok`/`target_text`; the take FAILS when `target_ok` is false.
+- N23: inspect each surface (extension popup) and list its promos (cards, carousels, "Únete gratis") in `surfaces.<name>.hide: [CSS...]`; they are hidden before any frame.
+- N25: apply the brief's Datos sensibles criterion uniformly: `censor.text` (`env:` values) + `censor.selectors` for the same columns in EVERY table shown (emitidos and recibidos alike: identity, third-party RUC/name, claves de acceso, montos). Browser pages reached with `follow: tab` (chrome://settings) are censored too (folder path with the Windows user); check them in rehearsal frames.
+- The recorder does not reach into iframes; use `goto` to the frame URL instead. chrome:// pages: censor pierces shadow roots or falls back to `censor.regions`.
 - 2FA, CAPTCHA or SSO: call `task.handOff()` during rehearsal, explain what the user must do, resume with `takeOverTaskSpace(id)`. capture.py has no handOff: prefer a demo account without 2FA; otherwise rely on the session left in the profile and start after login.
 - Credentials come from `proyectos/<slug>/acceso.local.yaml` (or `.env`) via `env:NAME`. In rehearsal, read the file inside your own script only at the step that types them; never print, log, snapshot-report or return the values.
 - Try selectors learned from source code first and confirm them in rehearsal.
@@ -27,14 +30,15 @@ Use after tutorial.yaml passes `tools/lint.py` and before tts/edit. Two phases: 
 - N10, N12: for type/select/click/focus it also logs `form_box` = the closest form container (`form`, `fieldset`, `[role=dialog]`, `dialog`, `.modal`/card-like element with ≥ 2 fields), viewport-clamped. compose builds the form shot from it.
 - Long commands: run `capture.py` with the harness background runner (`bash_background`) or a timeout ≥ 900 s, never a short shell timeout; check the exit code and the log tail.
 - Recapture only when the take itself is wrong (selector, missing `wait:`/`result:`/`highlight:`, wrong screen, private data); voice, `omit` and composition fixes never need a new take.
-- C4: the take must not show long blank loads; add `wait: SEL` for the loaded content instead of `pause:` (edit cuts near-blank frames, but a missing wait shows the spinner).
+- C4, N26: the take must not show long blank loads or two pages mixed; add `wait: SEL` for the loaded content instead of `pause:` (edit cuts blank/mixed frames, but a missing wait shows the spinner).
 
 ## Execution Steps
 
-1. REHEARSAL: open `app_url`, snapshot, and for each step run its actions exactly as written (same selector strings via `page.click`/`fill`/`waitForSelector`; for focus/result/highlight check `querySelector` returns a visible element with a non-empty box). For every form step confirm the form container: `el.closest('form, fieldset, [role=dialog], dialog, .modal, .card')` on each typed field returns ONE visible element whose box contains every field and label of the step and fits the viewport; note its selector. Snapshot after each step and confirm the result.
+1. REHEARSAL: open `app_url`, snapshot, and for each step run its actions exactly as written (same selector strings via `page.click`/`fill`/`waitForSelector`; for every click/focus/result/highlight check the N13 visibility + text match above and print only booleans and the matched text when it is not sensitive). For every form step confirm the form container: `el.closest('form, fieldset, [role=dialog], dialog, .modal, .card')` on each typed field returns ONE visible element whose box contains every field and label of the step and fits the viewport; note its selector. Snapshot after each step and confirm the result.
 2. Fix tutorial.yaml: replace guessed selectors, add `wait:` for async results, add missing `result:`/`highlight:`, use `pause:` only where nothing observable exists. Rerun `tools/lint.py <slug>`.
 3. Browser extensions: `goto: chrome-extension://<id>/popup.html`; take the id from `chrome://extensions` during rehearsal.
-4. TAKE: `.venv/Scripts/python.exe tools/capture.py <slug>` → `proyectos/<slug>/capture/{frames/, frames.json, actions.json}`. It prints `[take] paso <id> ok` per step and the measured fps.
+4. Surfaces: list promo selectors for `hide` (N23); confirm the summary selector after each download (N18). Censor: grab one frame per screen (also chrome:// pages) and confirm every sensitive category is blurred (N25).
+5. TAKE: `.venv/Scripts/python.exe tools/capture.py <slug>` → `proyectos/<slug>/capture/{frames/, frames.json, actions.json}`. It prints `[take] paso <id> ok` per step and the measured fps.
 
 ## Failure handling
 
@@ -48,4 +52,4 @@ Frames are CDP screenshots at ≈10-14 fps; edit.py interpolates to 30 fps. Scre
 
 ## Output Contract
 
-Report: selectors changed, result/highlight/focus targets confirmed, form container per form step (or "none found": no form shot possible), take result (frames, fps, steps), and any step that relies on an existing login session.
+Report: selectors changed, click/result/highlight/focus targets confirmed visible with their text (N13), `hide` selectors (N23), censor coverage per screen (N25), form container per form step (or "none found": no form shot possible), take result (frames, fps, steps), and any step that relies on an existing login session.

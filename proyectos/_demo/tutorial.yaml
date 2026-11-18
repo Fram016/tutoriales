@@ -62,7 +62,7 @@ videos:
     steps: all
     opening:            # <= 4 words; the card shows only the title (N2)
       narration: "Aprendes a registrar clientes."
-    closing:            # <= 3 words spoken (A2); the card carries the rest
+    closing:            # optional in TUT (N27); kept here so the smoke covers the closing card. <= 3 words spoken (A2)
       narration: "Siguiente: editar clientes."
       text: "Siguiente video: editar un cliente"
     music:

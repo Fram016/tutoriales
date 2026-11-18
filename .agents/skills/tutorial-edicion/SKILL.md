@@ -26,13 +26,13 @@ Use after capture and tts (tts trims each clip's leading/trailing silence, keepi
 
 | Rule | What edit does | If it still fails, change |
 | --- | --- | --- |
-| C4 | cuts near-blank frames (loads); speeds idle/waits ≤ 3× (faster for RED, RED3) | add `wait: SEL` for loaded content, recapture |
+| C4, N26 | cuts near-blank and mixed frames (loads, navigation transitions); speeds idle/waits ≤ 3× (faster for RED, RED3) | add `wait: SEL` for loaded content, recapture |
 | C6 | typing at 13.5 chars/s; > 30 chars: ×3 after the first 15 | shorten the typed demo text |
 | TUT4 | TUT: ≥ 1.5 s hold after each step's result/highlight | add `result:`/`highlight:` to that step |
 | R2 | every `result` event visible ≥ 0.8 s | `result: SEL` right after its `wait:` |
 | A2 | step = max(warped actions, voice + lead + tail); compresses action spans so voice gaps ≤ 1.0 s; closing ≤ 2.5 s | lengthen the step narration to cover the action, shorten the closing |
 | E1 | opening ≤ 3 s (RED hook 1–2 s) | shorten `opening.narration` |
-| N1 | places each step's voice so the instruction sentence ends ≤ 0.3 s after its action; inserts a pre-action hold when the narration is longer than the lead-in | shorten the instruction (one per step) |
+| N1, N14 | places each step's voice so the instruction sentence ends ≤ 0.3 s after its action and effect sentences play over their effect; inserts a pre-action hold when the narration is longer than the lead-in | shorten the instruction (one per step) |
 | N6, R2 | the toast/result window is always kept, at 1.0× speed (never sped up) for ≥ R2 clean time + margin, and exempt from C4 cuts | `result: SEL` on the toast |
 | RED3 | `videos[].omit`: typing/select events on those selectors are cut from that video; the step stays | list only optional selectors |
 
