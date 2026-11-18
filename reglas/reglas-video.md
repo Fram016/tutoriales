@@ -259,3 +259,58 @@ Propósito: informar un cambio o una nueva función a usuarios actuales.
 El horizontal debe generarse como TUT. Hoy le faltan el objetivo (TUT1) y el siguiente video (TUT1).
 
 El vertical debe generarse como RED, no como TUT recortado. Hoy le faltan el gancho (RED1) y el llamado a la acción (RED1). Además incluye el login (RED3) y es más largo de lo necesario: 41 s cuando debería durar 15–35 s (RED2).
+
+## Parte 4: Observaciones de la segunda prueba (texto del usuario)
+
+### Tutorial (horizontal, 39 s)
+
+- Todo el video está en zoom. Nunca se ve la pantalla completa, así que no se entiende dónde está cada cosa dentro del sistema.
+- El texto va desfasado. “Haz clic en Nuevo contacto” aparece con el formulario ya abierto (≈0:16), y “Haz clic en Guardar contacto” aparece sobre la lista ya guardada (≈0:31).
+- Hay texto repetido. La etiqueta “Paso 5 · Guarda el contacto” y el subtítulo “Haz clic en Guardar contacto” dicen lo mismo.
+- La apertura es redundante. “Cómo crear un contacto en Nexo CRM” y “Aprende a crear un contacto” repiten la misma idea.
+- Los subtítulos flotan sobre la interfaz. Quedan en medio de la pantalla, encima del campo Notas y de la tabla.
+- El formulario está fijo unos 12 s (de 0:16 a 0:28) con el mismo encuadre. Se vuelve monótono.
+- El encuadre corta el formulario: la etiqueta “Nombre” queda cortada arriba.
+- No se ve el aviso de confirmación. Pasa directo del botón Guardar a la lista.
+- Se perdió la historia. Ya no hay contexto de la feria ni nota, y “Feria” se elige como origen sin explicación.
+- Los colores no son los del sistema.
+- El número de “Paso”, la línea bajo el título y el contorno de la fila nueva son naranjas, mientras que todo el CRM es morado.
+- Los subtítulos son cajas negras puras que se ven pesadas sobre la interfaz clara.
+- El video parece de otra marca que la del producto.
+
+### Redes (vertical, 21 s)
+
+- Abre en “Paso 3”. Confunde, porque en redes nadie vio los pasos 1 y 2.
+- Se cortan campos a la derecha (“Ape”, “Carg”, “Telé”), y se escribe “Vera” en un campo que no se ve (≈0:08).
+- El encuadre salta entre pantalla llena y franjas moradas arriba y abajo (≈0:03 y ≈0:14).
+- Hay un fotograma casi vacío con el clic sobre la nada (≈0:14).
+- El gancho no se cumple. Promete la historia de la feria y después no la muestra.
+- El cierre “Mira el tutorial completo” no dice dónde verlo.
+- Tiene el mismo texto repetido que el tutorial (etiqueta y subtítulo).
+- Los colores no son los del sistema: naranja en las etiquetas, la línea del gancho y el resaltado, más cajas negras en los subtítulos, que no combinan con el morado del CRM ni con las franjas moradas del fondo.
+
+### Lo que sí funciona
+
+- El resaltado de la fila nueva se ve claramente (aunque debería ser morado).
+- El gancho del vertical funciona como apertura.
+- La duración del vertical (21 s) es adecuada.
+- El tutorial cierra con el siguiente video.
+- El trato de “tú” es correcto en todo el video.
+
+### Reglas derivadas (decisiones de implementación, ronda 2)
+
+Cada observación se convierte en una regla verificable. ID entre corchetes.
+
+- **[C7] Plano de ubicación.** Al entrar a cada pantalla nueva se muestra la pantalla completa (1,0×, hasta 1,0 s, respetando C1) y luego zoom interpolado al primer elemento. Nunca todo el video en zoom.
+- **[C8] Encuadre vivo.** Ningún encuadre idéntico dura más de 4 s en TUT ni 3 s en RED: en formularios la cámara acompaña campo por campo.
+- **[C9] Encuadre completo del control.** El encuadre de un campo incluye su etiqueta visible; nada del control activo queda cortado (V2 también en 16:9).
+- **[C10] Corte en cambio de pantalla.** Cuando la pantalla cambia, la cámara corta al nuevo encuadre; no hay paneo sobre zonas vacías ni clic sobre la nada.
+- **[N1] Sincronía.** La narración y el subtítulo que piden una acción terminan antes de que la acción ocurra (o como máximo 0,3 s después del clic); nunca describen algo que ya pasó.
+- **[N2] Sin texto repetido.** La etiqueta muestra solo “Paso N” (TUT); el título del paso no se repite en el subtítulo. En la apertura, la tarjeta y la narración no dicen la misma idea dos veces.
+- **[N3] Subtítulos en banda.** Los subtítulos van en una banda fija fuera de la interfaz (abajo en 16:9; banda dedicada en 9:16), nunca flotando sobre campos o tablas.
+- **[N4] Historia coherente.** Si la apertura plantea una historia (por ejemplo la feria), los datos de ejemplo y la narración la cumplen y explican cada dato elegido (Origen “Feria”, nota con el contexto).
+- **[N5] Colores del sistema.** Etiquetas, líneas, resaltados y bandas usan la paleta de la app (primario, oscuro y claro de la interfaz). Prohibido introducir colores ajenos a la marca. Subtítulos sin cajas negras puras.
+- **[N6] Aviso visible.** R2 prevalece sobre C4: el aviso de confirmación siempre se muestra (≥ 800 ms) y su ventana queda exenta de C4.
+- **[N7] Redes sin numeración.** En RED no se muestran etiquetas “Paso N”.
+- **[N8] Llamado a la acción con destino.** El cierre de RED y PRO dice dónde ver o hacer la acción (“en el enlace del perfil”, “en nuestro canal de YouTube”).
+- **[N9] Encuadre vertical estable.** En 9:16 la composición es una sola: no alterna entre pantalla llena y franjas.
