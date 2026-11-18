@@ -240,3 +240,40 @@ class RegexFlagsTest(NodeCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShadowTargetTest(NodeCase):
+    """N14 + L2: "nunca se ve la configuración ni el botón Cambiar": chrome://settings keeps "Change" inside
+    nested open shadow roots, so a CSS target must be found there when the page has no plain match."""
+
+    FAKE = """(() => {
+      const el = (id, children = [], shadow = null) => ({ id, shadowRoot: shadow,
+        querySelectorAll(sel) { const all = []; const rec = (n) => { for (const c of n.children) { all.push(c); rec(c); } };
+          rec(this); return all.filter((c) => sel === '*' || sel === '#' + c.id); }, children });
+      const button = el('changeDownloadsPath');
+      const inner = el('inner-root', [el('controlled', [button])]);
+      const host = el('settings-ui', [], inner);
+      const page = el('doc', [host]);
+      const plain = el('doc2', [el('plain'), el('changeDownloadsPath')]);
+      return { page, plain };
+    })()"""
+
+    def match(self, which, sel):
+        return self.node("locateSource", f"""(() => {{
+          const fake = {self.FAKE};
+          globalThis.document = fake.{which};
+          const src = locateSource('#x');
+          const start = src.indexOf('function matchTargets');
+          const end = src.indexOf(String.fromCharCode(10) + 'function ', start + 10);
+          const fn = new Function(src.slice(start, end > 0 ? end : undefined) + '; return matchTargets;')();
+          return fn({json.dumps(sel)}).els.map((e) => e.id);
+        }})()""")
+
+    def test_css_target_inside_nested_shadow_roots_is_found(self):
+        self.assertEqual(self.match("page", "#changeDownloadsPath"), ["changeDownloadsPath"])
+
+    def test_plain_match_wins_without_searching_shadow_roots(self):
+        self.assertEqual(self.match("plain", "#changeDownloadsPath"), ["changeDownloadsPath"])
+
+    def test_no_match_anywhere_is_empty(self):
+        self.assertEqual(self.match("page", "#nada"), [])
