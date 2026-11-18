@@ -325,3 +325,85 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
 - **[N10] Plano de formulario.** Cuando la acción ocurre dentro de un formulario (form, diálogo o tarjeta con varios campos), el encuadre muestra el formulario completo, ajustado a su tamaño (en general 1,1–1,5×, nunca por encima de 1,8×), y no se mueve campo por campo. Si el formulario no entra legible, se divide en el menor número de encuadres posible, de arriba hacia abajo.
 - **[N11] Recuadro del campo activo.** El campo activo se marca con un recuadro del color primario de la marca y un leve oscurecimiento del resto del cuadro (spotlight, opacidad ≤ 25 %). El recuadro se desplaza de campo en campo con una animación de 250–400 ms. Ese desplazamiento cuenta como cambio visual para C8.
 - **[N12] Formularios en vertical.** En 9:16 el formulario se encuadra entero a lo ancho; ningún campo ni etiqueta queda cortado en los bordes (V2).
+
+## Parte 6: Observaciones del tutorial Perseo XML (texto del usuario)
+
+> “El que me interesa es el Perseo xml tutorial nos basaremos en ese Tenías razón, hay bastantes. Revisé el video completo (93 s, 10 pasos). Te las ordeno de más a menos grave.”
+
+### Errores graves
+
+- Hay resaltados sobre zonas vacías. El recuadro naranja aparece sobre un rectángulo en blanco que no corresponde a nada (≈0:12, ≈0:15, ≈0:23). El espectador no sabe dónde hacer clic.
+- Algunos resaltados marcan el elemento equivocado. El subtítulo dice “Haz clic en Comprobantes electrónicos emitidos”, pero el recuadro está sobre “Certificados” (≈0:27).
+- El texto no coincide con la pantalla.
+  - “Abre Perseo XML y haz clic en Carpeta de descargas” aparece sobre la página del SRI, sin Perseo abierto (≈0:07).
+  - “En la configuración, con Cambiar eliges dónde se guardan tus XML”: nunca se ve la configuración ni el botón Cambiar (≈0:08–0:15).
+  - “El resumen muestra cuántos comprobantes se descargaron” aparece sobre la tabla del SRI, no sobre el resumen (≈0:54).
+  - “Haz clic en Consultar. Aparece la lista” llega cuando la lista ya está en pantalla (≈1:13).
+- Hay una pantalla en blanco. Durante “Ahora vuelve a Consultas…” no se ve nada (≈0:58).
+- Algunos fotogramas mezclan dos vistas. Se ven dos pantallas pegadas, con textos cortados como “Cr / usu” (≈0:27).
+
+### Estructura y guion
+
+- No todos los pasos son acciones. “Paso 3: Se abre el formulario”, “Paso 7: Se abre su formulario” y “Paso 8: El tipo Factura ya viene elegido” describen lo que pasa, no lo que hace el usuario. Inflan el conteo a 10 pasos.
+- El Paso 1 mezcla dos tareas: abrir Perseo XML y configurar la carpeta de descargas.
+- El video tiene dos flujos casi iguales sin separarlos: descargar emitidos y descargar recibidos. Debería dividirse en partes:
+  - Parte 1: Configurar la carpeta
+  - Parte 2: Comprobantes emitidos
+  - Parte 3: Comprobantes recibidos
+- El protagonista se pierde. El tutorial es de Perseo XML, pero la mayor parte del tiempo se navega el SRI. Perseo aparece al inicio, en el Paso 6 y en el Paso 10. Hay que dejar claro cuándo se trabaja en el SRI y cuándo en Perseo.
+- El requisito es ambiguo. “Perseo XML instalada” no aclara qué es. Mejor: “Necesitas la extensión Perseo XML instalada y tu sesión del SRI abierta”.
+- El resumen de descarga solo se muestra al final (Paso 10). En el Paso 6, que es la primera descarga, no se ve el resultado.
+
+### Texto y subtítulos
+
+- Hay frases cortadas entre subtítulos.
+  - “…anterior a hoy. Para una consulta corta, / elige el establecimiento…”
+  - “Mientras trabaja, el botón dice En proceso. Al terminar, / el resumen muestra…”
+- Algunos subtítulos son muy largos: dos instrucciones en un solo bloque, como “Abre Perseo XML. En Comprobantes emitidos, haz clic en XML Desde el RIDE.”
+
+### Encuadre y composición
+
+- El encuadre no es coherente.
+  - Hay planos donde la página del SRI ocupa solo una parte del cuadro, con negro alrededor (≈0:07).
+  - Otros planos muestran formularios y tablas completos con letra diminuta (≈0:27, ≈0:42).
+  - Y otros tienen zoom fuerte.
+- La ventana de Perseo aparece cortada en el borde derecho (≈1:25), justo cuando muestra el resumen “6 descargados, 0 con error”.
+- La franja negra inferior es fija y quita espacio. Ocupa alrededor de 1/6 de la pantalla todo el video, mientras el contenido arriba se ve pequeño.
+- Los anuncios de la ventana de Perseo distraen. Club Perseo, Facturito y “Únete gratis” se ven y cambian en cada aparición, mientras se intenta explicar dónde hacer clic.
+
+### Color y marca
+
+- El logo de Perseo casi no se ve en la intro y el cierre. El texto “Perseo” es gris oscuro sobre fondo negro; solo se distingue la “P”.
+- El naranja de las etiquetas y resaltados sí es coherente con Perseo, pero contrasta fuerte con el azul del SRI. Ayuda a distinguir cuándo se está en cada sistema, pero conviene usarlo solo para Perseo y los resaltados.
+
+### Datos sensibles
+
+- El difuminado no es parejo. En los comprobantes recibidos se difuminan el RUC y los nombres, pero en los emitidos se ven completas las claves de acceso y los montos. Define un criterio: o todo es dato de demostración, o se difumina igual en todo el video.
+
+### Lo que funciona
+
+- La pantalla de requisito previo.
+- El cierre con “Siguiente video: importar los XML en Perseo”.
+- El audio está bien nivelado (−14 LUFS).
+- Las etiquetas de paso son consistentes y legibles.
+- El trato de “tú” es correcto en todo el video.
+
+> “y quita el ultimo espacio que dice siguiente video no es necesario. Y el logo de Perseo al inicio no se distingue”
+
+### Reglas derivadas (ronda 4)
+
+- **[N13] Resaltado verificado.** Todo elemento resaltado o clicado debe estar visible en su caja (no oculto, no vacío, en el punto de clic está el propio elemento) y su texto visible debe coincidir con lo que nombra la narración. Si no hay coincidencia, la toma falla.
+- **[N14] Lo narrado está en pantalla.** Mientras la narración o el subtítulo mencionan algo (Perseo abierto, la configuración, el botón Cambiar, el resumen, la lista), eso debe verse en ese momento. Una instrucción termina antes de que ocurra su efecto (refuerza N1).
+- **[N15] Paso = acción del usuario.** Lo que “pasa” (se abre un formulario, un valor ya viene elegido) no es un paso: va en la narración del paso anterior o siguiente. Un paso = una sola tarea.
+- **[N16] Partes.** Cuando el video tiene dos o más flujos (aunque dure menos de 5 min), se divide en partes con separador “Parte N: título” y etiqueta “Parte N · Paso M” (E3/TUT3 aplicados a flujos, no solo a la duración).
+- **[N17] Contexto visible.** Un indicador muestra dónde se trabaja: “En el SRI” o “En Perseo XML”. El color de marca de Perseo se usa solo para Perseo y para los resaltados; el contexto SRI usa un color neutro.
+- **[N18] Resultado de cada descarga.** Después de cada descarga se muestra el resumen de la extensión (cantidad descargada y errores) en detalle.
+- **[N19] Subtítulos por oración.** Un bloque de subtítulo = una oración = una instrucción. Nunca se corta una oración entre dos bloques (si no entra, se reescribe más corta).
+- **[N20] Escala coherente y legible.** Sin bordes negros alrededor de la página (sin pillarbox). Texto de la interfaz legible en todo momento (letra de la interfaz ≥ 16 px en la salida); el zoom se mantiene en un rango estable sin saltos bruscos.
+- **[N21] Banda delgada.** La banda de subtítulos ocupa como máximo 1/8 de la altura (≤ 135 px en 1080).
+- **[N22] Superficies completas.** La ventana de la extensión nunca queda cortada por el borde del cuadro.
+- **[N23] Sin anuncios.** Las promociones de la ventana de la extensión (tarjetas, carruseles, “Únete gratis”) se ocultan en la toma.
+- **[N24] Logo legible.** El logo se muestra en su variante clara sobre fondos oscuros (o sobre un fondo claro), con contraste ≥ 3:1.
+- **[N25] Censura uniforme.** Criterio del proyecto Perseo XML: se difuminan en todo el video la identidad del contribuyente (RUC, nombre, correo, teléfono), el RUC y la razón social de terceros, las claves de acceso y los montos, en todas las tablas por igual. Las páginas del navegador (configuración) también se censuran (ruta de carpeta con el usuario de Windows).
+- **[N26] Sin pantallas en blanco ni vistas mezcladas.** Las cargas y transiciones de navegación se cortan; nunca se ven dos páginas pegadas o superpuestas en un mismo cuadro.
+- **[N27] Cierre opcional.** “quita el ultimo espacio que dice siguiente video no es necesario”: la tarjeta de cierre ya no es obligatoria en TUT; si no hay cierre, el video termina en el resultado final (sustituye la parte de cierre de E1/TUT1).
