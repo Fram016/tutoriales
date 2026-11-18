@@ -1,0 +1,71 @@
+# Example tutorial.yaml v2 (fictitious app): one step list, a TUT 16:9 and a RED 9:16.
+# Rules by ID: reglas/reglas-video.md. Selectors are illustrative; confirm them in rehearsal.
+title: "Cómo registrar un producto en Stocko"
+product: "Stocko"
+app_url: http://127.0.0.1:9000/
+viewport: [1920, 1080]
+language: es-EC
+device: desktop                      # L2: "haz clic"
+brand: {dir: brand, primary: "#0f766e", accent: "#f59e0b", background: "#0b1220", text: "#ffffff", font: "Inter"}
+glossary:                            # L3
+  producto: [artículo, ítem, mercadería]
+music: {prompt: "Soft corporate ambient, warm pads, light percussion, calm"}
+
+steps:                               # E2: one action with a visible result per step
+  - id: login                        # TUT5: first video of the series only
+    title: "Inicia sesión"
+    narration: "Ingresa a Stocko con tu correo y tu contraseña."
+    actions:
+      - type: {into: "#email", text: "env:STOCKO_USER"}
+      - type: {into: "#password", text: "env:STOCKO_PASSWORD"}
+      - click: "#btn-login"
+      - wait: "#nav-productos"
+  - id: productos                    # obvious navigation: RED omits it (RED3)
+    title: "Abre Productos"
+    narration: "En el menú de la izquierda, haz clic en Productos."
+    actions:
+      - click: "#nav-productos"
+      - wait: "#btn-nuevo"
+  - id: nuevo
+    title: "Abre el formulario"
+    narration: "Haz clic en Nuevo producto para abrir el formulario."
+    actions:
+      - click: "#btn-nuevo"
+      - wait: "#p-nombre"
+  - id: datos                        # the whole form is ONE step
+    title: "Completa los datos"
+    narration: "Completa el nombre, el precio, la categoría y una nota corta para tu equipo."
+    actions:
+      - type: {into: "#p-nombre", text: "Café molido 500 g"}
+      - type: {into: "#p-precio", text: "6.50"}
+      - select: {in: "#p-categoria", option: "Bebidas"}
+      - type: {into: "#p-nota", text: "Proveedor local"}   # C6: short demo text
+  - id: guardar
+    title: "Guarda el producto"
+    narration: "Haz clic en Guardar producto. Aparece el aviso y tu producto queda primero en la lista."
+    actions:
+      - click: "#btn-guardar"
+      - wait: "#toast"
+      - result: "#toast"                         # R1/R2: confirmation in detail, >= 0.8 s clean
+      - highlight: "#tabla tbody tr:first-child"  # R3: new row outlined in accent
+
+videos:
+  - id: tutorial
+    type: TUT
+    format: "16:9"
+    steps: all
+    opening: {narration: "En este video aprendes a registrar productos.", text: "Aprende a registrar un producto"}
+    requirements: {narration: "Necesitas una cuenta con permiso de inventario.", text: "Requisito: permiso de inventario"}
+    closing: {narration: "Siguiente video: ajustar el stock.", text: "Siguiente: ajustar el stock"}
+    music: {prompt: "Soft corporate ambient, warm pads, calm"}     # TUT: suave o ninguna
+  - id: redes
+    type: RED
+    format: "9:16"
+    steps: [nuevo, datos, guardar]   # no login, no obvious navigation; numbering stays 3, 4, 5
+    opening: {narration: "¿Tienes un producto nuevo?", text: "¿Llegó un producto nuevo?"}
+    closing: {narration: "Mira el tutorial completo.", text: "Mira el tutorial completo"}
+    narration:
+      nuevo: "En tu lista de productos, haz clic en Nuevo producto."
+      datos: "Completa el nombre, el precio y la categoría de tu producto."
+      guardar: "Haz clic en Guardar producto: aparece el aviso y tu producto queda primero."
+    music: {prompt: "Upbeat rhythmic pop, punchy drums, bright synths"}  # RED: rítmica

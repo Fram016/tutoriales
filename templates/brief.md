@@ -11,13 +11,34 @@
 
 <!-- Quién lo ve y qué ya sabe (p. ej. cajeros nuevos, sin conocimientos técnicos). -->
 
+## Tipo de video
+
+<!-- Uno por salida (reglas/reglas-video.md, Parte 3). Por defecto: TUT 16:9 + RED 9:16, ambos
+     desde la misma lista de pasos; el vertical es RED, nunca un TUT recortado. -->
+
+| id | Tipo (TUT/RED/PRO/NOV) | Formato | Duración objetivo | Apertura | Cierre |
+| --- | --- | --- | --- | --- | --- |
+| tutorial | TUT | 16:9 | libre (capítulos si > 5 min) | En este video aprendes a… | Siguiente video: … |
+| redes | RED | 9:16 | 15–35 s | Gancho: ¿…? | Mira el tutorial completo |
+
 ## Enfoque
 
 - Mostrar:
 - Omitir:
 - Tono:
-- Duración 16:9 (completo):
-- Duración 9:16 (resumen, ≤ 60-70 s):
+
+## Dispositivo
+
+<!-- L2: escritorio → "haz clic"; celular → "toca". -->
+
+- desktop / mobile:
+
+## Glosario
+
+<!-- L3: un término por concepto, definido antes del guion, con los sinónimos prohibidos.
+     Idioma: español neutro de Ecuador, trato de tú, sin voseo ni modismos (L1, L4). -->
+
+- contacto — no usar: cliente, prospecto, registro
 
 ## Fuentes
 
@@ -48,9 +69,18 @@
 
 1. 
 
+## Datos de la serie
+
+<!-- TUT7: los mismos datos ficticios en todos los videos de la serie (clientes, productos, empresa).
+     Textos cortos (C6). Nunca datos reales. -->
+
+- Empresa:
+- Personas:
+- Productos:
+
 ## Datos de ejemplo
 
-<!-- Datos ficticios a tipear (María González, maria@empresa.com, ...). Nunca datos reales. -->
+<!-- Datos ficticios a tipear en este video, tomados de Datos de la serie. -->
 
 - 
 

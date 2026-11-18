@@ -1,0 +1,190 @@
+{
+  "video": "redes",
+  "type": "RED",
+  "format": "9:16",
+  "status": "PASS",
+  "checks": [
+    {
+      "id": "tech.resolution",
+      "rule": "S3",
+      "status": "PASS",
+      "detail": "1080x1920 (esperado 1080x1920 para 9:16)"
+    },
+    {
+      "id": "tech.duration",
+      "rule": "S3",
+      "status": "PASS",
+      "detail": "19.80 s (timeline 19.78 ±0.3 s)"
+    },
+    {
+      "id": "tech.audio",
+      "rule": "A1",
+      "status": "PASS",
+      "detail": "aac"
+    },
+    {
+      "id": "A1.loudness",
+      "rule": "A1",
+      "status": "PASS",
+      "detail": "-13.8 LUFS (objetivo -14 ±1)"
+    },
+    {
+      "id": "A1.true_peak",
+      "rule": "A1",
+      "status": "PASS",
+      "detail": "pico -6.9 dBTP (< -1 dBTP)"
+    },
+    {
+      "id": "A2.silence",
+      "rule": "A2",
+      "status": "PASS",
+      "detail": "ningún silencio > 1 s"
+    },
+    {
+      "id": "C4.empty_frames",
+      "rule": "C4",
+      "status": "PASS",
+      "detail": "62 fotogramas con ≤ 70% vacío (fuera de apertura y cierre)"
+    },
+    {
+      "id": "S3.duration",
+      "rule": "RED2/V5",
+      "status": "PASS",
+      "detail": "19.8 s (RED: 15–35 s)"
+    },
+    {
+      "id": "E3.chapters",
+      "rule": "E3/TUT3",
+      "status": "PASS",
+      "detail": "0.3 min, sin capítulos"
+    },
+    {
+      "id": "A2.voice_gaps",
+      "rule": "A2",
+      "status": "PASS",
+      "detail": "ninguna pausa de voz > 1 s"
+    },
+    {
+      "id": "A2.closing_card",
+      "rule": "A2",
+      "status": "PASS",
+      "detail": "tarjeta de cierre 2.0 s (máximo 2.5 s)"
+    },
+    {
+      "id": "layout",
+      "rule": "L5",
+      "status": "PASS",
+      "detail": "hf-redes/layout.json"
+    },
+    {
+      "id": "O1.chip_overlap",
+      "rule": "O1",
+      "status": "PASS",
+      "detail": "3 etiquetas sin tapar elementos activos"
+    },
+    {
+      "id": "O1.chip_style",
+      "rule": "O1",
+      "status": "PASS",
+      "detail": "opacidad 100 % y contraste ≥ 4,5:1"
+    },
+    {
+      "id": "O2.caption_overlap",
+      "rule": "O2",
+      "status": "PASS",
+      "detail": "5 subtítulos sin tapar el elemento activo"
+    },
+    {
+      "id": "R1.detail",
+      "rule": "R1",
+      "status": "PASS",
+      "detail": "0 resultados en zoom de detalle"
+    },
+    {
+      "id": "R2.result_clear",
+      "rule": "R2",
+      "status": "PASS",
+      "detail": "0 resultados visibles ≥ 0.8 s y limpios"
+    },
+    {
+      "id": "T1.lines",
+      "rule": "T1",
+      "status": "PASS",
+      "detail": "≤ 2 líneas de ≤ 42 caracteres"
+    },
+    {
+      "id": "T1.duration",
+      "rule": "T1",
+      "status": "PASS",
+      "detail": "subtítulos ≥ 1.2 s"
+    },
+    {
+      "id": "T1.last_word",
+      "rule": "T1",
+      "status": "PASS",
+      "detail": "ninguna línea termina en artículo, preposición o conjunción"
+    },
+    {
+      "id": "T1.step",
+      "rule": "T1",
+      "status": "PASS",
+      "detail": "ningún subtítulo cruza un cambio de paso"
+    },
+    {
+      "id": "T2.font",
+      "rule": "T2",
+      "status": "PASS",
+      "detail": "letra ≥ 40 px (48 px)"
+    },
+    {
+      "id": "C1.context",
+      "rule": "C1",
+      "status": "PASS",
+      "detail": "planos generales ≤ 1 s"
+    },
+    {
+      "id": "C5.cursor",
+      "rule": "C5",
+      "status": "PASS",
+      "detail": "cursor fijo de 48 px"
+    },
+    {
+      "id": "V1.viewport",
+      "rule": "V1",
+      "status": "PASS",
+      "detail": "interfaz 100% del alto (mínimo 70%)"
+    },
+    {
+      "id": "V3.title",
+      "rule": "V3",
+      "status": "PASS",
+      "detail": "título solo en los primeros 3 s"
+    },
+    {
+      "id": "V4.safe_zones",
+      "rule": "V4",
+      "status": "PASS",
+      "detail": "etiquetas y subtítulos entre 288 y 1536 px"
+    },
+    {
+      "id": "L.captions",
+      "rule": "L1-L4",
+      "status": "PASS",
+      "detail": "5 subtítulos sin voseo, modismos ni sinónimos"
+    },
+    {
+      "id": "snapshots",
+      "rule": "QA",
+      "status": "PASS",
+      "detail": "6 PNG para revisión visual"
+    }
+  ],
+  "snapshots": [
+    "C:\\proyectos git\\tutoriales\\proyectos\\_demo\\hf-redes\\.hyperframes\\artifacts\\snapshots\\qa-04\\at-1.16s.png",
+    "C:\\proyectos git\\tutoriales\\proyectos\\_demo\\hf-redes\\.hyperframes\\artifacts\\snapshots\\qa-04\\at-4.595s.png",
+    "C:\\proyectos git\\tutoriales\\proyectos\\_demo\\hf-redes\\.hyperframes\\artifacts\\snapshots\\qa-04\\at-9.476s.png",
+    "C:\\proyectos git\\tutoriales\\proyectos\\_demo\\hf-redes\\.hyperframes\\artifacts\\snapshots\\qa-04\\at-13.538s.png",
+    "C:\\proyectos git\\tutoriales\\proyectos\\_demo\\hf-redes\\.hyperframes\\artifacts\\snapshots\\qa-04\\at-14.933s.png",
+    "C:\\proyectos git\\tutoriales\\proyectos\\_demo\\hf-redes\\.hyperframes\\artifacts\\snapshots\\qa-04\\at-18.783s.png"
+  ]
+}

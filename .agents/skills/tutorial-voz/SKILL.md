@@ -1,21 +1,22 @@
 ---
 name: tutorial-voz
-description: "Trigger: voz, locución, narrador, voz en off, generar voz, cambiar voz, TTS, voice, voiceover, narration audio, Gemini TTS. Synthesizes one Gemini TTS clip per step with tools/tts.py (Latin American Spanish commercial voice)."
+description: "Trigger: voz, locución, narrador, voz en off, generar voz, cambiar voz, TTS, voice, voiceover, narration audio, Gemini TTS. Synthesizes the opening, requirements, step and closing clips of every video with tools/tts.py (Gemini TTS, español neutro de Ecuador, tú)."
 license: Apache-2.0
 metadata:
   author: tutoriales
-  version: "1.0"
+  version: "2.0"
 ---
 
 ## Activation Contract
 
-Use after the take, or whenever narration, voice or style changes.
+Use after the take, or whenever any narration, voice or style changes. Rules by ID: `reglas/reglas-video.md`.
 
 ## Hard Rules
 
-- Command: `.venv/Scripts/python.exe tools/tts.py <slug>` (online, needs GEMINI_API_KEY) or `--offline` (silent clips of estimated length, no cost; for smoke tests and timing drafts only).
-- Output: `proyectos/<slug>/audio/voice/<step>.wav` + `durations.json`; `cache.json` keys each clip by text+voice+style.
-- Do not delete the voice directory to "refresh": changing one narration re-synthesizes only that step. Changing `voice` or `style` regenerates all steps (billed per character), so confirm with the user first.
+- Command: `.venv/Scripts/python.exe tools/tts.py <slug>` (online, needs GEMINI_API_KEY) or `--offline` (silent clips of estimated length, no cost; smoke tests and timing drafts only).
+- Output per video id: `proyectos/<slug>/audio/voice/<id>/{opening, requirements?, <step>, closing}.wav` + `durations.json`. Each step uses `videos[].narration[step]` when set, else the step's `narration`. The cache keys clips by text hash + voice + style, so identical text in two videos is synthesized once.
+- Do not delete the voice directory to "refresh": changing one narration re-synthesizes only that clip. Changing `voice` or `style` regenerates every clip of every video (billed per character): confirm with the user first.
+- Style must keep español neutro de Ecuador and trato de tú (L1, L4); never a voseo or regional style.
 - Never ship offline (silent) clips: rerun online before the final render.
 
 ## Decision Gates
@@ -26,13 +27,14 @@ Use after the take, or whenever narration, voice or style changes.
 | Per tutorial | `voice: {voice: Kore, style: "..."}` in tutorial.yaml |
 | Firm / informative / upbeat / breezy / bright | `Kore` / `Charon` / `Puck` / `Aoede` / `Zephyr` |
 
-Style string example: `voz comercial cálida y clara, español latinoamericano neutro, ritmo ágil y profesional`.
+Style example: `voz comercial cálida y clara, español neutro de Ecuador, trato de tú`. RED/PRO can ask for a faster, more energetic delivery in the per-tutorial style; TUT stays calm (TUT4).
 
 ## Execution Steps
 
-1. Run tts.py. Then run edit and everything after it again (timings depend on `durations.json`): `.venv/Scripts/python.exe tools/pipeline.py <slug> --from edit`.
-2. If a word is mispronounced, rewrite it phonetically or as words in `narration` (e.g. numbers, acronyms) and run again.
+1. Run tts.py, then everything after it (timings depend on `durations.json`): `.venv/Scripts/python.exe tools/pipeline.py <slug> --from edit` (`--video <id>` for one video).
+2. Check durations: opening ≤ 3 s (RED hook 1–2 s), closing ≤ 2.5 s (E1, A2). If longer, shorten the text in tutorial.yaml and rerun.
+3. Mispronounced word: rewrite it phonetically or as words (numbers, acronyms) in that narration and rerun.
 
 ## Output Contract
 
-Report voice, style, per-step durations and which steps were re-synthesized vs cached.
+Per video: voice, style, opening/closing/step durations, and which clips were re-synthesized vs cached.
