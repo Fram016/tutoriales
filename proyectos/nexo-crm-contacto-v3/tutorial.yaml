@@ -1,0 +1,83 @@
+# Nexo CRM: crear un contacto. Schema v2 (reglas/reglas-video.md). Brief: brief.md.
+# Historia (N4): conociste a una persona en una feria. Destino del CTA (N8): enlace de nuestro perfil (propuesto).
+title: "Nexo CRM · Contactos"
+product: "Nexo CRM"
+app_url: http://127.0.0.1:8766/
+viewport: [1920, 1080]
+language: es-EC
+device: desktop                      # L2: "haz clic"
+brand:                               # N5: palette from demo-apps/nexo-crm/index.html; accent = primary
+  dir: brand                         # no logo (open question in the brief)
+  primary: "#7c3aed"                 # --brand, primary buttons (:7, :15)
+  background: "#4c1d95"              # dark brand violet, login hero gradient (:21)
+  surface: "#4c1d95"                 # caption band (N3), purple instead of black
+  on_surface: "#ffffff"
+  text: "#ffffff"
+  font: "Segoe UI"                   # app font (:9)
+glossary:                            # L3
+  contacto: [cliente, prospecto, registro]
+
+steps:                               # E2: one action with a visible result per step; titles are not rendered (N2)
+  - id: login                        # TUT5: first video of the series; RED omits it
+    title: "Inicia sesión"
+    narration: "Ingresa tu correo y tu contraseña, y haz clic en Ingresar. Llegas al Inicio."
+    actions:
+      - type: {into: "#login-email", text: "env:NEXO_CRM_CONTACTO_V3_USER"}
+      - type: {into: "#login-password", text: "env:NEXO_CRM_CONTACTO_V3_PASSWORD"}
+      - click: "#btn-login"
+      - wait: "#nav-contactos"
+  - id: contactos                    # obvious navigation: RED omits it
+    title: "Abre Contactos"
+    narration: "En el menú lateral, haz clic en Contactos. Aquí ves tu lista y el buscador."
+    actions:
+      - click: "#nav-contactos"
+      - wait: "#btn-nuevo-contacto"
+      - focus: "#buscar"                 # the table is wider than a detail frame (C9); the search box is what the user mentioned
+  - id: nuevo
+    title: "Abre el formulario"
+    narration: "Haz clic en Nuevo contacto. Se abre el formulario."
+    actions:
+      - click: "#btn-nuevo-contacto"
+      - wait: "#c-nombre"
+  - id: datos                        # the whole form is ONE step (E2)
+    title: "Completa los datos"
+    narration: "Completa nombre, apellido y correo, que son obligatorios, y también empresa, cargo y teléfono. En Etapa elige \"Prospecto\". En Origen, \"Feria\", porque la conociste ahí. En Notas, anota la feria."
+    actions:
+      - type: {into: "#c-nombre", text: "Sofía"}
+      - type: {into: "#c-apellido", text: "Vera"}
+      - type: {into: "#c-email", text: "sofia@cafeandino.ec"}
+      - type: {into: "#c-empresa", text: "Café Andino"}
+      - type: {into: "#c-cargo", text: "Compras"}          # optional: RED omits it
+      - type: {into: "#c-telefono", text: "099 245 1180"}   # optional: RED omits it
+      - select: {in: "#c-etapa", option: "Prospecto"}        # optional: RED omits it
+      - select: {in: "#c-origen", option: "Feria"}           # N4: carries the story
+      - type: {into: "#c-notas", text: "Conocida en la feria Expo"}   # N4, C6 (25 chars)
+  - id: guardar
+    title: "Guarda el contacto"
+    narration: "Haz clic en Guardar contacto. Sale el aviso verde y tu contacto queda primero, resaltado."
+    actions:
+      - click: "#btn-guardar"
+      - wait: "#toast"
+      - result: "#toast"                    # R2/N6: confirmation in detail, >= 0.8 s clean
+      - highlight: "#rows tr:first-child"   # R3: new row outlined in the brand color
+
+videos:
+  - id: tutorial
+    type: TUT
+    format: "16:9"
+    steps: all
+    opening: {narration: "Aprendes a registrar contactos."}   # TUT1 goal; the card shows `title` (where), the voice says what (N2)
+    closing: {narration: "Siguiente: buscar contactos.", text: "Siguiente video: buscar un contacto"}
+    music: {prompt: "Soft corporate ambient, warm pads, gentle piano, calm"}   # TUT: suave
+  - id: redes
+    type: RED
+    format: "9:16"
+    steps: [nuevo, datos, guardar]   # no login, no obvious navigation; no "Paso N" chip (N7)
+    omit: ["#c-empresa", "#c-cargo", "#c-telefono", "#c-etapa", "#c-notas"]   # same take; optional fields cut (E2 + RED3); notes cut: the full-width textarea forced a 1.3x frame in 9:16 (C1)
+    opening: {narration: "¿Contacto de feria?", text: "Conociste a alguien en la feria: regístralo así"}
+    closing: {narration: "Mira nuestro perfil.", text: "Tutorial completo en el enlace de nuestro perfil"}   # N8
+    narration:                       # short, no step numbers (N7); long enough to cover each action span (A2)
+      nuevo: "Haz clic en Nuevo contacto. Se abre el formulario."
+      datos: "Escribe nombre, apellido y correo. En Origen, elige Feria."
+      guardar: "Haz clic en Guardar contacto. Sale el aviso y tu contacto queda primero, resaltado."   # longer result sentence keeps the highlighted row framed (R3)
+    music: {prompt: "Original rhythmic electronic groove, light claps, warm synth bass, bright plucks, energetic"}   # RED: rítmica (the "pop" prompt was blocked by Lyria as recitation)

@@ -10,12 +10,12 @@ Apply the user's second-round observations (reglas/reglas-video.md §Parte 4, ru
 
 ## Tasks
 
-- [ ] T1 S1,S2 — Timing: recorder label boxes, narration-before-action sync, videos[].omit, TTS silence trim, pipeline fast path — worker WB2
-- [ ] T2 S1,S2 — Composition: establishing shot, per-field framing, hard cuts, caption band, palette from brand, chips, R2 toast, parallel render — worker WA2
-- [ ] T3 S1,S2 — Validation: qa.py --pre (no MP4), new checks C7-C10/N1-N9, lint updates — worker WC2
-- [ ] T4 S1,S2 — Skills + README: new rules, fast workflow, story, palette, CTA destination — worker WD2
-- [ ] T5 — Integration: unit tests + offline smoke PASS — parent
-- [ ] T6 S3 — Fresh agent from scratch: Nexo CRM TUT + RED with the fast workflow — worker
+- [x] T1 S1,S2 — Timing: recorder label boxes, narration-before-action sync, videos[].omit, TTS silence trim, pipeline fast path — worker WB2
+- [x] T2 S1,S2 — Composition: establishing shot, per-field framing, hard cuts, caption band, palette from brand, chips, R2 toast, parallel render — worker WA2
+- [x] T3 S1,S2 — Validation: qa.py --pre (no MP4), new checks C7-C10/N1-N9, lint updates — worker WC2
+- [x] T4 S1,S2 — Skills + README: new rules, fast workflow, story, palette, CTA destination — worker WD2
+- [x] T5 — Integration: 235 tests + smoke PASS 6.0 min — parent — commits caebac3, 3b0b7eb, 21919ba, 3dbef56
+- [ ] T6 S3 — Fresh run done (30.6 min wall, 9.5 min lost to an agent shell timeout); QA: TUT C4 at 33.3 s, RED R2/N6 toast 0.6 s, RED V2 neighbor fields cut; waiting user review — worker
 
 ## Log
 
