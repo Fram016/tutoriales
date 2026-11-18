@@ -7,11 +7,16 @@ tutorial.yaml (an extension popup), capture/surfaces/<name>/{frames/, frames.jso
 Credentials referenced as env:NAME are injected into a temporary take script that is
 deleted right after the run, so secrets never stay on disk next to the project. The same goes
 for censor patterns written as env:NAME (a person's name kept in acceso.local.yaml).
+A previous take is never wiped: it is moved to capture.prev-<timestamp>/ (the newest KEEP_PREVIOUS kept),
+so a failed take (e.g. a captcha) does not leave the project without a usable take.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import time
+from pathlib import Path
 
 from common import (PipelineError, ROOT, is_secret_ref, load_tutorial, main_guard, project_dir,
                     read_json, resolve_env_ref, run, which)
@@ -55,10 +60,33 @@ def resolve_surfaces(surfaces: dict | None) -> dict:
             for name, spec in (surfaces or {}).items()}
 
 
+KEEP_PREVIOUS = 2
+
+
+def keep_previous_take(pdir: Path, now: float | None = None) -> Path | None:
+    """Move capture/ (if it holds a take) to capture.prev-<timestamp>/; prune the oldest beyond KEEP_PREVIOUS."""
+    out_dir = pdir / "capture"
+    if not (out_dir / "actions.json").exists():
+        return None
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now if now is not None else time.time()))
+    dest = pdir / f"capture.prev-{stamp}"
+    n = 1
+    while dest.exists():
+        n += 1
+        dest = pdir / f"capture.prev-{stamp}-{n}"
+    out_dir.rename(dest)
+    for old in sorted(pdir.glob("capture.prev-*"))[:-KEEP_PREVIOUS]:
+        shutil.rmtree(old, ignore_errors=True)
+    return dest
+
+
 def capture(slug: str) -> dict:
     tut = load_tutorial(slug)
     pdir = project_dir(slug)
     out_dir = pdir / "capture"
+    previous = keep_previous_take(pdir)
+    if previous:
+        print(f"[capture] toma anterior guardada en {previous.name}")
     build = pdir / "build"
     build.mkdir(parents=True, exist_ok=True)
     config = {
