@@ -423,3 +423,29 @@ class RoundFourSchemaTest(YamlCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ManualFallbackSchemaTest(unittest.TestCase):
+    """'Necesito el tutorial': when SRI's invisible captcha refuses the automated Consultar, a person repeats the
+    click; the action is validated like the others."""
+
+    def load(self, arg):
+        import tempfile, yaml, common
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        old = common.PROJECTS; self.addCleanup(setattr, common, "PROJECTS", old)
+        common.PROJECTS = Path(tmp.name)
+        (common.PROJECTS / "p").mkdir()
+        data = {"title": "T", "videos": [{"id": "tutorial", "type": "TUT", "format": "16:9", "steps": "all",
+                                          "opening": {"narration": "Aprendes a consultar."}}],
+                "steps": [{"id": "a", "narration": "Haz clic en Consultar.",
+                           "actions": [{"click": "#b"}, {"manual_fallback": arg}]}]}
+        (common.PROJECTS / "p" / "tutorial.yaml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+        return common.load_tutorial("p")
+
+    def test_valid_manual_fallback(self):
+        self.load({"until": "#tabla tr", "blocked": "Captcha incorrecta"})
+
+    def test_manual_fallback_needs_until_and_blocked(self):
+        import common
+        with self.assertRaises(common.PipelineError):
+            self.load({"until": "#tabla tr"})

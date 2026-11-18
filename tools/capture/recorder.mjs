@@ -21,7 +21,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // `t0` shares the clock between recorders (main tab and surfaces); `prefix` names the frames of one take
 // of a surface (w0_f000000.jpg ...); `write: false` leaves frames.json to the caller (`frames` holds them).
 export async function startRecorder(page, outDir,
-  { inflight = 3, quality = 88, t0 = Date.now(), prefix = "f", clear = true, write = true } = {}) {
+  { inflight = 3, quality = 88, t0 = Date.now(), clock = null, prefix = "f", clear = true, write = true } = {}) {
+  // One clock for every recorder of a take. `paused` (ms) is removed from all times: while a person acts in
+  // the browser (a captcha the automation cannot pass) nothing is recorded and that time never exists.
+  const shared = clock || { t0, paused: 0, since: null };
+  const elapsed = (ms) => (ms - shared.t0 - shared.paused) / 1000;
   const framesDir = `${outDir}/frames`;
   if (clear) await fs.rm(framesDir, { recursive: true, force: true });
   await fs.mkdir(framesDir, { recursive: true });
@@ -33,26 +37,39 @@ export async function startRecorder(page, outDir,
   let gen = 0;   // bumped by setPage: a screenshot of the previous tab landing late is dropped
   const worker = async () => {
     while (running) {
+      if (shared.since !== null) {
+        await sleep(100);
+        continue;
+      }
       const tReq = Date.now();
       const mine = gen;
       try {
         const r = await current.cdp("Page.captureScreenshot", { format: "jpeg", quality, optimizeForSpeed: true });
-        if (mine !== gen) continue;
-        const t = ((tReq + Date.now()) / 2 - t0) / 1000;
+        if (mine !== gen || shared.since !== null) continue;
+        const t = elapsed((tReq + Date.now()) / 2);
         const name = `${prefix}${String(seq++).padStart(6, "0")}.jpg`;
         await fs.writeFile(`${framesDir}/${name}`, Buffer.from(r.data, "base64"));
         frames.push({ file: name, t });
       } catch {
-        if (++errors > 50) running = false;
+        if (shared.since === null && ++errors > 50) running = false;
         await sleep(50);
       }
     }
   };
   const workers = Array.from({ length: inflight }, worker);
   return {
-    t0,
+    t0: shared.t0,
+    clock: shared,
     frames,
-    now: () => (Date.now() - t0) / 1000,
+    now: () => elapsed(shared.since ?? Date.now()),
+    pause() {
+      if (shared.since === null) shared.since = Date.now();
+    },
+    resume() {
+      if (shared.since === null) return;
+      shared.paused += Date.now() - shared.since;
+      shared.since = null;
+    },
     setPage(next) {
       current = next;
       gen++;
@@ -779,7 +796,7 @@ async function openSurface(ctx, name) {
   if (ctx.censor) await inPage(page, ctx.censor).catch(() => {});
   await front(ctx);
   const rec = await startRecorder(page, `${ctx.outDir}/surfaces/${name}`,
-    { t0: ctx.rec.t0, inflight: 2, prefix: `w${state.takes}_f`, clear: state.takes === 0, write: false });
+    { clock: ctx.rec.clock, inflight: 2, prefix: `w${state.takes}_f`, clear: state.takes === 0, write: false });
   state.takes++;
   await sleep(300);   // the first surface frames exist before the panel is shown
   state.current = { page, rec, t0: ctx.rec.now() };
@@ -914,6 +931,13 @@ export async function runSteps(target, rec, steps, { typeDelay = 10 } = {}) {
           await sleep(350);
           break;
         }
+        case "manual_fallback": {
+          // After a click the site may refuse (invisible captcha): a person repeats the click (see manualFallback).
+          const last = [...ev].reverse().find((e) => e.type === "click");
+          if (!last) throw new Error(`Paso ${step.id}: 'manual_fallback' va después de un 'click'`);
+          await manualFallback(ctx, { page: ctx.page }, arg, last);
+          break;
+        }
         case "hover": {
           const at = where(ctx, arg);
           await pointAt(at.page, rec, ev, "hover", at.sel, `hover ${at.sel}`.slice(0, 40), cfg);
@@ -1023,6 +1047,36 @@ export async function runSteps(target, rec, steps, { typeDelay = 10 } = {}) {
     console.log(`[take] paso ${step.id} ok (${(entry.t1 - entry.t0).toFixed(1)} s)`);
   }
   return log;
+}
+
+// When the site refuses the automated click (an invisible captcha), a person repeats it: control goes to the
+// user, recording pauses (that time is removed from the take), and the take continues once `until` shows.
+// cfg: {until: SEL, blocked: "text shown on refusal", timeout_ms?}. Logs `manual: true` on the click event.
+async function manualFallback(ctx, at, cfg, event) {
+  const page = at.page;
+  const shown = (sel) => page.evaluate((s) => [...document.querySelectorAll(s)].some((e) => {
+    const r = e.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }), sel).catch(() => false);
+  const blockedNow = () => page.evaluate((txt) => (document.body.innerText || "").includes(txt), cfg.blocked)
+    .catch(() => false);
+  const end = Date.now() + 20000;
+  while (Date.now() < end) {
+    if (await shown(cfg.until)) return;
+    if (await blockedNow()) break;
+    await sleep(250);
+  }
+  if (await shown(cfg.until)) return;
+  ctx.rec.pause();
+  event.manual = true;
+  console.log(`[take] ${ctx.step}: el sitio pidió verificación humana. Haz tú el clic en el navegador `
+    + `y devuelve el control a ego cuando aparezca el resultado.`);
+  await ctx.task.handOff();
+  await ctx.task.waitForControl({ timeout: cfg.timeout_ms || 15 * 60 * 1000 });
+  const back = Date.now() + 30000;
+  while (!(await shown(cfg.until)) && Date.now() < back) await sleep(250);
+  ctx.rec.resume();
+  if (!(await shown(cfg.until))) throw new Error(`Paso ${ctx.step}: después del clic manual no apareció '${cfg.until}'`);
 }
 
 // Full take: fixed viewport, censor injected before the first frame, record, run, write actions.json.

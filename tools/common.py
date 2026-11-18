@@ -100,7 +100,8 @@ def load_access(slug: str) -> None:
 
 
 ACTION_KINDS = {"goto", "click", "hover", "press", "scroll", "wait", "pause", "type", "select",
-                "focus", "result", "highlight", "open", "close", "follow", "back"}
+                "focus", "result", "highlight", "open", "close", "follow", "back",
+                "manual_fallback"}
 # Actions that may run inside an open surface: {in: SURFACE, sel: SELECTOR} ({in, px} for scroll).
 SURFACE_ACTIONS = {"click", "hover", "scroll", "wait", "focus", "result", "highlight"}
 ANCHORS = ("top-right", "top-left")
@@ -210,6 +211,9 @@ def _validate_steps(steps, surfaces=(), parts=None) -> list[str]:
                 _fail(f"paso {sid}", "'type' necesita {into: SELECTOR, text: TEXTO}")
             if kind == "select" and not (isinstance(arg, dict) and arg.get("in") and "option" in arg):
                 _fail(f"paso {sid}", "'select' necesita {in: SELECTOR, option: VALOR}")
+            if kind == "manual_fallback" and not (isinstance(arg, dict) and isinstance(arg.get("until"), str)
+                                                 and isinstance(arg.get("blocked"), str)):
+                _fail(f"paso {sid}", "'manual_fallback' necesita {until: SELECTOR, blocked: TEXTO}")
             where = f"paso {sid}"
             if kind in SURFACE_ACTIONS and isinstance(arg, dict):
                 _validate_surface_action(where, kind, arg, surfaces, opened)

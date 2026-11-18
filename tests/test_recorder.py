@@ -277,3 +277,24 @@ class ShadowTargetTest(NodeCase):
 
     def test_no_match_anywhere_is_empty(self):
         self.assertEqual(self.match("page", "#nada"), [])
+
+
+class PausedClockTest(NodeCase):
+    """A manual captcha click pauses the take: that time is removed from every recorder sharing the clock."""
+
+    def test_pause_is_removed_from_frames_and_now(self):
+        out = Path(__import__("tempfile").mkdtemp()).as_posix()
+        self.addCleanup(__import__("shutil").rmtree, out, True)
+        res = self.node("startRecorder", f"""await (async () => {{
+          const page = {{ cdp: async () => {{ await new Promise((r) => setTimeout(r, 20)); return {{ data: "" }}; }} }};
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          const rec = await startRecorder(page, {json.dumps(out)}, {{ inflight: 1, write: false }});
+          const other = await startRecorder(page, {json.dumps(out + "/s")}, {{ inflight: 1, write: false, clock: rec.clock }});
+          await sleep(300); rec.pause(); const before = rec.now(); await sleep(600);
+          const during = rec.frames.length; await sleep(1); rec.resume(); await sleep(300);
+          const after = rec.now(); await rec.stop(); await other.stop();
+          const ts = rec.frames.map((f) => f.t).concat(other.frames.map((f) => f.t));
+          return {{ before, after, max: Math.max(...ts), framesDuringPause: rec.frames.length - during }};
+        }})()""")
+        self.assertLess(res["after"] - res["before"], 0.5)      # 600 ms of pause are not counted
+        self.assertLess(res["max"], 0.8)

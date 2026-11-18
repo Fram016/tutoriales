@@ -175,6 +175,7 @@ steps:
     actions:
       - pause: 1500                  # invisible reCAPTCHA: no instant submit after the selects (take 2: "Captcha incorrecta")
       - click: '[id="frmPrincipal:btnBuscar"]'
+      - manual_fallback: {until: '[id="frmPrincipal:tablaCompRecibidos_data"] tr', blocked: "Captcha incorrecta"}
       - wait: '[id="frmPrincipal:tablaCompRecibidos_data"] tr'
       - highlight: '[id="frmPrincipal:tablaCompRecibidos_data"]'
   - id: descargar-recibidos
