@@ -12,11 +12,11 @@ Apply the user's review of proyectos/perseo-xml/out/perseo-xml-tutorial.mp4 (reg
 
 ## Tasks
 
-- [ ] T1 S2,S5 — recorder/capture/edit: N13 verified targets, surface `hide` (N23), censor on chrome:// pages (N25), blank/mixed frames (N26), N14 sync — worker WB4
-- [ ] T2 S2,S3,S4 — compose/render: band ≤1/8 (N21), no pillarbox + legible scale (N20), surfaces never cut (N22), logo light variant (N24), context indicator (N17), parts + separators (N16), sentence captions (N19), optional closing (N27) — worker WA4
-- [ ] T3 S2 — qa/lint: checks for N13-N27 — worker WC4
-- [ ] T4 S2,S5 — skills/README/brief template: guion rules N15/N16/N18/N19/N14, requirement wording, censor criterion, ads hiding — worker WD4
-- [ ] T5 — Integration: unit tests + smoke PASS — parent
+- [x] T1 S2,S5 — recorder/capture/edit: N13 verified targets, surface `hide` (N23), censor on chrome:// pages (N25), blank/mixed frames (N26), N14 sync — worker WB4
+- [x] T2 S2,S3,S4 — compose/render: band ≤1/8 (N21), no pillarbox + legible scale (N20), surfaces never cut (N22), logo light variant (N24), context indicator (N17), parts + separators (N16), sentence captions (N19), optional closing (N27) — worker WA4
+- [x] T3 S2 — qa/lint: checks for N13-N27 — worker WC4
+- [x] T4 S2,S5 — skills/README/brief template: guion rules N15/N16/N18/N19/N14, requirement wording, censor criterion, ads hiding — worker WD4
+- [x] T5 — Integration: 443 tests + smoke PASS 3.3 min — parent
 - [ ] T6 S1-S5 — Fresh agent: Perseo XML TUT 16:9 (new slug perseo-xml-v2), recapture with live SRI — worker
 
 ## Log
