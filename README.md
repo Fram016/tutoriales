@@ -7,7 +7,9 @@ Pipeline local que convierte **una app + un flujo** (modo A, también a partir d
 
 Incluye voz comercial en español neutro de Ecuador con trato de tú (Gemini TTS), música por tipo de video (Lyria) que baja sola cuando habla la voz, audio a -14 LUFS con picos < -1 dBTP, cámara con zoom de detalle, cursor de tamaño constante, subtítulos y la marca de cada tutorial.
 
-**Reglas normativas:** [`reglas/reglas-video.md`](reglas/reglas-video.md) (IDs E, C, O, R, T, L, A, V, TUT, RED, PRO, NOV y, de la segunda prueba, C7–C10 y N1–N9). Los skills, `tools/lint.py` y `tools/qa.py` las citan por ID.
+**Reglas normativas:** [`reglas/reglas-video.md`](reglas/reglas-video.md) (IDs E, C, O, R, T, L, A, V, TUT, RED, PRO, NOV; de la segunda prueba, C7–C10 y N1–N9; de la tercera, C1 revisada y N10–N12). Los skills, `tools/lint.py` y `tools/qa.py` las citan por ID.
+
+**Zoom y formularios:** detalle 1,4–1,8× (C1). En un formulario la cámara no se mueve campo por campo: un solo plano ajustado al formulario completo (1,1–1,5×, nunca > 1,8×; N10), el campo activo con recuadro del color primario y un leve oscurecimiento del resto (N11) y, en 9:16, el formulario entero a lo ancho (N12).
 
 ## Tipos de video
 
@@ -110,6 +112,11 @@ Para un TUT de ~1 min + un RED de ~20 s. Se corrige **antes** de renderizar y se
 | `qa.py --pre` + revisar snapshots, por ronda | ~1 min |
 | render `delivery` (ambos en paralelo) | ~3–4 min |
 | `qa.py` del MP4 | < 1 min |
+
+Notas de operación:
+
+- Los comandos largos (`capture`, `pipeline`, `render`: todo lo que pueda pasar de ~1 min) se corren en segundo plano o con un timeout ≥ 900 s, nunca con el timeout corto de la shell; al terminar se revisa el código de salida y el final del log. Un comando callado no significa que siga corriendo.
+- Los prompts de música describen ánimo, instrumentos y tempo; nunca géneros comerciales (pop, reggaeton, rock…) ni artistas, porque Lyria los bloquea como "recitation". Si pasa, `music.py` reintenta una vez con un prompt neutro y lo registra.
 
 `pipeline.py` imprime el tiempo de cada etapa. Solo se vuelve a grabar si la toma está mal (selector, `wait:`, pantalla equivocada); la voz y la música solo se regeneran si cambió su texto. La voz se mide sin silencios al inicio y al final, y `lint` estima la duración con 1,9 palabras/s + 0,5 s por clip.
 

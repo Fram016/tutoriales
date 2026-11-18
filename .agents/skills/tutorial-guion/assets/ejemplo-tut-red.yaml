@@ -17,7 +17,7 @@ brand:                               # N5: palette read from the app's CSS; acce
   font: "Inter"
 glossary:                            # L3
   producto: [artículo, ítem, mercadería]
-music: {prompt: "Soft corporate ambient, warm pads, light percussion, calm"}
+music: {prompt: "Calm and warm mood, soft synth pads, light percussion, slow tempo"}   # mood + instruments + tempo; no genre/artist names
 
 steps:                               # E2: one action with a visible result per step; titles are not rendered (N2)
   - id: login                        # TUT5: first video of the series only
@@ -40,7 +40,7 @@ steps:                               # E2: one action with a visible result per 
     actions:
       - click: "#btn-nuevo"
       - wait: "#p-nombre"
-  - id: datos                        # the whole form is ONE step
+  - id: datos                        # the whole form is ONE step: one form shot + spotlight per field (N10, N11)
     title: "Completa los datos"
     narration: "Completa el nombre, el código, el precio y la categoría. En la nota, indica que viene del proveedor local."  # N4: explains the value
     actions:
@@ -66,7 +66,7 @@ videos:
     opening: {narration: "Aprendes a registrar productos."}     # <= 4 words; the card shows only `title` (N2)
     requirements: {narration: "Necesitas una cuenta con permiso de inventario.", text: "Requisito: permiso de inventario"}
     closing: {narration: "Siguiente: ajustar stock.", text: "Siguiente video: ajustar el stock"}   # <= 3 words spoken
-    music: {prompt: "Soft corporate ambient, warm pads, calm"}     # TUT: suave o ninguna
+    music: {prompt: "Calm mood, soft warm pads, gentle piano, slow tempo"}     # TUT: suave o ninguna
   - id: redes
     type: RED
     format: "9:16"
@@ -78,4 +78,4 @@ videos:
       nuevo: "Haz clic en Nuevo producto."
       datos: "Completa nombre, precio y nota del proveedor."
       guardar: "Haz clic en Guardar producto. Queda primero."
-    music: {prompt: "Upbeat rhythmic pop, punchy drums, bright synths"}  # RED: rítmica
+    music: {prompt: "Energetic bright mood, punchy drums, bright synth plucks, fast tempo"}  # RED: rítmica; no "pop"/"rock" (Lyria recitation block)

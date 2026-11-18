@@ -38,7 +38,7 @@ steps:                  # E2: one list for every video; one step = one action wi
       - click: "#btn-new"
       - wait: "#c-name"
 
-  - id: datos
+  - id: datos           # one step for the whole form (#client-form): one form shot, spotlight per field (N10-N12)
     title: "Completa los datos"
     narration: "Completa el nombre, el correo y el teléfono de tu cliente nuevo."
     actions:
@@ -66,7 +66,7 @@ videos:
       narration: "Siguiente: editar clientes."
       text: "Siguiente video: editar un cliente"
     music:
-      prompt: "Soft corporate ambient, gentle synth pads, light percussion, calm and positive"
+      prompt: "Calm and positive mood, gentle synth pads, light percussion, slow tempo"   # mood + instruments + tempo only
 
   - id: redes
     type: RED
@@ -84,4 +84,4 @@ videos:
       datos: "Escribe el nombre y el correo electrónico de tu cliente."
       guardar: "Haz clic en Guardar cliente. Aparece el aviso y queda primero en la lista."
     music:
-      prompt: "Upbeat rhythmic electronic pop, punchy drums, bright synths, energetic"
+      prompt: "Energetic bright mood, punchy drums, bright synth plucks, fast tempo"   # no genre/artist names

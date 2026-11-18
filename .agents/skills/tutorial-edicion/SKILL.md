@@ -19,6 +19,7 @@ Use after capture and tts (tts trims each clip's leading/trailing silence, keepi
   - `.venv/Scripts/python.exe tools/mix.py <slug>` → `audio/<video>/mix.wav`, 48 kHz stereo, -14 LUFS (`LOUDNESS_TARGET`), true peak < -1 dBTP (A1).
   - One video only: `.venv/Scripts/python.exe tools/pipeline.py <slug> --from edit --to mix --video <id>`.
 - Lyria is billed (≈ USD 0.08/track, no free tier). music.py reuses existing tracks; `--force` only when the user wants new music or only the offline pad exists.
+- Long commands (pipeline, music, anything that may exceed ~1 min): harness background runner (`bash_background`) or an explicit timeout ≥ 900 s, never a short shell timeout; then check the exit code and the log tail. Never assume a silent command is still running.
 - Never hand-edit `timeline.json`; change tutorial.yaml (narration, steps, hold_ms, actions) and rerun.
 
 ## Timing rules owned by edit (per video)
@@ -32,7 +33,7 @@ Use after capture and tts (tts trims each clip's leading/trailing silence, keepi
 | A2 | step = max(warped actions, voice + lead + tail); compresses action spans so voice gaps ≤ 1.0 s; closing ≤ 2.5 s | lengthen the step narration to cover the action, shorten the closing |
 | E1 | opening ≤ 3 s (RED hook 1–2 s) | shorten `opening.narration` |
 | N1 | places each step's voice so the instruction sentence ends ≤ 0.3 s after its action; inserts a pre-action hold when the narration is longer than the lead-in | shorten the instruction (one per step) |
-| N6, R2 | the toast window is always kept (≥ 0.8 s) and exempt from C4 cuts | `result: SEL` on the toast |
+| N6, R2 | the toast/result window is always kept, at 1.0× speed (never sped up) for ≥ R2 clean time + margin, and exempt from C4 cuts | `result: SEL` on the toast |
 | RED3 | `videos[].omit`: typing/select events on those selectors are cut from that video; the step stays | list only optional selectors |
 
 - Each video uses only its `steps` minus its `omit` events; step numbers keep the original index (E2); RED shows no numbers (N7).
@@ -44,12 +45,12 @@ Use after capture and tts (tts trims each clip's leading/trailing silence, keepi
 
 | Type | Music (Tabla de decisión) | `videos[].music` example |
 | --- | --- | --- |
-| TUT | Suave o ninguna | `{prompt: "Soft corporate ambient, warm pads, calm"}` or `{none: true}` |
-| RED | Rítmica | `{prompt: "Upbeat rhythmic pop, punchy drums, bright synths"}` |
-| PRO | Marcada (PRO5: cuts to the beat) | `{prompt: "Driving electronic, strong beat, confident"}` |
-| NOV | Suave | `{prompt: "Light ambient, gentle plucks, friendly"}` |
+| TUT | Suave o ninguna | `{prompt: "Calm mood, soft warm pads, gentle piano, slow tempo"}` or `{none: true}` |
+| RED | Rítmica | `{prompt: "Energetic bright mood, punchy drums, bright synth plucks, fast tempo"}` |
+| PRO | Marcada (PRO5: cuts to the beat) | `{prompt: "Confident driving mood, strong steady beat, synth bass, medium-fast tempo"}` |
+| NOV | Suave | `{prompt: "Friendly light mood, gentle plucks, soft pads, medium tempo"}` |
 
-Prompt = genre + instruments + mood + energy, matching the brand; the tool appends "Instrumental only, no vocals, no lyrics" and the duration. A video without `music:` uses the global `music:`. `MUSIC_MODEL`: `lyria-3.5` (full length) or `lyria-3-clip-preview` (30 s clip, loops).
+Prompt = mood + instruments + tempo/energy, matching the brand. Never genres tied to commercial music (pop, reggaeton, rock…) or artist names: Lyria blocks them as "recitation"; music.py then retries once with a neutral instrument-only prompt and logs it (rewrite the prompt if it keeps failing). The tool appends "Instrumental only, no vocals, no lyrics" and the duration. A video without `music:` uses the global `music:`. `MUSIC_MODEL`: `lyria-3.5` (full length) or `lyria-3-clip-preview` (30 s clip, loops).
 
 ## Execution Steps
 

@@ -24,12 +24,14 @@ Use after tutorial.yaml passes `tools/lint.py` and before tts/edit. Two phases: 
 - Try selectors learned from source code first and confirm them in rehearsal.
 - Never record personal tabs or real data. The take uses its own task space with a 1920x1080 emulated viewport.
 - C9, C10: the recorder logs `frame_box` (control + its visible label: `label[for=id]` or the field wrapper) and `screen_at` for every type/select/click; type into the field itself (`#id`), not a wrapper, so the label is found.
+- N10, N12: for type/select/click/focus it also logs `form_box` = the closest form container (`form`, `fieldset`, `[role=dialog]`, `dialog`, `.modal`/card-like element with ≥ 2 fields), viewport-clamped. compose builds the form shot from it.
+- Long commands: run `capture.py` with the harness background runner (`bash_background`) or a timeout ≥ 900 s, never a short shell timeout; check the exit code and the log tail.
 - Recapture only when the take itself is wrong (selector, missing `wait:`/`result:`/`highlight:`, wrong screen, private data); voice, `omit` and composition fixes never need a new take.
 - C4: the take must not show long blank loads; add `wait: SEL` for the loaded content instead of `pause:` (edit cuts near-blank frames, but a missing wait shows the spinner).
 
 ## Execution Steps
 
-1. REHEARSAL: open `app_url`, snapshot, and for each step run its actions exactly as written (same selector strings via `page.click`/`fill`/`waitForSelector`; for focus/result/highlight check `querySelector` returns a visible element with a non-empty box). Snapshot after each step and confirm the result.
+1. REHEARSAL: open `app_url`, snapshot, and for each step run its actions exactly as written (same selector strings via `page.click`/`fill`/`waitForSelector`; for focus/result/highlight check `querySelector` returns a visible element with a non-empty box). For every form step confirm the form container: `el.closest('form, fieldset, [role=dialog], dialog, .modal, .card')` on each typed field returns ONE visible element whose box contains every field and label of the step and fits the viewport; note its selector. Snapshot after each step and confirm the result.
 2. Fix tutorial.yaml: replace guessed selectors, add `wait:` for async results, add missing `result:`/`highlight:`, use `pause:` only where nothing observable exists. Rerun `tools/lint.py <slug>`.
 3. Browser extensions: `goto: chrome-extension://<id>/popup.html`; take the id from `chrome://extensions` during rehearsal.
 4. TAKE: `.venv/Scripts/python.exe tools/capture.py <slug>` → `proyectos/<slug>/capture/{frames/, frames.json, actions.json}`. It prints `[take] paso <id> ok` per step and the measured fps.
@@ -46,4 +48,4 @@ Frames are CDP screenshots at ≈10-14 fps; edit.py interpolates to 30 fps. Scre
 
 ## Output Contract
 
-Report: selectors changed, result/highlight/focus targets confirmed, take result (frames, fps, steps), and any step that relies on an existing login session.
+Report: selectors changed, result/highlight/focus targets confirmed, form container per form step (or "none found": no form shot possible), take result (frames, fps, steps), and any step that relies on an existing login session.

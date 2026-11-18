@@ -22,6 +22,8 @@ Use when the user asks for a tutorial, social, promo or feature-announcement vid
 - Demo data only. Never record real customer data or personal tabs.
 - Brand is per tutorial: `proyectos/<slug>/brand/` + `brand:` in tutorial.yaml, never global.
 - Lyria (≈ USD 0.08/track) and TTS (per character) are billed; both cache, so rerunning unchanged text costs nothing. Ask before `music.py --force`. Iterate on `qa.py --pre`, never on renders.
+- Long commands (capture, pipeline, render, anything that may exceed ~1 min): never under a short shell timeout. Use the harness background runner (`bash_background`) or an explicit timeout ≥ 900 s; then check the exit code and the log tail. Never assume a silent command is still running.
+- Music prompts describe mood, instruments and tempo only; never genres tied to commercial music (pop, reggaeton, rock…) or artists (Lyria blocks them as "recitation"; music.py retries once with a neutral prompt and logs it).
 
 ## Decide the video type (mandatory)
 
