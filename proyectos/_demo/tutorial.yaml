@@ -1,5 +1,6 @@
 # Demo tutorial used by the smoke test (python tools/smoke.py). Schema v2 (reglas/reglas-video.md).
 # Serve the demo app first: python -m http.server 8765 --directory demo-app
+# Brief: Historia "te llega un cliente nuevo" (N4); Destino del CTA "enlace de nuestro perfil" (N8).
 title: Cómo crear un cliente en DemoCRM
 product: DemoCRM
 app_url: http://127.0.0.1:8765/
@@ -7,11 +8,13 @@ viewport: [1920, 1080]
 language: es-EC
 device: desktop
 
-brand:
+brand:                  # N5: palette from demo-app/index.html, no invented colors
   dir: brand            # proyectos/_demo/brand/ (logo.png optional)
-  primary: "#2563eb"
-  accent: "#facc15"
-  background: "#0f172a"
+  primary: "#2563eb"    # primary buttons, input focus
+  accent: "#2563eb"     # = primary (highlight, chip)
+  background: "#1e3a8a" # dark brand blue (header title, login gradient)
+  surface: "#1e3a8a"    # caption band (N3)
+  on_surface: "#ffffff"
   text: "#ffffff"
   font: "Segoe UI"
 
@@ -19,7 +22,7 @@ glossary:               # L3: one term per concept (the UI says "cliente")
   cliente: [contacto, prospecto, registro]
 
 steps:                  # E2: one list for every video; one step = one action with a visible result
-  - id: login
+  - id: login           # titles stay for the brief/worklog; they are not rendered (N2)
     title: "Inicia sesión"
     narration: "Primero ingresa a DemoCRM con tu correo y tu contraseña."
     actions:
@@ -30,56 +33,55 @@ steps:                  # E2: one list for every video; one step = one action wi
 
   - id: nuevo
     title: "Abre el formulario"
-    narration: "En la lista de clientes, haz clic en Nuevo cliente."
+    narration: "Haz clic en Nuevo cliente. Se abre el formulario."   # N1: instruction before the click
     actions:
       - click: "#btn-new"
       - wait: "#c-name"
 
   - id: datos
     title: "Completa los datos"
-    narration: "Completa el nombre, el correo y el teléfono del cliente."
+    narration: "Completa el nombre, el correo y el teléfono de tu cliente nuevo."
     actions:
       - type: { into: "#c-name", text: "María González" }
       - type: { into: "#c-email", text: "maria@empresa.com" }
-      - type: { into: "#c-phone", text: "099 555 1234" }
+      - type: { into: "#c-phone", text: "099 555 1234" }   # optional: RED omits it
 
   - id: guardar
     title: "Guarda el cliente"
-    narration: "Haz clic en Guardar cliente. El cliente nuevo queda primero en la lista, resaltado."
+    narration: "Haz clic en Guardar cliente. Aparece el aviso y tu cliente queda primero en la lista."
     actions:
       - click: "#btn-save"
       - wait: "#toast"
-      # The result is the new row (R1, R3). DemoCRM's toast sits alone in an empty corner: zoomed in it
-      # would be > 70 % empty (C4), so it is not framed nor named in the narration.
-      - highlight: "#rows tr:first-child"
+      - result: "#toast"                     # N6/R2: the toast is always shown, exempt from C4
+      - highlight: "#rows tr:first-child"    # R1, R3: new row in the brand color
 
 videos:
   - id: tutorial
     type: TUT
     format: "16:9"
     steps: all
-    opening:
-      narration: "En este video aprendes a crear clientes."
-      text: "Aprende a crear un cliente"
-    closing:
-      narration: "Siguiente video: editar un cliente."
-      text: "Siguiente: editar un cliente"
+    opening:            # <= 4 words; the card shows only the title (N2)
+      narration: "Aprendes a registrar clientes."
+    closing:            # <= 3 words spoken (A2); the card carries the rest
+      narration: "Siguiente: editar clientes."
+      text: "Siguiente video: editar un cliente"
     music:
       prompt: "Soft corporate ambient, gentle synth pads, light percussion, calm and positive"
 
   - id: redes
     type: RED
     format: "9:16"
-    steps: [nuevo, datos, guardar]
-    opening:
-      narration: "¿Un cliente nuevo? Regístralo así."
-      text: "¿Un cliente nuevo? Regístralo así"
-    closing:
-      narration: "Mira el tutorial completo."
-      text: "Mira el tutorial completo"
-    narration:
-      nuevo: "En tu lista de clientes, haz clic en Nuevo cliente."
-      datos: "Completa el nombre, el correo y el teléfono de tu cliente."
-      guardar: "Haz clic en Guardar cliente y tu cliente queda primero en la lista."
+    steps: [nuevo, datos, guardar]   # no login (RED3); no "Paso N" chip (N7)
+    omit: ["#c-phone"]               # same take; the optional field is cut from RED (E2 + RED3)
+    opening:            # hook <= 2 words; the card adds, not repeats (N2)
+      narration: "¿Cliente nuevo?"
+      text: "Regístralo en DemoCRM en segundos"
+    closing:            # N8: CTA with destination
+      narration: "Mira nuestro perfil."
+      text: "Tutorial completo en el enlace de nuestro perfil"
+    narration:          # short, no step numbers; long enough to cover each step (A2) and RED2 (15–35 s)
+      nuevo: "Haz clic en el botón Nuevo cliente."
+      datos: "Escribe el nombre y el correo electrónico de tu cliente."
+      guardar: "Haz clic en Guardar cliente. Aparece el aviso y queda primero en la lista."
     music:
       prompt: "Upbeat rhythmic electronic pop, punchy drums, bright synths, energetic"

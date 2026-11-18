@@ -7,7 +7,7 @@ Pipeline local que convierte **una app + un flujo** (modo A, también a partir d
 
 Incluye voz comercial en español neutro de Ecuador con trato de tú (Gemini TTS), música por tipo de video (Lyria) que baja sola cuando habla la voz, audio a -14 LUFS con picos < -1 dBTP, cámara con zoom de detalle, cursor de tamaño constante, subtítulos y la marca de cada tutorial.
 
-**Reglas normativas:** [`reglas/reglas-video.md`](reglas/reglas-video.md) (IDs E, C, O, R, T, L, A, V, TUT, RED, PRO, NOV). Los skills, `tools/lint.py` y `tools/qa.py` las citan por ID.
+**Reglas normativas:** [`reglas/reglas-video.md`](reglas/reglas-video.md) (IDs E, C, O, R, T, L, A, V, TUT, RED, PRO, NOV y, de la segunda prueba, C7–C10 y N1–N9). Los skills, `tools/lint.py` y `tools/qa.py` las citan por ID.
 
 ## Tipos de video
 
@@ -84,14 +84,38 @@ Todas se corren desde la raíz: `.venv/Scripts/python.exe tools/<etapa>.py <slug
 | `music [--offline] [--force]` | pista Lyria por video según su tipo; se reutiliza salvo `--force` | `audio/<id>/music.*` |
 | `mix` | voz + música con ducking, -14 LUFS, picos < -1 dBTP | `audio/<id>/mix.wav` |
 | `compose` | cámara, cursor, subtítulos, etiquetas, reencuadre 9:16 + `hyperframes check` | `hf-<id>/`, `hf-<id>/layout.json` |
-| `render [--quality draft\|looks\|delivery] [--video ID]` | MP4 finales (`--page-motion-blur off`) | `out/<slug>-<id>.mp4` |
+| `render [--quality draft\|looks\|delivery] [--video ID]` | MP4 finales en paralelo, un proceso por video (`--page-motion-blur off`) | `out/<slug>-<id>.mp4` |
 
 Todo junto: `tools/pipeline.py <slug> [--from E] [--to E] [--only E] [--video ID] [--offline] [--quality Q]` (empieza por `lint`).
-Lint: `tools/lint.py <slug>`. QA: `tools/qa.py <slug> [--video ID]` (chequeos automáticos → `qa/<id>.json` + snapshots para la revisión visual). Modo B: `tools/transcribe.py <video> --slug <slug>`. Video de referencia: `tools/transcribe.py <video> --slug <slug> --ref <NAME>` → `referencias/<NAME>/`.
+Lint: `tools/lint.py <slug>`. QA antes de renderizar: `tools/qa.py <slug> --pre [--video ID]` (solo `timeline.json` + `layout.json`, sin MP4, + snapshots para la revisión visual). QA del MP4: `tools/qa.py <slug> [--video ID]` (A1, píxeles C4, duración, resolución → `qa/<id>.json`). Modo B: `tools/transcribe.py <video> --slug <slug>`. Video de referencia: `tools/transcribe.py <video> --slug <slug> --ref <NAME>` → `referencias/<NAME>/`.
+
+## Flujo rápido (objetivo: 10–12 min)
+
+Para un TUT de ~1 min + un RED de ~20 s. Se corrige **antes** de renderizar y se renderiza **una sola vez**:
+
+```bat
+.venv\Scripts\python.exe tools\lint.py <slug>
+.venv\Scripts\python.exe tools\pipeline.py <slug> --to compose          rem lint, capture, tts, edit, music, mix, compose
+.venv\Scripts\python.exe tools\qa.py <slug> --pre                      rem chequeos sin MP4 + snapshots (máx. 3 rondas)
+.venv\Scripts\python.exe tools\pipeline.py <slug> --only render --quality delivery   rem un render, ambos videos en paralelo
+.venv\Scripts\python.exe tools\qa.py <slug>                            rem chequeos del MP4
+.venv\Scripts\python.exe tools\pipeline.py <slug> --only render --quality delivery --video <id>   rem solo si falla ese video
+```
+
+| Etapa | Tiempo esperado (objetivo) |
+| --- | --- |
+| lint + capture (una toma) | ~2 min |
+| tts + music (con caché: solo el texto o prompt que cambió) | ~1–2 min la primera vez, segundos después |
+| edit + mix + compose | ~1–2 min |
+| `qa.py --pre` + revisar snapshots, por ronda | ~1 min |
+| render `delivery` (ambos en paralelo) | ~3–4 min |
+| `qa.py` del MP4 | < 1 min |
+
+`pipeline.py` imprime el tiempo de cada etapa. Solo se vuelve a grabar si la toma está mal (selector, `wait:`, pantalla equivocada); la voz y la música solo se regeneran si cambió su texto. La voz se mide sin silencios al inicio y al final, y `lint` estima la duración con 1,9 palabras/s + 0,5 s por clip.
 
 ## Formas de entrada
 
-Todas terminan en un mismo brief (`proyectos/<slug>/brief.md`, plantilla en `templates/brief.md`) antes del guion: objetivo concreto, audiencia, tipo de video por salida, enfoque, dispositivo, glosario, fuentes, acceso (solo nombres `env:NAME`), conocimiento de la app, flujo y datos de la serie.
+Todas terminan en un mismo brief (`proyectos/<slug>/brief.md`, plantilla en `templates/brief.md`) antes del guion: objetivo concreto, audiencia, tipo de video por salida, enfoque, dispositivo, glosario, paleta de la app (N5), historia o escenario (N4), destino del llamado a la acción (N8), fuentes, acceso (solo nombres `env:NAME`), conocimiento de la app, flujo y datos de la serie.
 
 | Entrada | Qué hace el agente |
 | --- | --- |
@@ -134,7 +158,7 @@ Novedad:
 
 > Anuncia a los usuarios que ahora se puede filtrar contactos por etapa, en vertical.
 
-El agente decide el tipo de video, valida el guion con `lint`, ensaya el flujo, graba una sola toma, edita cada video, corre los chequeos automáticos y revisa cada snapshot (máximo 3 rondas de corrección) y entrega las rutas de los MP4 por video.
+El agente decide el tipo de video, valida el guion con `lint`, ensaya el flujo, graba una sola toma, edita cada video, corre `qa.py --pre` y revisa cada snapshot antes de renderizar (máximo 3 rondas de corrección), renderiza una sola vez, corre los chequeos del MP4 y entrega las rutas de los MP4 por video.
 
 ## Limitaciones conocidas
 
@@ -142,5 +166,5 @@ El agente decide el tipo de video, valida el guion con `lint`, ensaya el flujo, 
 - El agente no puede escribir `.env`: las claves de API las agregas tú. Las credenciales demo de cada tutorial sí las puede guardar en `acceso.local.yaml`.
 - Con un proyecto ya levantado el agente no instala, compila, ejecuta ni migra nada: solo accede a la app y lee el código.
 - La primera ejecución de HyperFrames descarga fuentes y componentes.
-- Lyria no tiene capa gratuita (≈ USD 0.08 por pista); la voz TTS se cobra por carácter. Para iterar usa `--offline` y `--quality draft`.
+- Lyria no tiene capa gratuita (≈ USD 0.08 por pista); la voz TTS se cobra por carácter. Para iterar usa `--offline` y `qa.py --pre` (sin renderizar); `tts` y `music` reutilizan lo que no cambió.
 - 2FA/CAPTCHA no se resuelven dentro de la toma: usa una cuenta demo sin 2FA o inicia sesión antes en el ensayo.

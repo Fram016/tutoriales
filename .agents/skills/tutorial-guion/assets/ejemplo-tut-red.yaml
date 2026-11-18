@@ -1,17 +1,25 @@
 # Example tutorial.yaml v2 (fictitious app): one step list, a TUT 16:9 and a RED 9:16.
 # Rules by ID: reglas/reglas-video.md. Selectors are illustrative; confirm them in rehearsal.
+# Brief: Historia "llegó un producto del proveedor local" (N4); Destino del CTA "enlace de nuestro perfil" (N8).
 title: "Cómo registrar un producto en Stocko"
 product: "Stocko"
 app_url: http://127.0.0.1:9000/
 viewport: [1920, 1080]
 language: es-EC
 device: desktop                      # L2: "haz clic"
-brand: {dir: brand, primary: "#0f766e", accent: "#f59e0b", background: "#0b1220", text: "#ffffff", font: "Inter"}
+brand:                               # N5: palette read from the app's CSS; accent = primary (no invented color)
+  dir: brand
+  primary: "#0f766e"                 # primary buttons
+  background: "#134e4a"              # dark brand color (header) for cards
+  surface: "#134e4a"                 # caption band (N3)
+  on_surface: "#ffffff"
+  text: "#ffffff"
+  font: "Inter"
 glossary:                            # L3
   producto: [artículo, ítem, mercadería]
 music: {prompt: "Soft corporate ambient, warm pads, light percussion, calm"}
 
-steps:                               # E2: one action with a visible result per step
+steps:                               # E2: one action with a visible result per step; titles are not rendered (N2)
   - id: login                        # TUT5: first video of the series only
     title: "Inicia sesión"
     narration: "Ingresa a Stocko con tu correo y tu contraseña."
@@ -28,44 +36,46 @@ steps:                               # E2: one action with a visible result per 
       - wait: "#btn-nuevo"
   - id: nuevo
     title: "Abre el formulario"
-    narration: "Haz clic en Nuevo producto para abrir el formulario."
+    narration: "Haz clic en Nuevo producto. Se abre el formulario."   # N1: instruction first, result after
     actions:
       - click: "#btn-nuevo"
       - wait: "#p-nombre"
   - id: datos                        # the whole form is ONE step
     title: "Completa los datos"
-    narration: "Completa el nombre, el precio, la categoría y una nota corta para tu equipo."
+    narration: "Completa el nombre, el código, el precio y la categoría. En la nota, indica que viene del proveedor local."  # N4: explains the value
     actions:
       - type: {into: "#p-nombre", text: "Café molido 500 g"}
+      - type: {into: "#p-codigo", text: "CAF-500"}               # optional field: RED omits it
       - type: {into: "#p-precio", text: "6.50"}
       - select: {in: "#p-categoria", option: "Bebidas"}
-      - type: {into: "#p-nota", text: "Proveedor local"}   # C6: short demo text
+      - type: {into: "#p-nota", text: "Proveedor local"}         # C6 short; carries the story (N4)
   - id: guardar
     title: "Guarda el producto"
     narration: "Haz clic en Guardar producto. Aparece el aviso y tu producto queda primero en la lista."
     actions:
       - click: "#btn-guardar"
       - wait: "#toast"
-      - result: "#toast"                         # R1/R2: confirmation in detail, >= 0.8 s clean
-      - highlight: "#tabla tbody tr:first-child"  # R3: new row outlined in accent
+      - result: "#toast"                         # R2/N6: confirmation in detail, >= 0.8 s clean
+      - highlight: "#tabla tbody tr:first-child"  # R3: new row outlined in the brand color
 
 videos:
   - id: tutorial
     type: TUT
     format: "16:9"
     steps: all
-    opening: {narration: "En este video aprendes a registrar productos.", text: "Aprende a registrar un producto"}
+    opening: {narration: "Aprendes a registrar productos."}     # <= 4 words; the card shows only `title` (N2)
     requirements: {narration: "Necesitas una cuenta con permiso de inventario.", text: "Requisito: permiso de inventario"}
-    closing: {narration: "Siguiente video: ajustar el stock.", text: "Siguiente: ajustar el stock"}
+    closing: {narration: "Siguiente: ajustar stock.", text: "Siguiente video: ajustar el stock"}   # <= 3 words spoken
     music: {prompt: "Soft corporate ambient, warm pads, calm"}     # TUT: suave o ninguna
   - id: redes
     type: RED
     format: "9:16"
-    steps: [nuevo, datos, guardar]   # no login, no obvious navigation; numbering stays 3, 4, 5
-    opening: {narration: "¿Tienes un producto nuevo?", text: "¿Llegó un producto nuevo?"}
-    closing: {narration: "Mira el tutorial completo.", text: "Mira el tutorial completo"}
-    narration:
-      nuevo: "En tu lista de productos, haz clic en Nuevo producto."
-      datos: "Completa el nombre, el precio y la categoría de tu producto."
-      guardar: "Haz clic en Guardar producto: aparece el aviso y tu producto queda primero."
+    steps: [nuevo, datos, guardar]   # no login, no obvious navigation; no "Paso N" chip (N7)
+    omit: ["#p-codigo"]              # same take, the optional field is cut from this video (E2 + RED3)
+    opening: {narration: "¿Producto nuevo?", text: "Llegó del proveedor: regístralo así"}   # hook <= 2 words
+    closing: {narration: "Mira nuestro perfil.", text: "Tutorial completo en el enlace de nuestro perfil"}  # N8
+    narration:                       # <= 7 words each, no step numbers
+      nuevo: "Haz clic en Nuevo producto."
+      datos: "Completa nombre, precio y nota del proveedor."
+      guardar: "Haz clic en Guardar producto. Queda primero."
     music: {prompt: "Upbeat rhythmic pop, punchy drums, bright synths"}  # RED: rítmica

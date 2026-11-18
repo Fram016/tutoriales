@@ -4,7 +4,7 @@ description: "Trigger: ensayo, ensayar, grabar pantalla, captura, grabar la toma
 license: Apache-2.0
 metadata:
   author: tutoriales
-  version: "2.0"
+  version: "2.1"
 ---
 
 ## Activation Contract
@@ -23,6 +23,8 @@ Use after tutorial.yaml passes `tools/lint.py` and before tts/edit. Two phases: 
 - Credentials come from `proyectos/<slug>/acceso.local.yaml` (or `.env`) via `env:NAME`. In rehearsal, read the file inside your own script only at the step that types them; never print, log, snapshot-report or return the values.
 - Try selectors learned from source code first and confirm them in rehearsal.
 - Never record personal tabs or real data. The take uses its own task space with a 1920x1080 emulated viewport.
+- C9, C10: the recorder logs `frame_box` (control + its visible label: `label[for=id]` or the field wrapper) and `screen_at` for every type/select/click; type into the field itself (`#id`), not a wrapper, so the label is found.
+- Recapture only when the take itself is wrong (selector, missing `wait:`/`result:`/`highlight:`, wrong screen, private data); voice, `omit` and composition fixes never need a new take.
 - C4: the take must not show long blank loads; add `wait: SEL` for the loaded content instead of `pause:` (edit cuts near-blank frames, but a missing wait shows the spinner).
 
 ## Execution Steps

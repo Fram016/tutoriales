@@ -4,7 +4,7 @@ description: "Trigger: hacer un tutorial, crear tutorial, grabar tutorial, video
 license: Apache-2.0
 metadata:
   author: tutoriales
-  version: "2.0"
+  version: "2.1"
 ---
 
 ## Activation Contract
@@ -21,7 +21,7 @@ Use when the user asks for a tutorial, social, promo or feature-announcement vid
 - A running project is only accessed: never install, build, run, migrate or seed it; read its source read-only.
 - Demo data only. Never record real customer data or personal tabs.
 - Brand is per tutorial: `proyectos/<slug>/brand/` + `brand:` in tutorial.yaml, never global.
-- Lyria (≈ USD 0.08/track) and TTS (per character) are billed: iterate with `--offline` / `--quality draft`; ask before `music.py --force`.
+- Lyria (≈ USD 0.08/track) and TTS (per character) are billed; both cache, so rerunning unchanged text costs nothing. Ask before `music.py --force`. Iterate on `qa.py --pre`, never on renders.
 
 ## Decide the video type (mandatory)
 
@@ -50,14 +50,18 @@ Use when the user asks for a tutorial, social, promo or feature-announcement vid
 
 1. Preflight: `.venv/Scripts/python.exe tools/doctor.py` (add `--online` once GEMINI_API_KEY exists). Fix or report every failure.
 2. Pick a kebab-case slug; create `proyectos/<slug>/brand/` (copy the logo). Reference shape: `proyectos/_demo/tutorial.yaml`.
-3. `tutorial-brief`: inputs, Tipo de video per output, Dispositivo, Glosario, Datos de la serie; verifies the login.
+3. `tutorial-brief`: inputs, Tipo de video per output, Dispositivo, Glosario, Paleta (N5), Historia (N4), Destino del CTA (N8), Datos de la serie; verifies the login.
 4. Mode B only: `tutorial-replicar`.
-5. `tutorial-guion` → `.venv/Scripts/python.exe tools/lint.py <slug>`. Fix every error and warning in tutorial.yaml until lint passes; never record with lint errors.
-6. `tutorial-ensayo-captura` (one take for all videos) → `tutorial-voz` → `tutorial-edicion` → `tutorial-render` → `tutorial-qa`.
-   After the take works: `.venv/Scripts/python.exe tools/pipeline.py <slug> --from tts --quality draft` (stages: lint, capture, tts, edit, music, mix, compose, render; `--video ID` limits to one video).
-7. `tutorial-qa`: automatic checks + visual review per video. Fix and rerun from the stage it names; at most 3 fix rounds, then stop and report the remaining failures.
-8. Final: `.venv/Scripts/python.exe tools/pipeline.py <slug> --from compose --quality delivery`, then qa again.
+5. `tutorial-guion` → `.venv/Scripts/python.exe tools/lint.py <slug>`. Fix every error and warning until lint passes; never record with lint errors.
+6. `tutorial-ensayo-captura` (rehearsal + one take for all videos).
+7. FAST WORKFLOW (target ≤ 12 min for a ~1 min TUT + ~20 s RED; report the stage timings pipeline prints):
+   1. `.venv/Scripts/python.exe tools/pipeline.py <slug> --from tts --to compose` (tts → edit → music → mix → compose; tts/music reuse caches, so only changed text or prompts cost time/money).
+   2. `.venv/Scripts/python.exe tools/qa.py <slug> --pre` (no MP4: timeline.json + layout.json checks) and open EVERY snapshot it prints (`tutorial-qa`). Fix loop happens HERE: change tutorial.yaml, rerun from the stage `tutorial-qa` names (`--to compose`), `qa.py --pre` again. Max 3 rounds; never render inside the loop.
+   3. ONE render at final quality: `.venv/Scripts/python.exe tools/pipeline.py <slug> --only render --quality delivery` (all videos render in parallel).
+   4. `.venv/Scripts/python.exe tools/qa.py <slug>` (MP4 checks: A1, C4 pixels, duration, resolution).
+   5. Only a failing video is fixed and re-rendered: `... --only render --quality delivery --video <id>` (or `--from <stage> --video <id>`), then `qa.py <slug> --video <id>`.
+   - Recapture only when the take itself is wrong (selector, missing `wait:`/`result:`/`highlight:`, private data, wrong screen). Voice and music rerun only when their text/prompt changed.
 
 ## Output Contract
 
-Per video id: `proyectos/<slug>/out/<slug>-<id>.mp4`, type, format, duration (from render/qa), steps included, QA status (`qa/<id>.json` result + visual verdict), and rules still failing. Then voice + music per video, fix rounds used, and a cost note (Lyria ≈ USD 0.08 per track, TTS per narrated character; offline runs cost nothing). List pending items (offline silent voice or placeholder music still in use).
+Per video id: `proyectos/<slug>/out/<slug>-<id>.mp4`, type, format, duration (from render/qa), steps included, QA status (`qa.py --pre` + MP4 `qa/<id>.json` result + visual verdict), and rules still failing. Stage timings (total vs the ≤ 12 min target) and renders used (1 + per-video re-renders). Then voice + music per video, fix rounds used, and a cost note (Lyria ≈ USD 0.08 per track, TTS per narrated character; offline runs cost nothing). List pending items (offline silent voice or placeholder music still in use).
