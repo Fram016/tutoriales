@@ -663,6 +663,7 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             o += p["d"]
         steps.append({
             "id": step["id"], "number": step["number"], "chapter": step.get("chapter"),
+            "part": step.get("part"), "context": step.get("context"),
             "title": step.get("title"), "narration": step["narration"],
             "start": _r(t), "duration": _r(plan["duration"]),
             "voice_start": _r(t + plan["voice_offset"]) if voice > 0 else _r(t), "voice_duration": _r(voice),
@@ -717,6 +718,8 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         "screen_start": _r(screen_start), "screen_end": _r(screen_end), "steps": steps,
         "warnings": warnings,
     }
+    if tut.get("parts"):
+        timeline["parts"] = [dict(p) for p in tut["parts"]]   # N16: compose draws separators and "Parte N · Paso M"
     surfaces = surface_specs(tut, actions, steps)
     if surfaces:
         timeline["surfaces"] = surfaces

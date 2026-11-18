@@ -900,3 +900,26 @@ class FormBoxTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PartsContextTest(unittest.TestCase):
+    """N16/N17: "Debería dividirse en partes" and "dejar claro cuándo se trabaja en el SRI y cuándo en Perseo":
+    the timeline carries `parts` and each step's `part`/`context` for compose and qa."""
+
+    def plan(self, parts):
+        tut, video = tutorial_of(["nuevo"])
+        if parts:
+            tut["parts"] = [{"n": 1, "title": "Configurar la carpeta"}]
+        video["steps"][0]["part"] = 1 if parts else None
+        video["steps"][0]["context"] = "sri"
+        actions = {"steps": [{"id": "nuevo", "t0": 0.0, "t1": 3.0,
+                               "events": [{"type": "click", "t": 1.0, "selector": "#btn-new", **box(1377, 109)}]}]}
+        return edit.plan_video(tut, video, actions, [], {"opening": 2.0, "nuevo": 2.0, "closing": 1.5})
+
+    def test_parts_and_step_part_context_reach_the_timeline(self):
+        tl = self.plan(parts=True)
+        self.assertEqual(tl["parts"], [{"n": 1, "title": "Configurar la carpeta"}])
+        self.assertEqual((tl["steps"][0]["part"], tl["steps"][0]["context"]), (1, "sri"))
+
+    def test_no_parts_key_without_parts(self):
+        self.assertNotIn("parts", self.plan(parts=False))

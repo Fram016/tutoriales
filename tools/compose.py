@@ -1577,7 +1577,7 @@ def plan(timeline: dict, brand: dict) -> dict:
     badges = uses_context(timeline) and any(labels.values())
     if badges:
         # N17: with a context badge the brand color belongs to the product only; the step chip goes neutral.
-        pal = {**pal, "chip": pal["neutral"]}
+        pal = {**pal, "brand_chip": pal["chip"], "chip": pal["neutral"]}
         texts = {context_label(timeline, c) for s in timeline["steps"] for _, _, c in step_contexts(timeline, s)}
         chip_w += BADGE_GAP + max(text_width(t, BADGE_FONT) + 2 * BADGE_PAD_X for t in texts)
     stage = Stage(fmt, chip_w)
@@ -1657,7 +1657,7 @@ def plan(timeline: dict, brand: dict) -> dict:
                 spans[-1] = (spans[-1][0], max(spans[-1][1], s1), spans[-1][2])
             for t0, t1, context in spans:
                 text = context_label(timeline, context)
-                color = pal["chip"] if context == "extension" else pal["neutral"]
+                color = pal.get("brand_chip", pal["chip"]) if context == "extension" else pal["neutral"]
                 items.append({"kind": "badge", "t0": round(t0, 3), "t1": round(t1, 3), "step": step["id"],
                               "rect": rnd(stage.badge_rect(text, chip)), "text": text, "context": context,
                               "color": color, "text_color": pal["chip_text"], "font_px": BADGE_FONT,

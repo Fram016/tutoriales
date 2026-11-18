@@ -1161,7 +1161,7 @@ class RoundFourTest(unittest.TestCase):
             for cap in self.items(lay, "caption"):
                 self.assertFalse(overlap(cap["rect"], badge["rect"]), (cap, badge))
             if badge["context"] == "extension":
-                self.assertEqual(badge["color"], pal["chip"])                        # brand: Perseo
+                self.assertEqual(badge["color"], pal.get("brand_chip", pal["chip"]))                        # brand: Perseo
             else:
                 self.assertLess(saturation(badge["color"]), 0.1, badge)             # neutral: SRI
                 self.assertGreater(compose.contrast(badge["color"], pal["surface"]), 1.3)
@@ -1182,6 +1182,10 @@ class RoundFourTest(unittest.TestCase):
         self.assertEqual({c["color"] for c in self.items(lay, "chip")}, {compose.NEUTRAL})
         html, _ = compose.build(tl, BRAND)
         self.assertIn(f"background: {compose.NEUTRAL}", html)
+        # The extension badge keeps the brand color (qa N17): only the chip goes neutral.
+        ext = [b for b in self.items(lay, "badge") if b["context"] == "extension"]
+        self.assertTrue(ext)
+        self.assertNotIn(compose.NEUTRAL, {b["color"] for b in ext})
         # PRESERVE: without contexts the chip keeps the brand color.
         self.assertNotEqual({c["color"] for c in self.items(self.layout, "chip")}, {compose.NEUTRAL})
 
