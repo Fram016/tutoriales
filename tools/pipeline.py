@@ -8,7 +8,11 @@ lint validates tutorial.yaml against reglas/reglas-video.md before anything is r
 capture and tts always cover every video (one take, shared voice cache);
 --video ID limits edit, music, mix, compose and render to that video.
 --offline applies to tts and music (silent voice + test pad, no API key needed).
-Stops at the first failing stage and names it in the error.
+Stops at the first failing stage and names it in the error; prints a table of stage timings at the end.
+
+Fast workflow (odd/tasks/reglas-ronda2.md L4): `--to compose`, then `python tools/qa.py <slug> --pre`
+(no MP4) and the fix loop, then ONE `--only render --quality delivery` (`--video ID` re-renders only
+a failing video).
 """
 from __future__ import annotations
 
@@ -53,6 +57,15 @@ def run_lint(slug: str) -> list[str]:
     return warnings
 
 
+def timing_table(timings: list[tuple[str, float, str]]) -> str:
+    """etapa | seconds | share | status, so the agent sees where the time goes (S2)."""
+    total = sum(t for _, t, _ in timings)
+    rows = [f"  {'etapa':<9} {'s':>7} {'%':>5}  estado"]
+    rows += [f"  {name:<9} {t:7.1f} {100 * t / (total or 1):4.0f}%  {status}" for name, t, status in timings]
+    rows.append(f"  {'total':<9} {total:7.1f}")
+    return "\n[pipeline] tiempos por etapa:\n" + "\n".join(rows)
+
+
 def run_stage(name: str, slug: str, offline: bool, quality: str, video: str | None = None):
     if name == "lint":
         return run_lint(slug)
@@ -81,16 +94,20 @@ def pipeline(slug: str, stages: list[str], offline: bool = False, quality: str =
     print(f"[pipeline] {tut['title']} ({slug}): {' → '.join(stages)}"
           f"{f' [video {video}]' if video else ''}{' [offline]' if offline else ''}")
     started = time.monotonic()
-    results = {}
+    results, timings = {}, []
     for i, name in enumerate(stages, 1):
         print(f"\n=== [{i}/{len(stages)}] {name} ===")
         t0 = time.monotonic()
         try:
             results[name] = run_stage(name, slug, offline, quality, video)
         except PipelineError as exc:
+            timings.append((name, time.monotonic() - t0, "falló"))
+            print(timing_table(timings))
             raise PipelineError(f"etapa '{name}' falló: {exc}") from exc
-        print(f"--- {name}: {time.monotonic() - t0:.1f} s")
+        timings.append((name, time.monotonic() - t0, "ok"))
+        print(f"--- {name}: {timings[-1][1]:.1f} s")
     print(f"\n[pipeline] ok en {time.monotonic() - started:.1f} s")
+    print(timing_table(timings))
     rendered = results.get("render")
     if isinstance(rendered, dict):
         for vid, info in rendered.items():

@@ -135,13 +135,15 @@ class WarpTest(unittest.TestCase):
         self.assertLessEqual(gap, 0.3 + 1e-9)
 
     def test_voice_gap_at_most_1_s_when_compressible(self):
-        evs = [{"type": "click", "t": 1.0}]
+        # Two camera-only events: no main action, so N1 does not hold the step (see SyncTest).
+        evs = [{"type": "focus", "t": 1.0}, {"type": "focus", "t": 2.0}]
         plan = edit.plan_step(0.0, 7.0, evs, [], 2.5, TUT)
         self.assertLessEqual(plan["duration"] - 2.5, 1.0 + 1e-9)
         self.assertAlmostEqual(plan["voice_offset"], edit.LEAD)
 
     def test_long_voice_holds_last_frame(self):
-        plan = edit.plan_step(0.0, 1.0, [{"type": "click", "t": 0.5}], [], 4.0, TUT)
+        # Without a main action (a click waits for its narration instead, see SyncTest).
+        plan = edit.plan_step(0.0, 1.0, [{"type": "focus", "t": 0.3}, {"type": "focus", "t": 0.6}], [], 4.0, TUT)
         self.assertAlmostEqual(plan["duration"], 4.0 + edit.LEAD + edit.TAIL)
         self.assertEqual(plan["pieces"][-1]["kind"], "freeze")
 
@@ -241,12 +243,13 @@ class TimelineTest(unittest.TestCase):
     def test_voice_is_placed_to_keep_every_silence_within_1_s(self):
         # "ver" shows two results (1.5 s each, TUT4) but its narration is short: centring its voice inside
         # the step left 1.15 s before and 1.45 s after. Neighbours that hold a frame give way (A2).
+        # Camera-only neighbours: a click step's voice is pinned before its click instead (N1, SyncTest).
         tut, video = tutorial_of(["abrir", "ver", "cerrar"])
         actions = {"steps": [
-            {"id": "abrir", "t0": 0.0, "t1": 0.5, "events": [{"type": "click", "t": 0.2, **box(100, 100)}]},
+            {"id": "abrir", "t0": 0.0, "t1": 0.5, "events": [{"type": "focus", "t": 0.2, **box(100, 100)}]},
             {"id": "ver", "t0": 10.0, "t1": 10.0, "events": [{"type": "result", "t": 10.0, **box(300, 300)},
                                                           {"type": "highlight", "t": 10.0, **box(300, 400)}]},
-            {"id": "cerrar", "t0": 11.0, "t1": 11.5, "events": [{"type": "click", "t": 11.2, **box(500, 100)}]},
+            {"id": "cerrar", "t0": 11.0, "t1": 11.5, "events": [{"type": "focus", "t": 11.2, **box(500, 100)}]},
         ]}
         durations = {"opening": 2.0, "abrir": 2.0, "ver": 1.1, "cerrar": 2.0, "closing": 1.5}
         tl = edit.plan_video(tut, video, actions, [], durations)
@@ -294,6 +297,203 @@ class CardTest(unittest.TestCase):
         card = edit.plan_card("closing", "TUT", 3.4)
         self.assertGreaterEqual(card["duration"], 3.4 + card["voice_start"])
         self.assertIn("closing", card["warning"])
+
+
+def video_of(steps, vtype="TUT", omit=()):
+    """steps: [(id, narration)]."""
+    tut = {"title": "Cómo crear un contacto", "product": "Nexo CRM", "viewport": [1920, 1080]}
+    video = {"id": "v", "type": vtype, "format": "16:9", "requirements": None, "omit": list(omit),
+             "steps": [{"id": s, "number": i + 1, "narration": n} for i, (s, n) in enumerate(steps)],
+             "opening": {"text": "Aprende", "narration": "En este video aprendes algo."},
+             "closing": {"text": "Siguiente", "narration": "Siguiente video: otra cosa."}}
+    return tut, video
+
+
+def event(tl, step, kind):
+    return next(e for e in tl["steps"][step]["events"] if e["type"] == kind)
+
+
+class SyncTest(unittest.TestCase):
+    """N1: the narration asking for an action ends before it (at most 0.3 s after the click)."""
+
+    def test_nuevo_contacto_is_heard_before_the_form_opens(self):
+        # "Haz clic en Nuevo contacto" appeared with the form already open (≈0:16).
+        tut, video = video_of([("nuevo", "Haz clic en Nuevo contacto.")])
+        actions = {"steps": [{"id": "nuevo", "t0": 0.0, "t1": 1.8, "events": [
+            {"type": "click", "t": 0.9, "selector": "#btn-new", "screen_c": 0.8, **box(1377, 109)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 2.0, "nuevo": 2.6, "closing": 1.5})
+        step, click = tl["steps"][0], event(tl, 0, "click")
+        self.assertGreaterEqual(step["voice_start"], step["start"] - 1e-6)
+        self.assertLessEqual(step["voice_start"] + step["voice_duration"], click["t"] + 0.3 + 1e-6)
+        self.assertGreaterEqual(click["screen_at"], click["t"])
+        self.assertAlmostEqual(step["action_t"], click["t"])
+        # The hold is a freeze before the click: the form is not shown before the click.
+        self.assertLess(capture_at(step, click["t"] - 0.01), 0.8)
+
+    def test_guardar_is_heard_before_the_list_appears(self):
+        # "Haz clic en Guardar contacto" appeared over the saved list (≈0:31).
+        tut, video = video_of([("guardar", "Haz clic en Guardar contacto. El contacto nuevo queda primero "
+                                           "en la lista, resaltado.")])
+        actions = {"steps": [{"id": "guardar", "t0": 0.0, "t1": 4.0, "events": [
+            {"type": "click", "t": 0.7, "selector": "#btn-save", **box(1300, 900)},
+            {"type": "result", "t": 1.2, "selector": "#toast", **box(1500, 950)},
+            {"type": "highlight", "t": 2.0, "selector": "tr.new", **box(400, 200)}]}]}
+        voice = 4.2
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 2.0, "guardar": voice, "closing": 1.5})
+        step, click = tl["steps"][0], event(tl, 0, "click")
+        instruction = step["instruction_duration"]
+        self.assertLess(instruction, voice)          # only the first sentence asks for the click
+        self.assertGreater(instruction, 0.3 * voice)
+        self.assertLessEqual(step["voice_start"] + instruction, click["t"] + 0.3 + 1e-6)
+        self.assertGreaterEqual(step["voice_start"], step["start"] - 1e-6)
+        self.assertLessEqual(step["voice_start"] + voice, step["start"] + step["duration"] + 1e-6)
+        result = event(tl, 0, "result")
+        self.assertGreaterEqual(result["t_end"] - result["t"], 1.5 - 1e-6)   # TUT4 kept
+        for gap in voice_gaps(tl):
+            self.assertLessEqual(gap, edit.GAP + 1e-6)
+
+    def test_no_hold_when_the_lead_in_is_long_enough(self):
+        tut, video = video_of([("nuevo", "Haz clic en Nuevo contacto.")])
+        actions = {"steps": [{"id": "nuevo", "t0": 0.0, "t1": 5.0, "events": [
+            {"type": "hover", "t": 0.5, "selector": "#menu", **box(10, 100)},
+            {"type": "hover", "t": 1.0, "selector": "#menu2", **box(10, 200)},
+            {"type": "click", "t": 4.5, "selector": "#btn-new", **box(1377, 109)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 2.0, "nuevo": 1.2, "closing": 1.5})
+        step = tl["steps"][0]
+        # No N1 hold before the click (the only freeze long enough is C7's room before the first hover).
+        self.assertFalse([p for p in step["warp"] if p["kind"] == "freeze" and p["o1"] - p["o0"] > 0.7
+                          and p["c0"] > 0.5])
+        self.assertLessEqual(step["voice_start"] + 1.2, event(tl, 0, "click")["t"] + 0.3 + 1e-6)
+
+    def test_steps_without_a_main_action_are_free(self):
+        # Several fields and no click: the narration describes the typing while it happens.
+        tut, video = video_of([("datos", "Completa el nombre y el correo.")])
+        actions = {"steps": [{"id": "datos", "t0": 0.0, "t1": 4.0, "events": [
+            {"type": "type", "t": 0.5, "t_end": 1.5, "chars": 10, "selector": "#a", **box(800, 400)},
+            {"type": "type", "t": 1.6, "t_end": 3.0, "chars": 12, "selector": "#b", **box(800, 500)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 2.0, "datos": 2.0, "closing": 1.5})
+        self.assertIsNone(tl["steps"][0]["action_t"])
+
+    def test_instruction_share(self):
+        self.assertEqual(edit.instruction_share("Haz clic en Nuevo contacto."), 1.0)
+        text = "Haz clic en Guardar. Tu contacto queda primero en la lista."
+        self.assertAlmostEqual(edit.instruction_share(text), len("Haz clic en Guardar.") / len(text), places=2)
+        # The instruction is the first sentence that asks for something, not the context before it.
+        share = edit.instruction_share("Ya tienes los datos. Ahora haz clic en Guardar. Listo.")
+        self.assertGreater(share, 0.5)
+        self.assertLess(share, 0.95)
+
+
+class OmitTest(unittest.TestCase):
+    """videos[].omit: typing on those fields is cut from that video; the step and its number stay."""
+
+    ACTIONS = {"steps": [{"id": "datos", "t0": 0.0, "t1": 9.0, "events": [
+        {"type": "type", "t": 0.5, "t_end": 2.5, "chars": 14, "selector": "#c-name", **box(800, 400)},
+        {"type": "type", "t": 3.0, "t_end": 6.0, "chars": 17, "selector": "#c-email", **box(800, 500)},
+        {"type": "select", "t": 6.65, "selector": "#c-stage", **box(800, 600)},
+        {"type": "type", "t": 7.0, "t_end": 8.5, "chars": 12, "selector": "#c-phone", **box(800, 700)}]}]}
+    DURATIONS = {"opening": 1.5, "datos": 1.0, "closing": 1.5}
+
+    def plan(self, omit=()):
+        tut, video = video_of([("datos", "Completa los datos.")], "RED", omit)
+        video["steps"][0]["number"] = 3
+        return edit.plan_video(tut, video, self.ACTIONS, [], self.DURATIONS)
+
+    def test_omitted_typing_is_cut(self):
+        full, short = self.plan(), self.plan(["#c-email", "#c-stage"])
+        step = short["steps"][0]
+        self.assertEqual([e["selector"] for e in step["events"]], ["#c-name", "#c-phone"])
+        self.assertEqual(step["number"], 3)
+        self.assertLess(step["duration"], full["steps"][0]["duration"] - edit.typing_seconds(17))
+        for p in step["warp"]:   # no frame of the e-mail typing nor of the stage change is shown
+            if p["o1"] - p["o0"] > 1e-6:
+                with self.subTest(piece=p):
+                    self.assertFalse(p["c0"] < 6.5 and p["c1"] > 3.0, p)
+                    self.assertFalse(p["c0"] == p["c1"] and 3.0 < p["c0"] < 6.5, p)
+
+    def test_other_videos_keep_the_typing(self):
+        self.assertEqual(len(self.plan()["steps"][0]["events"]), 4)
+
+    def test_the_field_left_after_omit_is_not_a_main_action(self):
+        # N1 looks at the step as written: its main action (the select) is omitted here, and the single
+        # field omit leaves in this video does not become one.
+        step = self.plan(["#c-email", "#c-stage", "#c-phone"])["steps"][0]
+        self.assertEqual([e["selector"] for e in step["events"]], ["#c-name"])
+        self.assertIsNone(step["action_t"])
+
+
+class EventFieldsTest(unittest.TestCase):
+    def test_frame_box_reaches_the_timeline(self):
+        tut, video = video_of([("datos", "Completa el nombre.")])
+        fb = {"x": 790, "y": 410, "w": 340, "h": 80}
+        actions = {"steps": [{"id": "datos", "t0": 0.0, "t1": 3.0, "events": [
+            {"type": "type", "t": 0.5, "t_end": 2.0, "chars": 10, "selector": "#c-name", "frame_box": fb,
+             **box(790, 446)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "datos": 1.0, "closing": 1.5})
+        self.assertEqual(tl["steps"][0]["events"][0]["frame_box"], fb)
+
+
+class ClosingCardTest(unittest.TestCase):
+    def test_closing_is_voice_plus_at_most_0_3_s(self):
+        for voice in (0.9, 1.4, 2.0, 2.2):
+            card = edit.plan_card("closing", "TUT", voice)
+            with self.subTest(voice=voice):
+                self.assertLessEqual(card["duration"], voice + 0.3 + 1e-6)
+                self.assertGreaterEqual(card["duration"], card["voice_start"] + voice - 1e-6)
+                self.assertIsNone(card["warning"])
+
+    def test_closing_caps_at_2_5_s_while_the_voice_fits(self):
+        card = edit.plan_card("closing", "RED", 2.4)
+        self.assertAlmostEqual(card["duration"], 2.5)
+        self.assertIsNone(card["warning"])
+
+    def test_voice_over_the_cap_warns(self):
+        card = edit.plan_card("closing", "RED", 2.6)
+        self.assertIn("closing", card["warning"])
+        self.assertGreaterEqual(card["duration"], 2.6)
+
+
+RECORDER = Path(__file__).resolve().parents[1] / "tools" / "capture" / "recorder.mjs"
+
+
+@unittest.skipUnless(shutil.which("node"), "node no está instalado")
+class FrameBoxTest(unittest.TestCase):
+    """C9: the recorder frames a field together with its visible label (recorder.mjs frameBox)."""
+
+    def frame_box(self, control, labels, viewport=(1920, 1080)):
+        import json
+        import subprocess
+        script = (f"const {{ frameBox }} = await import({json.dumps(RECORDER.as_uri())});"
+                  f"console.log(JSON.stringify(frameBox({json.dumps(control)}, {json.dumps(labels)}, "
+                  f"{json.dumps(list(viewport))})));")
+        out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True,
+                             check=True)
+        return json.loads(out.stdout)
+
+    def test_label_above_is_included(self):
+        control = {"x": 790, "y": 446, "w": 340, "h": 44}
+        label = {"x": 790, "y": 420, "w": 60, "h": 18}
+        self.assertEqual(self.frame_box(control, [label]), {"x": 790, "y": 420, "w": 340, "h": 70})
+
+    def test_label_beside_is_included(self):
+        control = {"x": 400, "y": 300, "w": 200, "h": 40}
+        label = {"x": 250, "y": 310, "w": 120, "h": 20}
+        self.assertEqual(self.frame_box(control, [label]), {"x": 250, "y": 300, "w": 350, "h": 40})
+
+    def test_no_label_is_the_control(self):
+        control = {"x": 400, "y": 300, "w": 200, "h": 40}
+        self.assertEqual(self.frame_box(control, []), control)
+
+    def test_far_or_huge_labels_are_ignored(self):
+        control = {"x": 400, "y": 300, "w": 200, "h": 40}
+        far = {"x": 400, "y": 20, "w": 80, "h": 20}           # a heading far above
+        wide = {"x": 0, "y": 270, "w": 1900, "h": 24}         # a legend spanning the page
+        self.assertEqual(self.frame_box(control, [far, wide]), control)
+
+    def test_clamped_to_the_viewport(self):
+        control = {"x": 10, "y": 30, "w": 200, "h": 40}
+        label = {"x": 10, "y": -6, "w": 80, "h": 20}
+        self.assertEqual(self.frame_box(control, [label]), {"x": 10, "y": 0, "w": 200, "h": 70})
 
 
 if __name__ == "__main__":

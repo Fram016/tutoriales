@@ -9,11 +9,19 @@ Opening, requirements and closing are cards drawn by compose; screen.mp4 only co
 screen_start..screen_end. Each step is a piecewise warp of its capture span:
 - typing runs at 13.5 chars/s, and texts over 30 chars go 3x after the first 15 (C6);
 - blank frames (page loads: no ink but a spinner) are cut (C4); sparse screens are content;
-- result/highlight events hold 1.5 s in TUT (TUT4), and results never less than 0.8 s (R2);
+- result/highlight events hold 1.5 s in TUT (TUT4), and results never less than 0.8 s (R2); a toast
+  right after a screen change holds until compose's camera has landed on it plus R2's 0.8 s (N6);
+- C7: the frame before the first pointer action of every new screen is held until compose has room
+  for the establishing shot and the zoom (compose.establish_room);
 - idle spans speed up (never past 3x; RED starts faster, RED3), but the pointer target
   gets at least PRE_CLICK seconds before each click, PRE_TYPE before typing (C3);
 - idle is squeezed further while the step outlasts its voice by more than 1.0 s (A2);
 - when the voice is longer than the actions, the step's last frame is held;
+- N1: a step's main action (its first click/select, or its single action) waits for the narration:
+  when the instruction sentence would end more than SYNC_AFTER after it, the frame before the action
+  is held so the voice (starting LEAD into the step) ends in time; the voice never slides past it, and
+  the step records that end as `instruction_end` (absolute), the time qa checks;
+- videos[].omit: typing/select on those selectors is cut from that video (the step and its number stay);
 - each voice is placed inside its step so the longest silence between voices is as short as
   possible (A2), keeping the LEAD when nothing needs to move.
 Every action event is remapped through the warp so zooms, cursor and captions land exactly; a click
@@ -23,12 +31,14 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import re
 
 import numpy as np
 from PIL import Image
 
 from common import (PipelineError, ffmpeg, is_secret_ref, load_tutorial, main_guard, project_dir,
                     read_json, videos, write_json)
+from compose import R2_CLEAN, establish_room
 
 LEAD = 0.3         # voice starts this long after the step's first frame
 TAIL = 0.4         # breathing room after the voice ends
@@ -54,6 +64,15 @@ BLANK_DIST = 18
 CHANGE_SIZE = (64, 36)
 CHANGE_DIFF, CHANGE_SHARE, CHANGE_WINDOW = 24, 0.3, 1.5
 SCREEN_EVENTS = ("click", "select", "press", "goto")
+SYNC_AFTER = 0.3   # N1: the instruction ends at most this long after its action
+ACTION_EVENTS = ("click", "select", "type", "hover", "press")   # a step's single action (N1)
+OMIT_BEFORE = 0.5  # omit: the pointer reaching an omitted field is cut too
+R2_MARGIN = 0.1    # N6: the toast hold covers R2_CLEAN plus this (frame rounding)
+# N1: the sentence that asks for the action. Imperatives of the tutorials ("Haz clic", "Toca", ...);
+# qa uses the same pattern.
+INSTRUCTION = re.compile(r"\b(haz|hacer|clic|click|toca|tocar|pulsa|presiona|selecciona|elige|escoge|abre|"
+                         r"guarda|ingresa|entra|escribe|completa|marca|busca|llena|agrega|añade|pega|copia|"
+                         r"ve a|da clic|dale)\b", re.I)
 
 PACES = {  # per video type (reglas-video.md Parte 3)
     "TUT": {"pref": 1.0, "hold": {"result": 1.5, "highlight": 1.5}},   # TUT4 pausado
@@ -64,7 +83,8 @@ PACES = {  # per video type (reglas-video.md Parte 3)
 CARD_LIMITS = {  # (min, max) seconds; E1, TUT1, RED1, A2
     "opening": {"TUT": (2.0, 3.0), "RED": (1.5, 2.0), "PRO": (2.0, 3.0), "NOV": (2.0, 3.0)},
     "requirements": {"TUT": (1.5, 5.0)},
-    "closing": {"TUT": (2.0, 2.5), "RED": (2.0, 2.5), "PRO": (2.0, 2.5), "NOV": (2.0, 2.5)},
+    # Closing = its voice + <= 0.3 s (A2): no padding up to a minimum.
+    "closing": {"TUT": (1.0, 2.5), "RED": (1.0, 2.5), "PRO": (1.0, 2.5), "NOV": (1.0, 2.5)},
 }
 CARD_LEAD = {"opening": 0.2, "requirements": 0.2, "closing": 0.1}
 CARD_TAIL = 0.2
@@ -173,11 +193,16 @@ def warp(pieces: list[dict], c: float) -> float:
     return o
 
 
+def hold_of(ev: dict, pc: dict) -> float:
+    """Hold of a result/highlight: the pace's, or longer when the toast needs it (N6, leave_room)."""
+    return max(pc["hold"][ev["type"]], ev.get("hold", 0.0))
+
+
 def _end_of(ev: dict, pc: dict) -> float:
     if ev["type"] == "type":
         return ev.get("t_end", ev["t"])
     if ev["type"] in pc["hold"]:
-        return ev["t"] + pc["hold"][ev["type"]]
+        return ev["t"] + hold_of(ev, pc)
     return ev["t"]
 
 
@@ -192,7 +217,7 @@ def build_pieces(a: float, b: float, events: list[dict], blanks, pc: dict, speed
         if ev["type"] == "type" and "t_end" in ev:
             fixed.append([ev["t"], clamp(ev["t_end"]), "type", FOCUS + typing_seconds(ev.get("chars", 0))])
         elif ev["type"] in pc["hold"]:
-            hold = pc["hold"][ev["type"]]
+            hold = hold_of(ev, pc)
             fixed.append([ev["t"], min(ev["t"] + hold, nxt, b), "hold", hold])
     cuts = [(max(c0, a), min(c1, b)) for c0, c1 in blanks if c1 > a and c0 < b]
     marks = sorted({e["t"] for e in evs} | {t for span in cuts for t in span})
@@ -237,21 +262,107 @@ def build_pieces(a: float, b: float, events: list[dict], blanks, pc: dict, speed
     return pieces
 
 
-def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: dict) -> dict:
-    """Pick the slowest idle speed that keeps the step within voice + GAP (A2), then pad."""
+def _freeze_before(pieces: list[dict], c: float, d: float) -> None:
+    k = next((i for i, p in enumerate(pieces) if p["c0"] >= c), len(pieces))
+    pieces.insert(k, {"c0": c, "c1": c, "d": d, "kind": "freeze"})
+
+
+def leave_room(pieces: list[dict], events: list[dict], a: float, b: float, carry: float | None):
+    """C7/N6, the contract with compose's camera (compose.establish_room): on every new screen
+    - the frame before its first pointer action is held until the establishing shot and the zoom fit;
+    - a toast is held until the camera has surely landed on it, plus R2_CLEAN (sets ev["hold"]).
+    `carry`: output seconds the screen shown at `a` has been on before this step, or None when it already
+    had its first action. Returns (same for the next step, whether a hold grew: rebuild the pieces)."""
+    clamp = lambda t: min(max(t, a), b)  # noqa: E731
+    screen = (a, carry) if carry is not None else None   # (capture start, output seconds before it)
+    since = (a, carry or 0.0)
+    grew = False
+    for ev in sorted(events, key=lambda e: e["t"]):
+        t = clamp(ev["t"])
+        if ev["type"] in POINTER_EVENTS and screen:
+            s, before = screen
+            deficit = establish_room(ev["type"]) - (before + warp(pieces, t) - warp(pieces, s))
+            if deficit > 1e-9:
+                _freeze_before(pieces, t, deficit)
+            screen = None
+        if ev["type"] == "result":
+            s, before = since
+            elapsed = before + warp(pieces, t) - warp(pieces, s)
+            need = max(0.0, establish_room(None) - elapsed) + R2_CLEAN + R2_MARGIN
+            if need > ev.get("hold", 0.0) + 1e-3:
+                ev["hold"] = need
+                grew = True
+        if "screen_c" in ev:
+            s = clamp(max(t, ev["screen_c"]))
+            screen = since = (s, 0.0)
+    return screen, grew
+
+
+def instruction_share(narration: str) -> float:
+    """Share of the narration (by characters) up to the end of the sentence that asks for the action
+    (N1): the first sentence with an imperative, else the whole narration."""
+    text = (narration or "").strip()
+    sentences = re.findall(r"[^.!?…]+[.!?…]*\s*", text)
+    if len(sentences) <= 1:
+        return 1.0
+    upto = 0
+    for sentence in sentences:
+        upto += len(sentence)
+        if INSTRUCTION.search(sentence):
+            return min(1.0, len(text[:upto].rstrip()) / len(text))
+    return 1.0
+
+
+def main_action(events: list[dict]) -> dict | None:
+    """N1: the action the narration asks for: the step's first click/select, or its single action."""
+    ordered = sorted(events, key=lambda e: e["t"])
+    first = next((e for e in ordered if e["type"] in ("click", "select")), None)
+    if first is None and len(ordered) == 1 and ordered[0]["type"] in ACTION_EVENTS:
+        first = ordered[0]
+    return first
+
+
+def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: dict,
+              instruction: float | None = None, action=..., carry: float | None = None) -> dict:
+    """Pick the slowest idle speed that keeps the step within voice + GAP (A2), leave compose room on
+    new screens and toasts (C7/N6, leave_room; `carry` as there), hold the frame before the main action
+    (default main_action(events)) until the instruction (`instruction` seconds into the voice, default
+    all of it) ends at most SYNC_AFTER after it (N1), then pad. `carry` of the result: for the next step."""
+    if action is ...:
+        action = main_action(events)
+    action = action if voice > 0 else None
+    at = min(max(action["t"], a), b) if action else None
+    instruction = voice if instruction is None else instruction
     speed = pc["pref"]
     while True:
         pieces = build_pieces(a, b, events, blanks, pc, speed)
+        screen, grew = leave_room(pieces, events, a, b, carry)
+        if grew:
+            pieces = build_pieces(a, b, events, blanks, pc, speed)
+            screen, _ = leave_room(pieces, events, a, b, carry)
+        if action:
+            deficit = LEAD + instruction - (warp(pieces, at) + SYNC_AFTER)
+            if deficit > 1e-9:
+                k = next((i for i, p in enumerate(pieces) if p["c0"] >= at), len(pieces))
+                pieces.insert(k, {"c0": at, "c1": at, "d": deficit, "kind": "freeze"})
         actions = sum(p["d"] for p in pieces)
         if voice <= 0 or actions <= voice + GAP or speed >= pc["max"]:
             break
         speed = min(round(speed + 0.1, 3), pc["max"])
-    need = voice + LEAD + TAIL if voice > 0 else 0.0
+    # With a main action the voice ends before it and what follows the action is the breathing room:
+    # padding a TAIL after it would only add silence (A2).
+    need = voice + LEAD + (0.0 if action else TAIL) if voice > 0 else 0.0
     duration = max(actions, need)
     if duration - actions > 1e-9:
         pieces.append({"c0": b, "c1": b, "d": duration - actions, "kind": "freeze"})
-    offset = LEAD + max(0.0, duration - voice - GAP) / 2 if voice > 0 else 0.0
-    return {"pieces": pieces, "duration": duration, "voice_offset": offset, "speed": speed}
+    if action:
+        offset = LEAD
+    else:
+        offset = LEAD + max(0.0, duration - voice - GAP) / 2 if voice > 0 else 0.0
+    carry_out = screen[1] + warp(pieces, b) - warp(pieces, screen[0]) if screen else None
+    return {"pieces": pieces, "duration": duration, "voice_offset": offset, "speed": speed,
+            "action_offset": warp(pieces, at) if action else None, "instruction": instruction,
+            "carry": carry_out}
 
 
 def place_voices(items: list[tuple[float, float, float, float]]) -> list[float]:
@@ -290,7 +401,8 @@ def plan_card(name: str, vtype: str, voice: float) -> dict:
     need = voice + lead + CARD_TAIL
     duration = min(max(need, lo), hi)
     warning = None
-    if need > hi + 1e-6:
+    # The tail gives way to the cap; only a voice that does not fit by itself overruns it (and warns).
+    if voice + lead > hi + 1e-6:
         duration = need
         warning = (f"{name} dura {duration:.1f} s y el máximo para {vtype} es {hi:.1f} s: "
                    "acorta la narración")
@@ -329,6 +441,22 @@ def _capture_events(cap: dict, step: dict) -> list[dict]:
     return events
 
 
+def omit_events(events: list[dict], omit, t0: float) -> tuple[list[dict], list[tuple[float, float]]]:
+    """videos[].omit: (kept events, capture spans to cut). An omitted type/select loses its whole span:
+    the pointer reaching the field (up to OMIT_BEFORE), the focus click and the typing."""
+    if not omit:
+        return events, []
+    kept, spans, prev_end = [], [], t0
+    for ev in sorted(events, key=lambda e: e["t"]):
+        end = ev.get("t_end", ev["t"])
+        if ev["type"] in ("type", "select") and ev.get("selector") in omit:
+            spans.append((max(prev_end, ev["t"] - OMIT_BEFORE), end))
+        else:
+            kept.append(ev)
+        prev_end = max(prev_end, end)
+    return kept, spans
+
+
 def _r(x: float) -> float:
     return round(x, 3)
 
@@ -358,13 +486,21 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         t += requirements["duration"]
     screen_start = t
     steps = []
+    carry = 0.0   # C7: the first screen starts at screen_start
     for step in video["steps"]:
         cap = captured.get(step["id"])
         if cap is None:
             raise PipelineError(f"El paso '{step['id']}' no está en la captura. Repite capture.py.")
         voice = float(durations.get(step["id"], 0.0))
-        events = _capture_events(cap, step)
-        plan = plan_step(cap["t0"], cap["t1"], events, blanks, voice, pc)
+        captured_events = _capture_events(cap, step)
+        events, omitted = omit_events(captured_events, video.get("omit"), cap["t0"])
+        # The narration was written for the whole step: its main action is chosen before omit.
+        action = main_action(captured_events)
+        action = action if action is None or any(e is action for e in events) else None
+        instruction = voice * instruction_share(step["narration"])
+        plan = plan_step(cap["t0"], cap["t1"], events, list(blanks) + omitted, voice, pc, instruction, action,
+                         carry)
+        carry = plan["carry"]
         pieces = plan["pieces"]
         out_events = []
         for ev in sorted(events, key=lambda e: e["t"]):
@@ -372,13 +508,13 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             if ev["type"] == "type":
                 end = t + warp(pieces, min(ev.get("t_end", ev["t"]), cap["t1"]))
             elif ev["type"] in pc["hold"]:
-                end = at + pc["hold"][ev["type"]]
+                end = at + hold_of(ev, pc)
             else:
                 end = at
             item = {"type": ev["type"], "t": _r(at), "t_end": _r(end), "selector": ev.get("selector"),
                     "box": ev.get("box"), "point": ev.get("point"), "chars": ev.get("chars", 0),
                     "secret": bool(ev.get("secret"))}
-            item.update({k: ev[k] for k in ("key", "dy") if k in ev})
+            item.update({k: ev[k] for k in ("key", "dy", "frame_box") if k in ev})
             if "screen_c" in ev:
                 item["screen_at"] = _r(max(at, t + warp(pieces, min(max(ev["screen_c"], cap["t0"]), cap["t1"]))))
             out_events.append(item)
@@ -392,6 +528,9 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             "title": step.get("title"), "narration": step["narration"],
             "start": _r(t), "duration": _r(plan["duration"]),
             "voice_start": _r(t + plan["voice_offset"]) if voice > 0 else _r(t), "voice_duration": _r(voice),
+            # N1: output time of the main action and how much of the voice asks for it.
+            "action_t": _r(t + plan["action_offset"]) if plan["action_offset"] is not None else None,
+            "instruction_duration": _r(plan["instruction"]),
             "speed": plan["speed"], "events": out_events, "warp": warped,
         })
         t += plan["duration"]
@@ -401,13 +540,23 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
     blocks = [("opening", opening), ("requirements", requirements)] + \
         [(s["id"], s) for s in steps] + [("closing", closing)]
     voiced = [(name, b) for name, b in blocks if b and b["voice_duration"] > 0]
-    # Cards keep their voice; a step's voice may slide anywhere inside the step (A2).
-    windows = [(b["voice_start"], b["voice_start"]) if "events" not in b else
-               (b["start"], b["start"] + b["duration"] - b["voice_duration"]) for _, b in voiced]
+    # Cards keep their voice; a step's voice may slide anywhere inside the step (A2), but its instruction
+    # never ends later than SYNC_AFTER past the main action (N1).
+    def window(b):
+        if "events" not in b:
+            return b["voice_start"], b["voice_start"]
+        hi = b["start"] + b["duration"] - b["voice_duration"]
+        if b["action_t"] is not None:
+            hi = min(hi, b["action_t"] + SYNC_AFTER - b["instruction_duration"])
+        return b["start"], max(hi, b["start"])
+    windows = [window(b) for _, b in voiced]
     starts = place_voices([(lo, hi, b["voice_start"], b["voice_duration"])
                            for (lo, hi), (_, b) in zip(windows, voiced)]) if voiced else []
     for (_, b), start in zip(voiced, starts):
         b["voice_start"] = _r(start)
+        if "events" in b:
+            # N1: the exact end of the instruction this plan used (qa checks this, it does not re-estimate).
+            b["instruction_end"] = _r(start + b["instruction_duration"])
     for (name_a, a), (name_b, b) in zip(voiced, voiced[1:]):
         gap = b["voice_start"] - (a["voice_start"] + a["voice_duration"])
         if gap > GAP + 1e-3:

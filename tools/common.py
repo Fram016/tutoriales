@@ -112,11 +112,16 @@ def _fail(where: str, msg: str):
     raise PipelineError(f"tutorial.yaml: {where}: {msg}")
 
 
-def _validate_card(where: str, card) -> None:
+def _validate_card(where: str, card, text_optional: bool = False) -> None:
     if not isinstance(card, dict):
         _fail(where, "falta; necesita {narration: ..., text: ...} (E1)")
     for key in ("narration", "text"):
-        if not isinstance(card.get(key), str) or not card[key].strip():
+        value = card.get(key)
+        if key == "text" and text_optional:
+            if value is not None and not isinstance(value, str):
+                _fail(where, "'text' tiene que ser texto")
+            continue
+        if not isinstance(value, str) or not value.strip():
             _fail(where, f"falta '{key}' (E1)")
 
 
@@ -182,7 +187,8 @@ def _validate_videos(videos, step_ids: list[str]) -> None:
             order = [step_ids.index(s) for s in chosen]
             if order != sorted(order):
                 _fail(where, "los pasos tienen que seguir el orden de la lista principal (E2)")
-        _validate_card(f"{where}: opening", video.get("opening"))
+        # N2: the opening card text is optional (it must not paraphrase the title).
+        _validate_card(f"{where}: opening", video.get("opening"), text_optional=True)
         _validate_card(f"{where}: closing", video.get("closing"))
         if video.get("requirements") is not None:
             if vtype != "TUT":
@@ -197,6 +203,30 @@ def _validate_videos(videos, step_ids: list[str]) -> None:
             _fail(where, f"'narration' nombra pasos que este video no usa: {', '.join(stray)}")
         if video.get("music") is not None and not isinstance(video["music"], dict):
             _fail(where, "'music' tiene que ser un mapa {prompt: ..., none: true|false}")
+        omit = video.get("omit", [])
+        if not isinstance(omit, list) or not all(isinstance(s, str) and s.strip() for s in omit):
+            _fail(where, "'omit' tiene que ser una lista de selectores (los campos que este video no muestra)")
+
+
+BRAND_COLORS = ("primary", "accent", "background", "text", "surface", "on_surface")
+
+
+def _validate_brand(brand) -> None:
+    if not isinstance(brand, dict):
+        raise PipelineError("tutorial.yaml: 'brand' tiene que ser un mapa {primary, accent, ...}")
+    for key in BRAND_COLORS + ("dir", "font"):
+        if brand.get(key) is not None and not isinstance(brand[key], str):
+            raise PipelineError(f"tutorial.yaml: 'brand.{key}' tiene que ser texto")
+
+
+def brand_defaults(brand: dict) -> dict:
+    """N5: never an invented color. accent falls back to primary; text on the caption band to white.
+    `surface` (caption band) has no default here: compose derives it from the dark brand color."""
+    out = dict(brand)
+    if not out.get("accent") and out.get("primary"):
+        out["accent"] = out["primary"]
+    out.setdefault("on_surface", "#ffffff")
+    return out
 
 
 def validate_tutorial(data) -> None:
@@ -213,6 +243,8 @@ def validate_tutorial(data) -> None:
         raise PipelineError("tutorial.yaml: 'device' tiene que ser desktop o mobile (L2)")
     if data.get("glossary") is not None and not isinstance(data["glossary"], dict):
         raise PipelineError("tutorial.yaml: 'glossary' tiene que ser un mapa {término: [sinónimos prohibidos]}")
+    if data.get("brand") is not None:
+        _validate_brand(data["brand"])
     step_ids = _validate_steps(data["steps"])
     # Checked when present; a tutorial without it fails in videos(), where stages need it.
     if "videos" in data:
@@ -223,6 +255,8 @@ def load_tutorial(slug: str) -> dict:
     data = yaml.safe_load((project_dir(slug) / "tutorial.yaml").read_text(encoding="utf-8"))
     load_access(slug)
     validate_tutorial(data)
+    if data.get("brand") is not None:
+        data["brand"] = brand_defaults(data["brand"])
     data.setdefault("slug", slug)
     return data
 
@@ -253,6 +287,7 @@ def videos(tut: dict, only: str | None = None) -> list[dict]:
             "requirements": dict(video["requirements"]) if video.get("requirements") else None,
             "closing": dict(video["closing"]),
             "music": dict(video.get("music") or {}),
+            "omit": list(video.get("omit") or []),
         })
     if only and not out:
         known = ", ".join(v["id"] for v in tut["videos"])

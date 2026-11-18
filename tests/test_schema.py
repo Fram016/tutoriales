@@ -142,5 +142,52 @@ class SchemaTest(unittest.TestCase):
         self.assertIn("falta la clave 'videos'", str(ctx.exception))
 
 
+    def test_omit_is_a_list_of_selectors(self):
+        for bad in ("#c-email", [3], [""]):
+            data = copy.deepcopy(BASE)
+            data["videos"][1]["omit"] = bad
+            with self.subTest(omit=bad):
+                self.assertRejects(data, "video redes: 'omit' tiene que ser una lista de selectores")
+        data = copy.deepcopy(BASE)
+        data["videos"][1]["omit"] = ["#c-email", "#c-stage"]
+        full, short = common.videos(self.load(data))
+        self.assertEqual(short["omit"], ["#c-email", "#c-stage"])
+        self.assertEqual(full["omit"], [])
+        self.assertEqual([s["number"] for s in short["steps"]], [2, 3])   # numbering unchanged
+
+    def test_opening_text_is_optional(self):
+        data = copy.deepcopy(BASE)
+        del data["videos"][0]["opening"]["text"]
+        tut = self.load(data)
+        self.assertNotIn("text", common.videos(tut, "tutorial")[0]["opening"])
+        data["videos"][0]["opening"]["text"] = 3
+        self.assertRejects(data, "video tutorial: opening: 'text' tiene que ser texto")
+        data = copy.deepcopy(BASE)
+        del data["videos"][0]["closing"]["text"]
+        self.assertRejects(data, "video tutorial: closing: falta 'text' (E1)")
+
+    def test_brand_accent_defaults_to_primary(self):
+        data = copy.deepcopy(BASE)
+        data["brand"] = {"primary": "#6d28d9", "background": "#1e1b4b"}
+        brand = self.load(data)["brand"]
+        self.assertEqual(brand["accent"], "#6d28d9")
+        self.assertEqual(brand["on_surface"], "#ffffff")
+        self.assertNotIn("surface", brand)
+        data["brand"] = {"primary": "#6d28d9", "accent": "#a78bfa", "surface": "#2e1065", "on_surface": "#f5f3ff"}
+        brand = self.load(data)["brand"]
+        self.assertEqual((brand["accent"], brand["surface"], brand["on_surface"]),
+                         ("#a78bfa", "#2e1065", "#f5f3ff"))
+
+    def test_brand_colors_are_strings(self):
+        for key in ("surface", "on_surface", "accent"):
+            data = copy.deepcopy(BASE)
+            data["brand"] = {"primary": "#6d28d9", key: 12}
+            with self.subTest(key=key):
+                self.assertRejects(data, f"'brand.{key}' tiene que ser texto")
+        data = copy.deepcopy(BASE)
+        data["brand"] = ["#6d28d9"]
+        self.assertRejects(data, "'brand' tiene que ser un mapa")
+
+
 if __name__ == "__main__":
     unittest.main()

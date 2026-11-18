@@ -46,10 +46,29 @@ export async function startRecorder(page, outDir, { inflight = 3, quality = 88 }
   };
 }
 
-// Resolve a selector to a viewport box. Supports raw CSS, text=..., xpath=...
-// Scrolls the element into view smoothly first so the video shows the motion.
+// C9: framing a field includes its visible label. A label counts only while the union stays close
+// to the control (a page heading or a legend spanning the form would zoom the camera out).
+const LABEL_GROW_X = 480;
+const LABEL_GROW_Y = 120;
+
+// Union of the control box and its label boxes, clamped to the viewport, in whole pixels.
+export function frameBox(control, labels, [vw, vh] = [1920, 1080]) {
+  let x0 = control.x, y0 = control.y, x1 = control.x + control.w, y1 = control.y + control.h;
+  for (const l of labels || []) {
+    const nx0 = Math.min(x0, l.x), ny0 = Math.min(y0, l.y);
+    const nx1 = Math.max(x1, l.x + l.w), ny1 = Math.max(y1, l.y + l.h);
+    if (nx1 - nx0 > control.w + LABEL_GROW_X || ny1 - ny0 > control.h + LABEL_GROW_Y) continue;
+    [x0, y0, x1, y1] = [nx0, ny0, nx1, ny1];
+  }
+  x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(vw, x1); y1 = Math.min(vh, y1);
+  const r = Math.round;
+  return { x: r(x0), y: r(y0), w: r(x1) - r(x0), h: r(y1) - r(y0) };
+}
+
+// Resolve a selector to a viewport box (+ the boxes of its visible labels). Supports raw CSS,
+// text=..., xpath=... Scrolls the element into view smoothly first so the video shows the motion.
 async function locate(page, selector) {
-  const box = await page.evaluate(async (sel) => {
+  return await page.evaluate(async (sel) => {
     let el = null;
     if (sel.startsWith("text=")) {
       let q = sel.slice(5).trim();
@@ -78,10 +97,24 @@ async function locate(page, selector) {
       el.scrollIntoView({ block: "center", behavior: "smooth" });
       await new Promise((res) => setTimeout(res, 700));
     }
+    const rect = (e) => {
+      const q = e.getBoundingClientRect();
+      const st = getComputedStyle(e);
+      if (q.width === 0 || q.height === 0 || st.visibility === "hidden" || st.display === "none") return null;
+      return { x: q.x, y: q.y, w: q.width, h: q.height };
+    };
+    // label[for=id] / wrapping <label>; else the label or legend of the closest wrapper of this field only.
+    let found = [...(el.labels || [])];
+    if (!found.length && el.id) found = [...document.querySelectorAll(`label[for="${CSS.escape(el.id)}"]`)];
+    const field = el.matches("input,select,textarea");
+    for (let p = el.parentElement, depth = 0; field && !found.length && p && depth < 3; p = p.parentElement, depth++) {
+      if (p.querySelectorAll("input,select,textarea").length > 1) break;
+      found = [...p.querySelectorAll("label,legend")].filter((l) => !l.contains(el));
+    }
+    const labels = found.map(rect).filter(Boolean);
     const r = el.getBoundingClientRect();
-    return { x: r.x, y: r.y, w: r.width, h: r.height };
+    return { box: { x: r.x, y: r.y, w: r.width, h: r.height }, labels };
   }, selector);
-  return box;
 }
 
 const center = (b) => ({ x: Math.round(b.x + b.w / 2), y: Math.round(b.y + b.h / 2) });
@@ -89,17 +122,24 @@ const center = (b) => ({ x: Math.round(b.x + b.w / 2), y: Math.round(b.y + b.h /
 // Camera-only target (focus/result/highlight): wait until visible, log its box, no pointer.
 async function markAt(page, rec, events, type, selector) {
   await page.waitForSelector(selector, { state: "visible", timeout: 20000 });
-  const box = await locate(page, selector);
-  if (!box) throw new Error(`No encontré el elemento: ${selector}`);
-  events.push({ type, t: rec.now(), selector, box, point: center(box) });
+  const found = await locate(page, selector);
+  if (!found) throw new Error(`No encontré el elemento: ${selector}`);
+  events.push({ type, t: rec.now(), selector, box: found.box, point: center(found.box) });
 }
 
+// type/select/click also log frame_box = control + its visible label (C9).
 async function pointAt(page, rec, events, type, selector, label) {
-  const box = await locate(page, selector);
-  if (!box) throw new Error(`No encontré el elemento: ${selector}`);
+  const found = await locate(page, selector);
+  if (!found) throw new Error(`No encontré el elemento: ${selector}`);
+  const { box } = found;
   const p = center(box);
   await page.mouse.move(p.x, p.y, { label });
-  events.push({ type, t: rec.now(), selector, box, point: p });
+  const ev = { type, t: rec.now(), selector, box, point: p };
+  if (type !== "hover") {
+    const viewport = await page.evaluate(() => [innerWidth, innerHeight]);
+    ev.frame_box = frameBox(box, found.labels, viewport);
+  }
+  events.push(ev);
   await sleep(250);
   return p;
 }

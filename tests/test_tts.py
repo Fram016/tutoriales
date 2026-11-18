@@ -75,5 +75,59 @@ class TtsTest(unittest.TestCase):
         self.assertAlmostEqual(redes, tts.estimate_seconds("Guárdalo en un clic."), places=1)
 
 
+def padded_tone(path: Path, before=0.5, tone=1.0, after=0.7) -> bytes:
+    """A clip like the API returns: silence, speech (a tone), silence."""
+    common.ffmpeg("-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono:d={before}",
+                  "-f", "lavfi", "-i", f"sine=f=440:r=24000:d={tone}",
+                  "-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono:d={after}",
+                  "-filter_complex", "[0][1][2]concat=n=3:v=0:a=1", "-c:a", "pcm_s16le", str(path))
+    return path.read_bytes()
+
+
+class TrimTest(unittest.TestCase):
+    """Voice durations are measured after trimming the clip's leading/trailing silence (S2 plan item 4)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+
+    def test_trim_keeps_the_speech_and_a_short_pad(self):
+        raw, out = self.dir / "raw.wav", self.dir / "out.wav"
+        padded_tone(raw)
+        tts.trim_silence(raw, out)
+        self.assertAlmostEqual(common.media_duration(raw), 2.2, delta=0.02)
+        self.assertAlmostEqual(common.media_duration(out), 1.0 + 2 * tts.TRIM_PAD, delta=0.04)
+
+    def test_api_clips_are_trimmed_and_retrimming_never_calls_the_api(self):
+        self.addCleanup(setattr, common, "PROJECTS", common.PROJECTS)
+        common.PROJECTS = self.dir
+        pdir = self.dir / "crm"
+        pdir.mkdir()
+        (pdir / "tutorial.yaml").write_text(yaml.safe_dump(TUTORIAL, allow_unicode=True), encoding="utf-8")
+        tone = padded_tone(self.dir / "tone.wav")
+        calls = []
+
+        def fake(client, model, text, voice, style):
+            calls.append(text)
+            return tone
+
+        for name, value in (("synthesize", fake), ("make_client", lambda: object())):
+            self.addCleanup(setattr, tts, name, getattr(tts, name))
+            setattr(tts, name, value)
+        first = tts.tts("crm")
+        self.assertEqual(len(calls), 7)
+        for name, seconds in first["tutorial"].items():
+            with self.subTest(clip=name):
+                self.assertAlmostEqual(seconds, 1.0 + 2 * tts.TRIM_PAD, delta=0.04)
+                wav = pdir / "audio" / "voice" / "tutorial" / f"{name}.wav"
+                self.assertAlmostEqual(common.media_duration(wav), seconds, delta=0.01)
+        self.addCleanup(setattr, tts, "TRIM_VERSION", tts.TRIM_VERSION)
+        tts.TRIM_VERSION += 1
+        tts.tts("crm")
+        self.assertEqual(len(calls), 7)   # a new trim re-derives from the raw API audio in the cache
+        self.assertTrue(list((pdir / "audio" / "voice" / "_cache").glob(f"trim-v{tts.TRIM_VERSION}/*.wav")))
+
+
 if __name__ == "__main__":
     unittest.main()
