@@ -136,10 +136,13 @@ export function wrapTextNode(doc, node, patterns) {
 export function installCensor(g, cfg) {
   const doc = g.document;
   if (!doc) return;
-  if (g.__tutorialCensor) {
+  const key = JSON.stringify(cfg);
+  if (g.__tutorialCensor && g.__tutorialCensor.key === key) {
     g.__tutorialCensor.apply();
     return;
   }
+  // A different config replaces the previous install instead of being silently ignored.
+  if (g.__tutorialCensor) g.__tutorialCensor.stop();
   const MARK = "data-tutorial-censor";
   const FIELDS = "input, textarea, select";
   const patterns = cfg.text || [];
@@ -201,10 +204,20 @@ export function installCensor(g, cfg) {
   const all = () => apply(() => doc.documentElement && scan(doc.documentElement));
   all();
   // Field values change without DOM mutations (typing, JSF scripts setting .value).
-  doc.addEventListener("input", (e) => apply(() => value(e.target)), true);
-  doc.addEventListener("change", (e) => apply(() => value(e.target)), true);
-  if (patterns.length) g.setInterval(() => apply(() => doc.querySelectorAll(FIELDS).forEach(value)), 150);
-  g.__tutorialCensor = { apply: all };
+  const onField = (e) => apply(() => value(e.target));
+  doc.addEventListener("input", onField, true);
+  doc.addEventListener("change", onField, true);
+  const timer = patterns.length ? g.setInterval(() => apply(() => doc.querySelectorAll(FIELDS).forEach(value)), 150) : null;
+  g.__tutorialCensor = {
+    key,
+    apply: all,
+    stop() {
+      observer.disconnect();
+      doc.removeEventListener("input", onField, true);
+      doc.removeEventListener("change", onField, true);
+      if (timer) g.clearInterval(timer);
+    },
+  };
 }
 
 // Self-contained script for Page.addScriptToEvaluateOnNewDocument / Runtime.evaluate. A bad pattern fails
