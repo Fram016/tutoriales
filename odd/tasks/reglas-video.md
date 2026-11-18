@@ -12,11 +12,11 @@ Normative source (verbatim): reglas/reglas-video.md — rule IDs E1-E3, C1-C6, O
 
 ## Tasks
 
-- [ ] T1 S2,S3 — Timing & schema: tutorial.yaml v2, recorder/capture actions, edit time-warp, tts/music/mix per video, pipeline — worker WB
-- [ ] T2 S1,S2,S3 — Composition: camera, cursor, overlays, captions, cards, real 9:16 reframe, layout.json — worker WA
-- [ ] T3 S1,S2,S3 — Validation: tools/lint.py + automatic checks in qa.py + smoke — worker WC
-- [ ] T4 S1,S2,S3 — Skills, README, brief template, _demo v2 yaml, demo apps in tú — worker WD
-- [ ] T5 S1-S3 — Integration: unit tests + offline smoke green — parent
+- [x] T1 S2,S3 — Timing & schema — worker WB — commit 8d26c48
+- [x] T2 S1,S2,S3 — Composition — worker WA — commit 196431b
+- [x] T3 S1,S2,S3 — Validation: lint.py + qa.py + smoke — worker WC — commit fd426a7
+- [x] T4 S1,S2,S3 — Skills, README, brief, _demo v2, demo apps in tú — worker WD — commit 7f858f9
+- [x] T5 S1-S3 — Integration: 152 unit tests OK + offline smoke PASS (fix worker: blank detector, click lag, screen_at cuts, place_voices) — commits 8d26c48/196431b
 - [ ] T6 S4 — Fresh subagent from scratch produces Nexo CRM TUT 16:9 + RED 9:16 — worker
 
 ## Log
@@ -95,3 +95,5 @@ Normative source (verbatim): reglas/reglas-video.md — rule IDs E1-E3, C1-C6, O
   ```
   Rects in output pixels; `active` = the element of the current event mapped through the camera; `cursor` sampled at each event.
 - L6 (design decisions for compose): cursor drawn at constant ~48 px in OUTPUT pixels regardless of zoom, soft halo on click (C5). Camera: detail 1.8–2.5× for every type/click/select/focus/result/highlight event, context 1.0× ≤1.0 s, 400–600 ms ease-in-out pans/zooms, never cross-fades; render with `--page-motion-blur off` (suspected cause of C2 ghosting); target fully in frame ≥500 ms before the click (C3). Step chip and captions share ONE style in every video (O3), chip opacity 100 % and text contrast ≥4.5:1 (O1); chip never over logo/menu/header (O1): place it attached to the caption block or in a reserved zone, never at a fixed corner over UI. Captions avoid active/result/mentioned fields by moving the framing (O2). 9:16 = full-bleed real crop of the 1920x1080 source following the active element (base scale ≈1.78, detail up to 2.5), UI ≥70 % of the height, nothing important in the top 15 % / bottom 20 % (V1-V4); title only in the opening ≤3 s (V3). Captions: ≤2 lines × 42 chars, ≥1.2 s, no line ending in article/preposition/conjunction, never across steps (T1), font ≥44 px at 1080 output (T2), product name unbreakable (T3). PRO/NOV: no step chip (PRO4). TUT long videos: "Parte N · Paso M" (E3/TUT3).
+- L7 (finding, rule conflict for the user): R2 (zoom to the confirmation toast ≥800 ms) vs C4 (no frame > 70 % empty) when the toast sits alone in an empty corner. _demo resolved it by using the highlighted new row as the result (R1/R3) instead of the toast. Pending user decision.
+- L8 (T6 instructions to the fresh agent, as a user would type them): "Nexo CRM es un CRM de ventas. Se ingresa con correo y contraseña. En el menú lateral está Contactos; ahí se ve la lista y el botón '+ Nuevo contacto'. El formulario pide Nombre, Apellido y Correo como obligatorios; también Empresa, Cargo, Teléfono, Etapa (Prospecto, Negociación, Cliente), Origen y Notas. Al guardar vuelve a la lista, el contacto aparece primero y resaltado, y sale un aviso verde. Hay un buscador arriba de la lista. Quiero el tutorial completo en horizontal y un video corto para redes en vertical sobre cómo crear un contacto. Está dirigido a vendedores nuevos que registran su primer posible cliente."
