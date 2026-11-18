@@ -17,7 +17,7 @@ Apply the user's review of proyectos/perseo-xml/out/perseo-xml-tutorial.mp4 (reg
 - [x] T3 S2 — qa/lint: checks for N13-N27 — worker WC4
 - [x] T4 S2,S5 — skills/README/brief template: guion rules N15/N16/N18/N19/N14, requirement wording, censor criterion, ads hiding — worker WD4
 - [x] T5 — Integration: 443 tests + smoke PASS 3.3 min — parent
-- [ ] T6 S1-S5 — Fresh agent: Perseo XML TUT 16:9 (new slug perseo-xml-v2), recapture with live SRI — worker
+- [ ] T6 S1-S5 — Partial: no MP4. Takes 1 and 3 valid (wiped by capture.py before the keep-previous fix); takes 2, 4, 5 blocked by SRI reCAPTCHA at consultar-recibidos. 72 duplicate XML downloaded. Needs user decision (manual captcha handoff or split sessions) — worker
 
 ## Log
 
