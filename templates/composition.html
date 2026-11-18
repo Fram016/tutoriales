@@ -76,6 +76,19 @@
         opacity: 0.25;
       }
 
+      /* N11: spotlight on the active form field: brand outline thinner than R3 (constant 3 px on screen)
+         and a soft dim (<= 25 %) of everything else, an SVG three screens wide centered on the source. */
+      .spot {
+        position: absolute;
+        left: -1920px;
+        top: -1080px;
+        width: 5760px;
+        height: 3240px;
+        opacity: 0;
+        overflow: visible;
+      }
+      .spot-ring { stroke-width: calc(3px / var(--s)); }
+
       /* C5: the cursor lives in source pixels but undoes the camera scale: always {{CURSOR_PX}} px tall. */
       #cursor-layer { pointer-events: none; }
       #cursor { position: absolute; left: 0; top: 0; width: 0; height: 0; }
@@ -160,6 +173,7 @@
           <video id="screen" class="clip" src="assets/screen.mp4" muted playsinline
                  data-start="{{SCREEN_START}}" data-duration="{{SCREEN}}"></video>
 {{HIGHLIGHTS}}
+{{SPOTLIGHTS}}
           <div id="cursor-layer" class="clip" data-start="{{SCREEN_START}}" data-duration="{{SCREEN}}">
             <div id="cursor">
               <div id="cursor-body">

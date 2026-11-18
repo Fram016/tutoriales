@@ -8,11 +8,14 @@ audio/V/mix.wav, and writes proyectos/<slug>/hf-V/ (index.html, assets/, meta.js
 hyperframes.json) plus hf-V/layout.json: every overlay, camera segment and mapped element rect in
 output pixels, so qa.py checks the rules (reglas/reglas-video.md) without looking at pixels.
 
-Rules applied here: C1 (detail 1.8-2.5x on every action, context <= 1.0 s), C2 (400-600 ms
+Rules applied here: C1 (detail 1.4-1.8x on buttons, toasts and rows, context <= 1.0 s), C2 (400-600 ms
 ease-in-out pans, never fades), C3 (target framed >= 500 ms before the click), C5 (48 px cursor
-whatever the zoom, halo on click), C7 (establishing shot of every new screen), C8 (one framing per
-field, slow push-in on long holds), C9 (the field and its label always whole), C10 (hard cut when the
-screen changes), N2/N7 (chip "Paso N" only in TUT; no paraphrase in the opening), N3/N9 (captions in a
+whatever the zoom, halo on click), C7 (establishing shot of every new screen), C8 (no framing frozen
+longer than the limit: spotlight moves or a slow push-in), C9 (the field and its label always whole),
+C10 (hard cut when the screen changes; straight to the toast when the new screen opens on one, S1a),
+N10 (one framing for the whole form, 1.0 (base in 9:16) to 1.5x, split top to bottom when it does not
+fit), N11 (brand outline + soft dim on the active field, 250-400 ms moves), N12 (9:16: the form across
+the whole width), N2/N7 (chip "Paso N" only in TUT; no paraphrase in the opening), N3/N9 (captions in a
 fixed band outside the UI, one stable layout), N5 (brand palette only), N6/R2 (toast framed and clean),
 O1-O3, R1-R3, T1-T3, E1, V1-V4.
 """
@@ -44,7 +47,7 @@ BRAND_DEFAULTS = {"primary": "#2563eb", "background": "#0f172a", "text": "#fffff
                   "font": "Segoe UI"}
 
 # Camera (C1-C3, C7-C10).
-DETAIL_MIN, DETAIL_MAX, DETAIL_PREF = 1.8, 2.5, 2.2
+DETAIL_MIN, DETAIL_MAX, DETAIL_PREF = 1.4, 1.8, 1.6     # C1 revised (§Parte 5)
 CONTEXT_MAX = 1.0       # C1/C7: the establishing shot (full screen) lasts at most this long
 ESTABLISH_MIN = 0.3     # shorter establishing shots are skipped: cut straight to the first target
 ESTABLISH_WANT = 0.6    # a first target without pointer (toast, row) waits this long on the full screen
@@ -66,6 +69,18 @@ R2_CLEAN = 0.8          # R2: result visible without caption or cursor over it
 HOLD_LIMIT = {"RED": 3.0}  # C8: identical framing at most 3 s in RED, 4 s otherwise
 HOLD_LIMIT_DEFAULT = 4.0
 PUSH = 0.1              # C8: slow push-in (scale +0.1 over a long hold)
+DRIFT = 8               # C8: output px of slow drift when no push-in keeps the target whole
+
+# Form shot (N10-N12).
+FORM_MIN, FORM_PREF = 1.0, 1.5   # N10: never below 1.0x (base in 9:16), at most 1.5x (C1 max 1.8x)
+FORM_PAD = 24           # source px around the fields when the capture has no form_box
+FORM_EDGE = 16          # N12: output px between the form and the viewport edges in width-fit
+FIELD_EDGE = 8          # V2: every field of a form framing stays this far inside the viewport
+FORM_EVENTS = {"click", "hover", "type", "select", "focus"}
+SPOT_MOVE, SPOT_MIN, SPOT_MAX = 0.3, 0.25, 0.4   # N11: spotlight moves of 250-400 ms
+SPOT_LEAD = 0.3         # the spotlight reaches the next field this long before the action
+SPOT_DIM = 0.22         # N11: dim of the rest of the frame (<= 25 %)
+SPOT_FADE = 0.3
 
 # Overlays (O1-O3, T1-T2, C5, N3).
 CURSOR_PX = 48
@@ -323,6 +338,20 @@ def union(a: dict, b: dict) -> dict:
             "h": max(a["y"] + a["h"], b["y"] + b["h"]) - y}
 
 
+def union_all(boxes: list[dict]) -> dict:
+    out = boxes[0]
+    for box in boxes[1:]:
+        out = union(out, box)
+    return out
+
+
+def pad_box(box: dict, pad: float) -> dict:
+    """`box` grown by `pad` source px on every side, clamped to the source."""
+    x, y = max(0.0, box["x"] - pad), max(0.0, box["y"] - pad)
+    return {k: round(v, 1) for k, v in {"x": x, "y": y, "w": min(SRC_W, box["x"] + box["w"] + pad) - x,
+                                        "h": min(SRC_H, box["y"] + box["h"] + pad) - y}.items()}
+
+
 def label_box(ev: dict) -> dict:
     """C9: the control plus its visible label (frame_box), or the box grown upward for older captures."""
     box = ev["box"]
@@ -361,6 +390,7 @@ class Stage:
         fits = (self.W / SRC_W, self.VH / SRC_H)
         self.base = min(fits) if spec["fit"] == "contain" else max(fits)
         self.detail_min = max(DETAIL_MIN, self.base)
+        self.form_min = max(FORM_MIN, self.base)
 
     def cap_rect(self, lines: int) -> list[float]:
         bx, by, bw, bh = self.band
@@ -409,6 +439,35 @@ class Stage:
     def fit(self, box: dict) -> float:
         return min(self.safe[2] / (box["w"] + 2 * BOX_PAD), self.safe[3] / (box["h"] + 2 * BOX_PAD))
 
+    def form_scale(self, box: dict) -> float:
+        """N10/N12: the form fitted to the viewport, between form_min and FORM_PREF. In 9:16 the width is
+        fitted edge to edge (N12: whole form across the width rather than detail)."""
+        if self.fmt == "9:16":
+            fit_w = (self.W - 2 * FORM_EDGE) / box["w"]
+        else:
+            fit_w = self.safe[2] / (box["w"] + 2 * BOX_PAD)
+        fit = min(fit_w, self.safe[3] / (box["h"] + 2 * BOX_PAD))
+        return max(min(fit, FORM_PREF), self.form_min)
+
+    def holds(self, fr: dict, boxes: list[dict]) -> bool:
+        """V2/C9: every box whole and FIELD_EDGE px inside the viewport."""
+        vx, vy, vw, vh = self.view
+        for box in boxes:
+            x, y, w, h = self.map(box, fr)
+            if x < vx + FIELD_EDGE - 0.5 or x + w > vx + vw - FIELD_EDGE + 0.5 or y < vy - 0.5 or y + h > vy + vh + 0.5:
+                return False
+        return True
+
+    def form_frame(self, form: dict, boxes: list[dict]) -> dict | None:
+        """N10: framing of the whole form that keeps every field in `boxes` whole, or None when it does not
+        fit at the minimum legible scale (then the form is split)."""
+        fr = self.frame(*center(form), self.form_scale(form))
+        if self.holds(fr, boxes):
+            return fr
+        fields = pad_box(union_all(boxes), FORM_PAD)
+        fr = self.frame(*center(fields), self.form_scale(fields))
+        return fr if self.holds(fr, boxes) else None
+
     def shot_frame(self, shot: dict) -> dict:
         box = shot["frame_box"]
         fit = self.fit(box)
@@ -423,14 +482,24 @@ class Stage:
     def contains(self, fr: dict, box: dict) -> bool:
         return p_range(fr, fr, box, self.view) is not None
 
-    def push(self, fr: dict, box: dict) -> dict | None:
-        """C8: the framing at the end of a slow push-in on `box` (scale +0.1), keeping it whole."""
+    def push(self, fr: dict, box: dict, boxes: list[dict] | None = None) -> dict | None:
+        """C8: the framing at the end of a slow push-in on `box` (scale +0.1), keeping it (and `boxes`)
+        whole; when no scale does, a slow drift of DRIFT px at the same scale (source still covering)."""
+        whole = (lambda to: self.holds(to, boxes)) if boxes else (lambda to: self.contains(to, box))
+        boxes = boxes or [box]
         for d in (PUSH, PUSH / 2, -PUSH):
             s = fr["s"] + d
             if not self.base <= s <= DETAIL_MAX + 1e-9:
                 continue
             to = self.frame(*center(box), s)
-            if self.contains(to, box) and to != fr:
+            if to != fr and whole(to):
+                return to
+        for axis, d in (("x", DRIFT), ("x", -DRIFT), ("y", DRIFT), ("y", -DRIFT)):
+            to = {**fr, axis: round(fr[axis] + d, 1)}
+            view, src = (self.W, SRC_W) if axis == "x" else (self.VH, SRC_H)
+            if view - src * fr["s"] >= 0 or not view - src * fr["s"] <= to[axis] <= 0:
+                continue
+            if whole(to):
                 return to
         return None
 
@@ -500,17 +569,131 @@ def screen_bounds(timeline: dict) -> list[float]:
     return sorted(times)
 
 
+def form_boxes(timeline: dict) -> dict[int, dict]:
+    """N10: id(event) -> box of the form the action happens in: the captured form_box, or (older captures)
+    the union of a step's consecutive type/select frame boxes padded by FORM_PAD when there are >= 2."""
+    out: dict[int, dict] = {}
+    for step in timeline["steps"]:
+        run: list[dict] = []
+
+        def close():
+            if len(run) >= 2:
+                box = pad_box(union_all([label_box(e) for e in run]), FORM_PAD)
+                out.update({id(e): box for e in run})
+            run.clear()
+
+        for ev in sorted((e for e in step["events"] if e["type"] in BOXED and e.get("box")), key=lambda e: e["t"]):
+            if ev["type"] in FORM_EVENTS and ev.get("form_box"):
+                close()
+                out[id(ev)] = ev["form_box"]
+            elif ev["type"] in FIELD:
+                run.append(ev)
+            else:
+                close()
+        close()
+    return out
+
+
+def spot_box(ev: dict) -> dict:
+    """N11: what the spotlight outlines: the field with its label (C9), or the button."""
+    return label_box(ev)
+
+
+def spot_targets(events: list[dict]) -> list[dict]:
+    """Consecutive actions on the same element share one spotlight position."""
+    targets: list[dict] = []
+    for ev in events:
+        box = spot_box(ev)
+        if targets and same_box(targets[-1]["box"], box):
+            targets[-1]["events"].append(ev)
+            continue
+        targets.append({"box": box, "events": [ev]})
+    return targets
+
+
+def spot_moves(targets: list[dict]) -> list[tuple[float, float]]:
+    """N11: (start, end) of the 250-400 ms move into every target after the first: it leaves when the
+    previous action ends and lands SPOT_LEAD before the next one when there is time."""
+    moves = []
+    last_end = -INF
+    for prev, cur in zip(targets, targets[1:]):
+        done = prev["events"][-1]
+        prev_end = (done.get("t_end") or done["t"]) + (KEEP[done["type"]] if done["type"] == "click" else 0)
+        t = cur["events"][0]["t"]
+        start = max(prev_end, t - SPOT_LEAD - SPOT_MOVE, last_end)
+        if start + SPOT_MOVE <= t - SPOT_LEAD + 1e-9:
+            dur = SPOT_MOVE
+        else:
+            dur = max(SPOT_MIN, min(SPOT_MAX, t - start))
+            start = max(min(start, t - dur), last_end)
+        moves.append((round(start, 3), round(start + dur, 3)))
+        last_end = start + dur
+    return moves
+
+
+def static_runs(t0: float, t1: float, changes: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """C8: the spans of [t0, t1] without a visual change (`changes`: spotlight moves)."""
+    return [(round(a, 3), round(b, 3)) for a, b in subtract([(t0, t1)], changes)]
+
+
+def form_shot(shot: dict, events: list[dict], stage: Stage, frame: dict | None) -> dict:
+    """N10: one shot for consecutive actions in one form (or one top-to-bottom part of it)."""
+    boxes = [spot_box(e) for e in events]
+    targets = spot_targets(events)
+    first = events[0]
+    out = {**shot, "events": events, "box": union_all(boxes), "boxes": boxes, "field": True,
+           "t": first["t"], "lead": lead(first), "pointer": first["type"] in POINTER,
+           "end": max(e.get("t_end") or e["t"] for e in events), "selector": first.get("selector"),
+           "point": first.get("point") or dict(zip("xy", center(boxes[0]))),
+           "targets": targets, "moves": spot_moves(targets)}
+    if frame is None:
+        part = pad_box(union_all(boxes), FORM_PAD)
+        frame = stage.form_frame(part, boxes) or stage.frame(*center(part), stage.form_scale(part))
+        out["frame_box"] = part
+    out["frame"] = frame
+    return out
+
+
+def split_form(shot: dict, stage: Stage) -> list[dict]:
+    """N10: the whole form in one framing, or the fewest top-to-bottom framings (in action order) that keep
+    every field whole at a legible scale."""
+    events = shot["events"]
+    frame = stage.form_frame(shot["form"], [spot_box(e) for e in events])
+    if frame:
+        return [form_shot({**shot, "frame_box": shot["form"]}, events, stage, frame)]
+    groups: list[list[dict]] = []
+    for ev in events:
+        if groups:
+            boxes = [spot_box(e) for e in groups[-1] + [ev]]
+            if stage.form_frame(pad_box(union_all(boxes), FORM_PAD), boxes):
+                groups[-1].append(ev)
+                continue
+        groups.append([ev])
+    return [form_shot(shot, group, stage, None) for group in groups]
+
+
 def shots_of(timeline: dict, stage: Stage) -> list[dict]:
-    """One framing per boxed event (C8: field by field); events on the same element share it."""
+    """One framing per boxed event, but one per form (N10); events on the same element share it."""
     bounds = screen_bounds(timeline)
+    forms = form_boxes(timeline)
     shots: list[dict] = []
     for step in timeline["steps"]:
         for ev in sorted((e for e in step["events"] if e["type"] in BOXED and e.get("box")), key=lambda e: e["t"]):
-            period = sum(1 for b in bounds if b < ev["t"] - 1e-6)
+            # A toast/row at the very screen change (edit cuts the wait for it) belongs to the new screen.
+            edge = 1e-6 if ev["type"] in POINTER else -1e-6
+            period = sum(1 for b in bounds if b < ev["t"] - edge)
             fbox = stage.focus_box(ev)
             end = ev.get("t_end") or ev["t"]
             last = shots[-1] if shots else None
-            if (last and last["period"] == period and ev.get("selector") and ev["selector"] == last["selector"]
+            form = forms.get(id(ev))
+            if form:
+                if last and last.get("form") and last["period"] == period and same_box(last["form"], form):
+                    last["events"].append(ev)
+                else:
+                    shots.append({"step": step["id"], "period": period, "events": [ev], "form": form})
+                continue
+            if (last and not last.get("form") and last["period"] == period and ev.get("selector")
+                    and ev["selector"] == last["selector"]
                     and same_box(ev["box"], last["events"][-1]["box"])
                     and ev["type"] not in ("result", "highlight")
                     and last["events"][-1]["type"] not in ("result", "highlight")):
@@ -523,8 +706,13 @@ def shots_of(timeline: dict, stage: Stage) -> list[dict]:
                           "box": fbox, "field": ev["type"] in FIELD or bool(ev.get("frame_box")),
                           "t": ev["t"], "lead": lead(ev), "pointer": ev["type"] in POINTER, "end": end,
                           "point": ev.get("point") or dict(zip("xy", center(fbox)))})
+    shots = [part for shot in shots for part in (split_form(shot, stage) if shot.get("form") else [shot])]
     prev = None
     for shot in shots:
+        if shot.get("form"):
+            shot["keep"] = shot["box"]
+            prev = shot
+            continue
         shot["frame_box"] = shot["box"]
         # Two fields typed back to back with no time for a 400 ms pan: the next framing also keeps the
         # previous field whole when both fit at detail scale, so neither is cut while typing (C9).
@@ -534,6 +722,7 @@ def shots_of(timeline: dict, stage: Stage) -> list[dict]:
             if stage.fit(both) >= stage.detail_min:
                 shot["frame_box"] = both
         shot["frame"] = stage.shot_frame(shot)
+        shot["keep"] = shot["frame_box"]
         prev = shot
     return shots
 
@@ -549,6 +738,12 @@ def _keep(shot: dict, table: dict) -> float:
     if last["type"] in POINTER:
         return shot["end"] + table[last["type"]]
     return max(shot["arrive"], last["t"]) + table[last["type"]]
+
+
+def leaves_toast(a: dict, b: dict, origin: dict, stage: Stage) -> bool:
+    """C10/C4: from a toast framing to a target not even partly in it, the camera cuts: the pan would cross
+    the empty part of the screen. A target next to the toast keeps its pan (same populated area)."""
+    return a["events"][-1]["type"] == "result" and not overlaps(Stage.map(b["box"], origin), stage.view)
 
 
 def transition(a: dict, b: dict, free: float, stage: Stage, origin: dict | None = None) -> tuple[float, float]:
@@ -587,6 +782,19 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
     limit = HOLD_LIMIT.get(timeline.get("type", "TUT"), HOLD_LIMIT_DEFAULT)
     segs: list[dict] = []
 
+    def frozen(shot, t0, t1) -> bool:
+        """C8: the shot held over [t0, t1] stays identical longer than the limit (spotlight moves count)."""
+        return any(b - a > limit + 1e-6 for a, b in static_runs(t0, t1, shot.get("moves", [])))
+
+    def pushed(shot) -> dict | None:
+        return stage.push(shot["frame"], shot["keep"], shot.get("boxes"))
+
+    def hold(shot, t0, t1, end):
+        if shot.get("form"):
+            add("form", t0, t1, shot["frame"], end, box=shot["keep"], form_box=shot["frame_box"])
+        else:
+            add("detail", t0, t1, shot["frame"], end, box=shot["keep"])
+
     def add(kind, t0, t1, frm, to, **extra):
         t1 = min(t1, se)
         if t1 - t0 <= 1e-6:
@@ -610,7 +818,9 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
         if not first["pointer"]:
             need = max(need, a + ESTABLISH_WANT + MOVE)
         est = min(a + CONTEXT_MAX, need - MOVE)
-        if est - a >= ESTABLISH_MIN - 1e-9:
+        if k > 0 and first["events"][0]["type"] == "result":
+            first["arrive"] = a       # S1(a)/C4: the click's new screen opens on the toast: cut straight to it
+        elif est - a >= ESTABLISH_MIN - 1e-9:
             # C7: the whole new screen first, then an ease-in-out zoom to the first target.
             ctx = stage.context(first["point"])
             add("context", a, est, ctx, ctx, reason="establishing")
@@ -625,18 +835,22 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
                 continue
             start, dur = transition(prev, shot, free, stage)
             end = prev["frame"]
-            if start - free > limit + 1e-6:
+            if frozen(prev, free, start):
                 # C8: a long hold becomes a slow push-in; the pan then leaves from the pushed framing.
-                end = stage.push(prev["frame"], prev["frame_box"]) or end
+                end = pushed(prev) or end
                 start, dur = transition(prev, shot, free, stage, end)
             start = min(start, b)
-            add("detail", free, start, prev["frame"], end, box=prev["frame_box"])
-            add("move", start, min(start + dur, b), end, shot["frame"])
+            if leaves_toast(prev, shot, end, stage):
+                # A hard cut once the toast had its R2 time, when the next target is due (it needs no travel).
+                start, dur = min(max(free, _keep(prev, HOLD), shot["t"] - shot["lead"]), b), 0.0
+            hold(prev, free, start, end)
+            if dur:
+                add("move", start, min(start + dur, b), end, shot["frame"])
             shot["arrive"] = start + dur
             free = max(free, min(start + dur, b))
         last = group[-1]
-        end = (stage.push(last["frame"], last["frame_box"]) or last["frame"]) if b - free > limit + 1e-6 else last["frame"]
-        add("detail", free, b, last["frame"], end, box=last["frame_box"])
+        end = (pushed(last) or last["frame"]) if frozen(last, free, b) else last["frame"]
+        hold(last, free, b, end)
     return finish(segs), shots
 
 
@@ -654,6 +868,8 @@ def finish(segs: list[dict]) -> list[dict]:
                 "x": to["x"], "y": to["y"]}
         if seg.get("reason"):
             item["reason"] = seg["reason"]
+        if seg.get("form_box"):
+            item["form_box"] = dict(seg["form_box"])
         if seg["kind"] == "move":
             item["from"] = dict(seg["from"])
         elif seg["from"] != to:
@@ -817,6 +1033,8 @@ def plan(timeline: dict, brand: dict) -> dict:
                 start = rnd(stage.map(fbox, frame_at(camera, t0)))
                 items.append({"kind": "active", "t0": round(t0, 3), "t1": round(t1, 3), **base, "rect_start": start})
 
+    items.extend(plan_spotlights(shots, camera, stage, pal, timeline))
+
     # Cursor (C5): samples at each pointer event; hidden while a toast is on screen (R2, N6).
     hidden: list[tuple[float, float]] = []
     for item in [i for i in items if i["kind"] == "result"]:
@@ -854,6 +1072,35 @@ def plan(timeline: dict, brand: dict) -> dict:
             "safe": {"top": stage.spec["safe_top"], "bottom": stage.spec["safe_bottom"], "action": rnd(stage.safe)},
             "cursor_px": CURSOR_PX, "font_px": stage.font, "screen": [ss, se], "palette": pal,
             "camera": camera, "cursor_hidden": [[round(a, 3), round(b, 3)] for a, b in hidden], "items": items}
+
+
+def plan_spotlights(shots: list[dict], camera: list[dict], stage: Stage, pal: dict, timeline: dict) -> list[dict]:
+    """N11: one `spotlight` item per field of every form shot, from when it lands on the field until it
+    leaves it (`move`: the 250-400 ms move into it). `group` is the form shot, `box` the field in source px."""
+    step_of = {id(e): s["id"] for s in timeline["steps"] for e in s["events"]}
+    out = []
+    for group, shot in enumerate(s for s in shots if s.get("form")):
+        arrive = shot["arrive"]
+        _, leave, move_out = framed_span(camera, arrive)
+        starts = [arrive] + [m[1] for m in shot["moves"]]
+        ends = [m[0] for m in shot["moves"]] + [leave]
+        kept = []
+        for k, target in enumerate(shot["targets"]):
+            t0, t1 = max(starts[k], arrive), min(ends[k], leave)
+            if t1 - t0 <= 1e-6:
+                continue
+            ev = target["events"][0]
+            item = {"kind": "spotlight", "t0": round(t0, 3), "t1": round(t1, 3), "group": group,
+                    "rect": rnd(stage.map(target["box"], frame_at(camera, t0))), "box": dict(target["box"]),
+                    "selector": ev.get("selector", ""), "event": ev["type"], "step": step_of.get(id(ev)),
+                    "color": pal["highlight"], "dim": SPOT_DIM, "dim_color": pal["background"]}
+            if kept and k > 0 and shot["moves"][k - 1][0] >= arrive - 1e-6:
+                item["move"] = list(shot["moves"][k - 1])
+            kept.append(item)
+        if kept:
+            kept[-1]["exit"] = "cut" if move_out - leave <= 1e-6 else "fade"
+        out.extend(kept)
+    return out
 
 
 def plan_cards(timeline: dict, stage: Stage, product: str | None, kind: str, pal: dict) -> list[dict]:
@@ -991,6 +1238,47 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None) -> tuple[str
             script.append(f'tl.to("#{hid}-glow", {{opacity: 0.25, duration: 0.4, ease: "sine.inOut"}}, {num(t + 0.3)});')
         script.append(f'tl.set("#{hid}", {{opacity: 0}}, {num(item["t1"])});')
 
+    # Spotlight (N11): one SVG per form shot inside the camera (source px): a dim rect masked by the hole of
+    # the active field (luminance mask: white keeps, black cuts; not drawn colors) plus its outline. GSAP
+    # tweens the rect attributes field to field (250-400 ms ease-in-out; SVG geometry is sub-pixel, no
+    # layout snapping), so any seek renders the same frame.
+    spot_markup = []
+    groups: dict[int, list[dict]] = {}
+    for item in items:
+        if item["kind"] == "spotlight":
+            groups.setdefault(item["group"], []).append(item)
+    for group, spots in groups.items():
+        sid = f"spot-{group}"
+
+        def attrs(box):
+            return f'x: {num(box["x"] - 6)}, y: {num(box["y"] - 4)}, width: {num(box["w"] + 12)}, height: {num(box["h"] + 8)}'
+
+        x, y, w, h = (num(v) for v in (spots[0]["box"]["x"] - 6, spots[0]["box"]["y"] - 4,
+                                         spots[0]["box"]["w"] + 12, spots[0]["box"]["h"] + 8))
+        hole = f'x="{x}" y="{y}" width="{w}" height="{h}" rx="8"'
+        spot_markup.append(
+            f'          <svg class="spot" id="{sid}" viewBox="-1920 -1080 5760 3240" xmlns="http://www.w3.org/2000/svg">\n'
+            f'            <mask id="{sid}-mask"><rect x="-1920" y="-1080" width="5760" height="3240" fill="white" />'
+            f'<rect class="{sid}-box" {hole} fill="black" /></mask>\n'
+            f'            <rect x="-1920" y="-1080" width="5760" height="3240" fill="{spots[0]["dim_color"]}" '
+            f'fill-opacity="{spots[0]["dim"]}" mask="url(#{sid}-mask)" />\n'
+            f'            <rect class="{sid}-box spot-ring" {hole} fill="none" stroke="{spots[0]["color"]}" />\n'
+            f'          </svg>')
+        script.append(f'tl.to("#{sid}", {{opacity: 1, duration: {num(SPOT_FADE)}, ease: "power1.out"}}, '
+                      f'{num(spots[0]["t0"])});')
+        for spot in spots[1:]:
+            a, b_ = spot.get("move") or (spot["t0"], spot["t0"])
+            if b_ - a < 1e-6:
+                script.append(f'tl.set(".{sid}-box", {{attr: {{{attrs(spot["box"])}}}}}, {num(spot["t0"])});')
+                continue
+            script.append(f'tl.to(".{sid}-box", {{attr: {{{attrs(spot["box"])}}}, duration: {num(b_ - a)}, '
+                          f'ease: "power2.inOut"}}, {num(a)});')
+        last = spots[-1]
+        if last.get("exit") == "cut":
+            script.append(f'tl.set("#{sid}", {{opacity: 0}}, {num(last["t1"])});')
+        else:
+            script.append(f'tl.to("#{sid}", {{opacity: 0, duration: 0.2, ease: "power1.in"}}, {num(last["t1"])});')
+
     # Chip + captions: absolute rects in the band; they appear at 100 % opacity at once (O1).
     overlays = []
     for i, item in enumerate(i for i in items if i["kind"] == "chip"):
@@ -1037,7 +1325,7 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None) -> tuple[str
         "FONT_PX": layout["font_px"], "LINE_H": round(layout["font_px"] * 1.25), "PAD_X": PAD_X,
         "CHIP_PAD_Y": CHIP_PAD_Y, "RADIUS": RADIUS, "CURSOR_PX": CURSOR_PX, "CURSOR_W": CURSOR_W,
         "TOTAL": num(total), "SCREEN_START": num(ss), "SCREEN": num(se - ss),
-        "HIGHLIGHTS": "\n".join(hl_markup), "OVERLAYS": "\n".join(overlays), "CARDS": "\n".join(cards),
+        "HIGHLIGHTS": "\n".join(hl_markup), "SPOTLIGHTS": "\n".join(spot_markup), "OVERLAYS": "\n".join(overlays), "CARDS": "\n".join(cards),
         "TIMELINE": "\n".join("      " + line for line in script),
     }
     return fill(TEMPLATE.read_text(encoding="utf-8"), values), layout

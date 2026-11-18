@@ -1,15 +1,40 @@
 """Stage: render. Renders the HyperFrames projects from compose.py to the final MP4s.
 
-Usage: python tools/render.py <slug> [--quality draft|looks|delivery] [--video ID]
+Usage: python tools/render.py <slug> [--quality draft|looks|delivery] [--fps N] [--video ID]
        python tools/render.py --project DIR [--project DIR2 ...] [--out FILE.mp4] [--quality ...]
        python tools/render.py --project DIR --snap 1.5,4,9.2
 
 Writes proyectos/<slug>/out/<slug>-<video>.mp4 for every hf-<video>/ (or only --video ID), then
 verifies each with ffprobe: resolution (16:9 -> 1920x1080, 9:16 -> 1080x1920), duration ≈ timeline
 total (±0.3 s) and an audio track. All the requested videos render at the same time, one HyperFrames
-process each with the CPU cores split between them (S2: fast workflow); the elapsed time of every
+process each with WORKERS_PER_VIDEO Chrome workers (S2: fast workflow); the elapsed time of every
 video is printed. Renders with --page-motion-blur off (C2: no smeared or doubled frames) and PNG
 frame extraction (crisp UI text).
+
+Final render defaults (reglas-ronda3 S1f), measured on the compose fixture (TUT 28.2 s 16:9 + RED
+26.2 s 9:16 rendered side by side, i5-1334U 10 cores / 12 threads, one render at a time, extraction
+cache off). Wall time of both videos; text = SSIM / PSNR of a 100 % crop of the form labels against
+delivery+png+30 fps:
+
+  workers/video  quality   frames  fps   wall      text
+  6 (old)        looks     png     30    276-296 s 0.9966 / 49.0 dB
+  auto           looks     png     30    172 s
+  4              looks     png     30    179 s
+  3              looks     png     30    148-158 s
+  2              looks     png     30    132-133 s 0.9966 / 49.0 dB
+  1              looks     png     30    138 s
+  3              draft     png     30    133 s
+  3              delivery  png     30    145 s     (reference)
+  3              looks     jpg     30    137 s
+  2              draft     png     30    121 s     0.9873 / 41.0 dB  (softer text)
+  2              looks     jpg     30    121 s     0.9962 / 46.7 dB
+  2              looks     png     25    111-115 s 0.9968 / 49.2 dB  <- default
+  2              looks     jpg     25    103 s
+  single TUT: 4 workers 67 s, 2 workers 65 s.
+
+Chrome capture is the bottleneck: more workers than ~2 per video oversubscribe the CPU, the encoder
+quality barely matters, and capture records the app at ~10 fps so 25 fps loses no UI motion. JPG
+extraction would save another 7 % at a measurable text loss, so PNG stays.
 """
 from __future__ import annotations
 
@@ -27,6 +52,8 @@ from compose import FORMATS, hyperframes
 # Back-compat for readers keyed by format.
 OUTPUTS = {"16:9": "16x9", "9:16": "9x16"}
 DURATION_TOLERANCE = 0.3
+# S1(f): final render defaults (see the table above); --quality and --fps override them.
+QUALITY, FRAME_FORMAT, FPS, WORKERS_PER_VIDEO = "looks", "png", 25, 2
 
 
 def hf_dir(pdir: Path, video: str) -> Path:
@@ -68,13 +95,14 @@ def verify(path: Path, size: list[int], total: float) -> dict:
 
 
 def render_project(src: Path, out: Path, quality: str, workers: int | None = None,
-                   parallel: bool = False) -> dict:
+                   parallel: bool = False, fps: int = FPS) -> dict:
     """Renders one hf-* project to `out` and checks it against its layout.json."""
     layout = read_json(src / "layout.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     start = time.monotonic()
-    print(f"[render] {src.name}: renderizando ({quality}{f', {workers} workers' if workers else ''})...", flush=True)
-    args = ["render", src, "-o", out, "--quality", quality, "--video-frame-format", "png",
+    print(f"[render] {src.name}: renderizando ({quality}, {fps} fps{f', {workers} workers' if workers else ''})...",
+          flush=True)
+    args = ["render", src, "-o", out, "--quality", quality, "--fps", str(fps), "--video-frame-format", FRAME_FORMAT,
             "--page-motion-blur", "off", "--quiet"]
     if workers:
         args += ["--workers", str(workers)]
@@ -90,22 +118,24 @@ def render_project(src: Path, out: Path, quality: str, workers: int | None = Non
 
 
 def workers_per_video(videos: int, cores: int | None = None) -> int:
-    """CPU cores split between the videos that render at the same time."""
+    """Chrome workers of each video rendering at the same time: WORKERS_PER_VIDEO (S1f), fewer when the
+    cores do not reach it."""
     cores = cores or os.cpu_count() or 2
-    return max(1, cores // max(1, videos))
+    return max(1, min(WORKERS_PER_VIDEO, cores // max(1, videos)))
 
 
 def video_name(src: Path) -> str:
     return src.name[3:] if src.name.startswith("hf-") else src.name
 
 
-def render_many(jobs: list[tuple[Path, Path]], quality: str, runner=None, cores: int | None = None) -> dict:
+def render_many(jobs: list[tuple[Path, Path]], quality: str, runner=None, cores: int | None = None,
+                fps: int = FPS) -> dict:
     """Renders every (project, mp4) at the same time, one process per video (S2). {video: result}."""
     parallel = len(jobs) > 1
     workers = workers_per_video(len(jobs), cores)
 
     def default(src, out, q, w):
-        return render_project(src, out, q, w, parallel)
+        return render_project(src, out, q, w, parallel, fps)
 
     runner = runner or default
     start = time.monotonic()
@@ -128,13 +158,13 @@ def videos(pdir: Path) -> list[str]:
     return sorted(p.parent.name[3:] for p in pdir.glob("hf-*/layout.json"))
 
 
-def render(slug: str, quality: str = "looks", video: str | None = None) -> dict:
+def render(slug: str, quality: str = QUALITY, video: str | None = None, fps: int = FPS) -> dict:
     load_tutorial(slug)
     pdir = project_dir(slug)
     names = [video] if video else videos(pdir)
     if not names:
         raise PipelineError("No hay proyectos hf-*/ con layout.json. Corré antes compose.py.")
-    return render_many([(hf_dir(pdir, v), pdir / "out" / f"{slug}-{v}.mp4") for v in names], quality)
+    return render_many([(hf_dir(pdir, v), pdir / "out" / f"{slug}-{v}.mp4") for v in names], quality, fps=fps)
 
 
 def snapshot_project(src: Path, times: list[float]) -> list[Path]:
@@ -161,7 +191,8 @@ def snapshots(slug: str, video: str, times: list[float]) -> list[Path]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("slug", nargs="?")
-    ap.add_argument("--quality", choices=["draft", "looks", "delivery"], default="looks")
+    ap.add_argument("--quality", choices=["draft", "looks", "delivery"], default=QUALITY)
+    ap.add_argument("--fps", type=int, default=FPS, help=f"output frame rate (default {FPS})")
     ap.add_argument("--video", help="id del video (por defecto: todos los hf-*/)")
     ap.add_argument("--project", type=Path, action="append",
                     help="render an hf-* folder (e.g. a compose --fixture); repeat it to render several in parallel")
@@ -176,9 +207,9 @@ def main() -> None:
                 print(path)
         else:
             outs = [args.out] if args.out else [p.with_suffix(".mp4") for p in args.project]
-            render_many(list(zip(args.project, outs)), args.quality)
+            render_many(list(zip(args.project, outs)), args.quality, fps=args.fps)
     elif args.slug:
-        render(args.slug, args.quality, args.video)
+        render(args.slug, args.quality, args.video, args.fps)
     else:
         ap.error("falta el slug (o --project)")
 

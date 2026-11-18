@@ -114,9 +114,10 @@ class LayoutTest(unittest.TestCase):
             self.assertGreaterEqual(lay["font_px"], 44)
             self.assertEqual(len(lay["viewport"]), 4)
             for seg in lay["camera"]:
-                self.assertIn(seg["kind"], {"context", "detail", "move"})
+                self.assertIn(seg["kind"], {"context", "detail", "move", "form"})
                 self.assertLess(seg["t0"], seg["t1"])
-            kinds = {"caption", "chip", "title", "card", "cursor", "active", "result", "highlight", "band"}
+            kinds = {"caption", "chip", "title", "card", "cursor", "active", "result", "highlight", "band",
+                     "spotlight"}
             for item in lay["items"]:
                 self.assertIn(item["kind"], kinds)
                 self.assertEqual(len(item["rect"]), 4)
@@ -139,12 +140,16 @@ class LayoutTest(unittest.TestCase):
                     self.assertLessEqual(seg["t1"] - seg["t0"], 0.601, (video, seg))
 
     def test_camera_scale_ranges(self):
+        # C1 revised (§Parte 5): detail 1.4-1.8x; N10 form shots 1.0 (base in 9:16) to 1.8x.
         for video, lay in self.layouts.items():
             base = lay["base_scale"]
             for seg in lay["camera"]:
                 if seg["kind"] == "detail":
-                    self.assertGreaterEqual(seg["scale"], 1.8 - 1e-6, (video, seg))
-                    self.assertLessEqual(seg["scale"], 2.5 + 1e-6, (video, seg))
+                    self.assertGreaterEqual(seg["scale"], 1.4 - 1e-6, (video, seg))
+                    self.assertLessEqual(seg["scale"], 1.8 + 1e-6, (video, seg))
+                if seg["kind"] == "form":
+                    self.assertGreaterEqual(seg["scale"], max(1.0, base) - 1e-6, (video, seg))
+                    self.assertLessEqual(seg["scale"], 1.8 + 1e-6, (video, seg))
                 if seg["kind"] == "context":
                     self.assertAlmostEqual(seg["scale"], base, places=3)
                     self.assertLessEqual(seg["t1"] - seg["t0"], 1.0 + 1e-6, (video, seg))
@@ -311,16 +316,18 @@ def navigation_timeline():
 
 class NavigationCameraTest(unittest.TestCase):
     def test_wide_shots_after_navigation_stay_within_1_s(self):
-        # C1 as qa.py measures it: consecutive camera time below detail scale, zoom-out move included.
+        # C1: consecutive camera time at the full-screen (base) scale, zoom-out move included; N10 form
+        # shots (>= 1.0x, >= base in 9:16) are not wide shots.
         tl = navigation_timeline()
-        for fmt, detail in (("16:9", 1.8), ("9:16", 1.75)):
+        for fmt in ("16:9", "9:16"):
             tl["format"] = fmt
-            cam = compose.plan(tl, BRAND)["camera"]
+            lay = compose.plan(tl, BRAND)
+            cam, wide = lay["camera"], lay["base_scale"] + 0.05
             runs, start = [], None
             for seg in cam:
-                if seg["scale"] < detail and start is None:
+                if seg["scale"] < wide and start is None:
                     start = seg["t0"]
-                elif seg["scale"] >= detail and start is not None:
+                elif seg["scale"] >= wide and start is not None:
                     runs.append(seg["t0"] - start)
                     start = None
             if start is not None:
@@ -329,15 +336,17 @@ class NavigationCameraTest(unittest.TestCase):
                 self.assertFalse([r for r in runs if r > 1.0 + 1e-6], cam)
 
     def test_detail_follows_the_click_to_the_new_screen(self):
-        # After the click opens the form, the camera goes in detail to the first field (no 1.0x look at a
-        # half-empty dimmed screen, C4), and it is there 0.3 s before typing starts (C3).
+        # After the click opens the form, the camera goes to the form (N10: two fields of one step, no
+        # form_box in older captures) without a 1.0x look at a half-empty dimmed screen (C4), and it is
+        # there 0.3 s before typing starts (C3).
         tl = navigation_timeline()
         cam = compose.plan(tl, BRAND)["camera"]
         after = [s for s in cam if s["t1"] > 8.24 + 1e-6 and s["t0"] < 12.79]
         self.assertFalse([s for s in after if s["kind"] == "context"], after)
         framed = next(s for s in cam if s["t0"] <= 12.79 - 0.3 + 1e-6 < s["t1"])
-        self.assertEqual(framed["kind"], "detail", cam)
-        self.assertGreaterEqual(framed["scale"], 1.8)
+        self.assertEqual(framed["kind"], "form", cam)
+        self.assertGreaterEqual(framed["scale"], 1.0)
+        self.assertLessEqual(framed["scale"], 1.8)
 
     def test_camera_cuts_to_the_next_target_when_the_screen_changes(self):
         # edit marks when the click changed the screen (screen_at). Panning there crossed the empty part
@@ -375,6 +384,52 @@ class NavigationCameraTest(unittest.TestCase):
         after = next(s for s in cam if s["t0"] <= 8.26 < s["t1"])
         self.assertAlmostEqual(after["t0"], 8.26, places=3)
         self.assertAlmostEqual(after["scale"], next(s for s in cam if s["t0"] <= 8.66 < s["t1"])["scale"])
+
+
+def toast_timeline(row_box):
+    """v3 TUT 0:18: Guardar changes the screen, the toast (bottom right) opens it, then the new row is highlighted."""
+    def ev(kind, t, t_end, box, sel):
+        return {"type": kind, "t": t, "t_end": t_end, "selector": sel, "box": box,
+                "point": {"x": box["x"] + box["w"] / 2, "y": box["y"] + box["h"] / 2}, "chars": 0, "secret": False}
+    click = ev("click", 18.32, 18.32, {"x": 1300, "y": 900, "w": 150, "h": 44}, "#btn-save")
+    click["screen_at"] = 18.423
+    return {"video": "tutorial", "type": "TUT", "format": "16:9", "total": 26.0, "product": "DemoCRM",
+            "title": "Crear un cliente", "opening": None, "requirements": None, "closing": None,
+            "screen_start": 16.0, "screen_end": 23.0, "steps": [
+                {"id": "guardar", "number": 4, "title": "Guarda", "narration": "Haz clic en Guardar.",
+                 "start": 16.0, "duration": 7.0, "voice_start": 16.3, "voice_duration": 2.0, "events": [
+                     click, ev("result", 18.423, 20.423, {"x": 1594, "y": 999, "w": 294, "h": 49}, "#toast"),
+                     ev("highlight", 20.423, 21.923, row_box, "tr.new")]}]}
+
+
+class LeaveToastTest(unittest.TestCase):
+    """C10/C4: never pan from a toast across an empty screen to a distant target."""
+
+    def test_cut_from_the_toast_to_a_distant_row(self):
+        # v3 TUT 19.72-20.22: the pan from the toast (bottom right) to the new row (top) crossed the empty list.
+        for fmt in ("16:9", "9:16"):
+            tl = toast_timeline({"x": 392, "y": 236, "w": 1136, "h": 50})
+            tl["format"] = fmt
+            lay = compose.plan(tl, BRAND)
+            cam, res = lay["camera"], next(i for i in lay["items"] if i["kind"] == "result")
+            with self.subTest(fmt=fmt):
+                self.assertFalse([s for s in cam if s["kind"] == "move" and s["t1"] > 18.423 + 1e-6], cam)
+                toast = compose.frame_at(cam, 18.423)
+                row = compose.frame_at(cam, 20.423 - 0.3)
+                self.assertTrue(inside(mapped({"x": 1594, "y": 999, "w": 294, "h": 49}, toast), lay["viewport"]))
+                self.assertTrue(inside(mapped({"x": 392, "y": 236, "w": 1136, "h": 50}, row), lay["viewport"])
+                                or fmt == "9:16")
+                self.assertNotEqual(toast, row)
+                self.assertGreaterEqual(res["t1"] - res["t0"], compose.R2_CLEAN)   # R2/N6 untouched
+                html = compose.build(tl, BRAND)[0]
+                cut = next(s for s in cam if s["t0"] > 18.423 + 1e-6)
+                self.assertIn(f'"--s": {compose.num(cut["scale"])}}}, {compose.num(cut["t0"])});', html)
+
+    def test_pan_kept_to_a_target_next_to_the_toast(self):
+        # A target already partly in the toast framing is in the same populated area: the ease-in-out pan stays.
+        tl = toast_timeline({"x": 1500, "y": 930, "w": 380, "h": 50})
+        cam = compose.plan(tl, BRAND)["camera"]
+        self.assertTrue([s for s in cam if s["kind"] == "move" and s["t0"] > 18.423], cam)
 
 
 def field(t, t_end, x, y, w=400, h=45, selector="#f", frame=True):
@@ -417,14 +472,14 @@ class RoundTwoTest(unittest.TestCase):
     def items(self, video, kind):
         return [i for i in self.layouts[video]["items"] if i["kind"] == kind]
 
-    # C7: establishing shot on every new screen.
+    # C7: establishing shot on every new screen (but the one that opens on a toast: S1(a), cut to it).
     def test_establishing_shot_at_each_new_screen(self):
         for video, lay in self.layouts.items():
             tl = self.tls[video]
             cam = lay["camera"]
             starts = [tl["screen_start"]] + screen_changes(tl)
             self.assertEqual(len(starts), 3, starts)
-            for t in starts:
+            for t in starts[:2]:
                 seg = next(s for s in cam if abs(s["t0"] - t) < 1e-3)
                 with self.subTest(video=video, t=t):
                     self.assertEqual(seg["kind"], "context", cam)
@@ -435,7 +490,7 @@ class RoundTwoTest(unittest.TestCase):
                     self.assertEqual(nxt["kind"], "move", nxt)
                     self.assertGreaterEqual(nxt["t1"] - nxt["t0"], 0.4 - 1e-6)
                     self.assertLessEqual(nxt["t1"] - nxt["t0"], 0.6 + 1e-6)
-                    self.assertGreaterEqual(nxt["scale"], 1.8 - 1e-6)
+                    self.assertGreaterEqual(nxt["scale"], max(1.0, lay["base_scale"]) - 1e-6)
         # 16:9: the establishing shot shows the whole 1920x1080 screen inside the UI viewport.
         lay = self.layouts["tutorial"]
         seg = lay["camera"][0]
@@ -444,20 +499,13 @@ class RoundTwoTest(unittest.TestCase):
                                       {"x": seg["x"], "y": seg["y"], "s": seg["scale"]}), lay["viewport"]))
         self.assertGreaterEqual(1080 * seg["scale"], vh - 1)
 
-    # C8: one framing per field; no identical framing longer than 4 s (TUT) / 3 s (RED).
-    def test_each_type_event_gets_its_own_framing(self):
-        for video, lay in self.layouts.items():
-            types = [e for s in self.tls[video]["steps"] for e in s["events"] if e["type"] == "type"]
-            frames = [compose.frame_at(lay["camera"], (e["t"] + e["t_end"]) / 2) for e in types]
-            keys = {(round(f["x"]), round(f["y"]), round(f["s"], 2)) for f in frames}
-            self.assertEqual(len(keys), len(types), (video, frames))
-
+    # C8: no identical framing longer than 4 s (TUT) / 3 s (RED); N11 spotlight moves count as changes.
     def test_no_identical_framing_longer_than_the_type_limit(self):
         for video, lay in self.layouts.items():
             limit = 3.0 if lay["type"] == "RED" else 4.0
             for seg in lay["camera"]:
-                if seg["kind"] == "move":
-                    continue
+                if seg["kind"] in ("move", "form"):
+                    continue      # form shots: RoundThreeTest.test_c8_counts_spotlight_moves
                 if seg.get("from") and (seg["from"]["x"], seg["from"]["y"], seg["from"]["s"]) != (seg["x"], seg["y"], seg["scale"]):
                     self.assertLessEqual(abs(seg["scale"] - seg["from"]["s"]), 0.1 + 1e-6, seg)
                     continue      # a slow push-in: the framing keeps changing
@@ -637,12 +685,221 @@ class RoundTwoTest(unittest.TestCase):
             self.assertTrue(any(a <= res["t0"] and b >= res["t0"] + 0.8 for a, b in lay["cursor_hidden"]))
 
 
+def spotlights(layout):
+    return [i for i in layout["items"] if i["kind"] == "spotlight"]
+
+
+def form_field(t, t_end, x, y, selector, w=400, h=45):
+    ev = field(t, t_end, x, y, w, h, selector)
+    ev["form_box"] = dict(FORM)
+    return ev
+
+
+FORM = {"x": 273, "y": 152, "w": 878, "h": 585}
+
+
+class RoundThreeTest(unittest.TestCase):
+    """reglas/reglas-video.md §Parte 5: C1 revised, N10-N12; reglas-ronda3 S1(a)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tls = {v: fixture(v) for v in ("tutorial", "redes")}
+        cls.layouts = {v: compose.plan(cls.tls[v], BRAND) for v in cls.tls}
+        cls.htmls = {v: compose.build(cls.tls[v], BRAND)[0] for v in cls.tls}
+
+    def items(self, video, kind):
+        return [i for i in self.layouts[video]["items"] if i["kind"] == kind]
+
+    def events(self, video, kinds):
+        return [e for s in self.tls[video]["steps"] for e in s["events"] if e["type"] in kinds]
+
+    # C1 revised: buttons, toasts and rows framed at 1.4-1.8x (was 1.8-2.5x).
+    def test_detail_zoom_is_1_4_to_1_8(self):
+        self.assertEqual((compose.DETAIL_MIN, compose.DETAIL_MAX), (1.4, 1.8))
+        for video, lay in self.layouts.items():
+            click = self.events(video, {"click"})[0]          # "+ Nuevo contacto", outside any form
+            self.assertNotIn("form_box", click)
+            for ev in (click, *self.events(video, {"result", "highlight"})):
+                s = compose.frame_at(lay["camera"], ev["t"] + (0.5 if ev["type"] == "highlight" else 0))["s"]
+                with self.subTest(video=video, ev=ev["type"]):
+                    self.assertGreaterEqual(s, 1.4 - 1e-6)
+                    self.assertLessEqual(s, 1.8 + 1e-6)
+
+    # N10: one form framing for every action inside the form; the camera does not move per field.
+    def test_form_shot_is_one_framing_for_the_whole_form(self):
+        for video, lay in self.layouts.items():
+            inside_form = [e for e in self.events(video, {"type", "click", "focus"}) if e.get("form_box")]
+            self.assertEqual(len(inside_form), 5)
+            frames = {(round(f["x"], 1), round(f["y"], 1), round(f["s"], 3))
+                      for e in inside_form for t in (e["t"] - 0.3, e["t"], e.get("t_end") or e["t"])
+                      for f in [compose.frame_at(lay["camera"], t)]}
+            pushes = [s for s in lay["camera"] if s["kind"] == "form" and s.get("push")]
+            if not pushes:
+                self.assertEqual(len(frames), 1, (video, frames))
+            forms = [s for s in lay["camera"] if s["kind"] == "form"]
+            self.assertTrue(forms, lay["camera"])
+            self.assertFalse([s for s in lay["camera"] if s["kind"] == "move"
+                              and inside_form[0]["t"] < s["t0"] < inside_form[-1]["t"]], video)
+            for seg in forms:
+                self.assertEqual(seg["form_box"], FORM)
+            s = forms[0]["scale"]
+            if lay["format"] == "16:9":
+                self.assertGreaterEqual(s, 1.1)
+                self.assertLessEqual(s, 1.5)
+                # The whole card (fields and buttons) is inside the UI viewport.
+                fr = {"x": forms[0]["x"], "y": forms[0]["y"], "s": s}
+                self.assertTrue(inside(mapped(FORM, fr), lay["viewport"]), (fr, mapped(FORM, fr)))
+            else:
+                self.assertAlmostEqual(s, lay["base_scale"], places=3)     # N12: width-fit, never below base
+
+    def test_inferred_form_box_for_older_captures(self):
+        # No form_box (v3 captures): the step's consecutive fields are one form, their frame boxes + 24 px.
+        lay = compose.plan(navigation_timeline(), BRAND)
+        forms = [s for s in lay["camera"] if s["kind"] == "form"]
+        self.assertEqual(len(forms), 1, lay["camera"])
+        self.assertEqual(forms[0]["form_box"], {"x": 766, "y": 389.4, "w": 388, "h": 206.4})
+        self.assertEqual(len(spotlights(lay)), 2)
+
+    def test_tall_form_splits_into_the_fewest_top_to_bottom_framings(self):
+        # 16:9: a form taller than the viewport at 1.0x is cut in two framings, never below 1.0x.
+        tl = navigation_timeline()
+        tall = {"x": 273, "y": 20, "w": 878, "h": 1050}
+        evs = [form_field(12.79 + 0.9 * k, 13.39 + 0.9 * k, 301 + 422 * (k % 2), 60 + 120 * k, f"#f{k}")
+               for k in range(8)]
+        for ev in evs:
+            ev["form_box"] = dict(tall)
+        tl["steps"][1]["events"] = evs
+        tl["steps"][1]["duration"] = 9.0
+        tl["screen_end"] = tl["total"] = 21.2
+        lay = compose.plan(tl, BRAND)
+        framings = []
+        for ev in evs:
+            fr = compose.frame_at(lay["camera"], (ev["t"] + ev["t_end"]) / 2)
+            self.assertGreaterEqual(fr["s"], 1.0 - 1e-6)
+            self.assertTrue(inside(mapped(label_box(ev), fr), lay["viewport"]), (ev["selector"], fr))
+            key = (round(fr["x"]), round(fr["y"]), round(fr["s"], 3))
+            if not framings or framings[-1] != key:
+                framings.append(key)
+        self.assertEqual(len(framings), 2, framings)
+        self.assertGreater(framings[0][1], framings[1][1])      # top part first, then the bottom part
+
+    # N11: brand outline + soft dim on the active field, moving 250-400 ms ease-in-out between fields.
+    def test_spotlight_items_follow_the_active_field(self):
+        for video, lay in self.layouts.items():
+            spots = spotlights(lay)
+            self.assertEqual([s["selector"] for s in spots], ["#c-nombre", "#c-apellido", "#c-email", "#btn-guardar"])
+            pal = lay["palette"]
+            for a, b in zip(spots, spots[1:]):
+                self.assertAlmostEqual(a["t1"], b["move"][0], places=3)
+                self.assertAlmostEqual(b["t0"], b["move"][1], places=3)
+                self.assertGreaterEqual(b["move"][1] - b["move"][0], 0.25 - 1e-6)
+                self.assertLessEqual(b["move"][1] - b["move"][0], 0.4 + 1e-6)
+            evs = {e["selector"]: e for e in self.events(video, {"type", "click"}) if e.get("form_box")}
+            for spot in spots:
+                ev = evs[spot["selector"]]
+                self.assertLessEqual(spot["t0"], ev["t"] + 1e-6, spot)       # on the field before acting
+                self.assertGreaterEqual(spot["t1"], ev.get("t_end") or ev["t"], spot)
+                self.assertEqual(spot["color"], pal["highlight"])
+                self.assertEqual(spot["dim_color"], pal["background"])
+                self.assertGreater(spot["dim"], 0)
+                self.assertLessEqual(spot["dim"], 0.25)
+                fr = compose.frame_at(lay["camera"], spot["t0"])
+                self.assertEqual(spot["rect"], [round(v, 1) for v in mapped(compose.label_box(ev), fr)])
+                self.assertTrue(inside(spot["rect"], lay["viewport"]), spot)
+            # Seek-safe: one element inside the camera driven by the GSAP timeline only.
+            html = self.htmls[video]
+            self.assertIn('class="spot"', html)
+            self.assertIn('fill-opacity="0.22" mask="url(#spot-0-mask)"', html)
+            self.assertRegex(html, r'tl\.to\("\.spot-0-box", \{attr: \{x: [^}]*\}, duration: 0\.\d+, ease: "power2\.inOut"\}')
+            self.assertNotRegex(html, r'"#spot-\d+", \{(left|top):')
+            self.assertLess(html.index('class="spot"'), html.index('id="cursor-layer"'))
+
+    def test_c8_counts_spotlight_moves(self):
+        # The form shot may outlast the C8 limit: spotlight moves (or a slow push) break it into runs <= limit.
+        for video, lay in self.layouts.items():
+            limit = 3.0 if lay["type"] == "RED" else 4.0
+            moves = [tuple(s["move"]) for s in spotlights(lay) if s.get("move")]
+            for seg in lay["camera"]:
+                if seg["kind"] != "form" or seg.get("push"):
+                    continue
+                runs = compose.subtract([(seg["t0"], seg["t1"])], moves)
+                with self.subTest(video=video, seg=seg):
+                    self.assertFalse([r for r in runs if r[1] - r[0] > limit + 1e-6], (runs, moves))
+            self.assertGreater(sum(s["t1"] - s["t0"] for s in lay["camera"] if s["kind"] == "form"), limit)
+        self.assertEqual(compose.static_runs(0.0, 10.0, [(3.0, 3.3), (6.0, 6.3)]),
+                         [(0.0, 3.0), (3.3, 6.0), (6.3, 10.0)])
+
+    # N12: in 9:16 the form is framed across its whole width: the right column is never cut.
+    def test_vertical_form_fits_the_width(self):
+        lay = self.layouts["redes"]
+        vx, vy, vw, vh = lay["viewport"]
+        for ev in self.events("redes", {"type", "click"}):
+            if not ev.get("form_box"):
+                continue
+            for t in (ev["t"], ev.get("t_end") or ev["t"]):
+                fr = compose.frame_at(lay["camera"], t)
+                x, y, w, h = mapped(compose.label_box(ev), fr)
+                with self.subTest(sel=ev["selector"], t=t):
+                    self.assertGreaterEqual(x, vx + 8)
+                    self.assertLessEqual(x + w, vx + vw - 8)
+                    self.assertTrue(inside([x, y, w, h], lay["viewport"]))
+        # Both columns of the form (Nombre/Apellido, Empresa/Cargo, Correo/Teléfono) whole at once.
+        fr = compose.frame_at(lay["camera"], self.events("redes", {"type"})[0]["t"])
+        both = {"x": 301, "y": 181, "w": 822, "h": 238}
+        self.assertTrue(inside(mapped(both, fr), lay["viewport"]), mapped(both, fr))
+
+    # S1(a): a click that changes the screen to a toast cuts straight to the toast framing.
+    def test_cut_to_the_toast_at_screen_at(self):
+        for video, lay in self.layouts.items():
+            cam = lay["camera"]
+            at = screen_changes(self.tls[video])[-1]
+            res = self.items(video, "result")[0]
+            seg = next(s for s in cam if abs(s["t0"] - at) < 1e-3)
+            self.assertEqual(seg["kind"], "detail", cam)
+            toast = {"x": 1594, "y": 999, "w": 294, "h": 49}
+            fr = {"x": seg["x"], "y": seg["y"], "s": seg["scale"]}
+            self.assertTrue(inside(mapped(toast, fr), lay["viewport"]), (video, seg))
+            self.assertFalse([s for s in cam if at - 1e-3 <= s["t0"] < res["t0"] and s["kind"] in ("move", "context")], cam)
+            self.assertLessEqual(res["exempt"][0], at + 1e-3)
+            self.assertIn(f'"--s": {compose.num(seg["scale"])}}}, {compose.num(at)});', self.htmls[video])
+
+
 class ParallelRenderTest(unittest.TestCase):
     def test_workers_are_split_across_videos(self):
+        # S1(f): 2 Chrome workers per video measured fastest (6+6 on 12 threads oversubscribed: 276-296 s).
         import render
-        self.assertEqual(render.workers_per_video(2, 12), 6)
+        self.assertEqual(render.workers_per_video(2, 12), 2)
         self.assertEqual(render.workers_per_video(3, 2), 1)
-        self.assertEqual(render.workers_per_video(1, 8), 8)
+        self.assertEqual(render.workers_per_video(1, 8), 2)
+
+    def test_final_render_defaults(self):
+        # S1(f): looks + PNG frame extraction (sharp UI text) at 25 fps; --quality and --fps stay overridable.
+        import tempfile
+        import render
+        self.assertEqual((render.QUALITY, render.FRAME_FORMAT, render.FPS), ("looks", "png", 25))
+        calls = []
+
+        def fake_hf(*args, **kwargs):
+            calls.append([str(a) for a in args])
+            Path(args[args.index("-o") + 1]).write_bytes(b"")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "hf-tutorial"
+            src.mkdir()
+            (src / "layout.json").write_text('{"format": "16:9", "total": 1.0}', encoding="utf-8")
+            hf, verify = render.hyperframes, render.verify
+            render.hyperframes, render.verify = fake_hf, lambda *a: {"width": 1920, "height": 1080, "duration": 1.0,
+                                                                     "video": "h264", "audio": "aac"}
+            try:
+                render.render_project(src, Path(tmp) / "a.mp4", render.QUALITY, 2)
+                render.render_project(src, Path(tmp) / "b.mp4", "delivery", 2, fps=30)
+            finally:
+                render.hyperframes, render.verify = hf, verify
+        first, second = calls
+        for flag, value in (("--quality", "looks"), ("--video-frame-format", "png"), ("--fps", "25"),
+                            ("--workers", "2"), ("--page-motion-blur", "off")):
+            self.assertEqual(first[first.index(flag) + 1], value, first)
+        self.assertEqual((second[second.index("--quality") + 1], second[second.index("--fps") + 1]), ("delivery", "30"))
 
     def test_renders_run_concurrently(self):
         import threading
@@ -662,7 +919,7 @@ class ParallelRenderTest(unittest.TestCase):
         jobs = [(Path(f"hf-{v}"), Path(f"{v}.mp4")) for v in ("tutorial", "redes")]
         out = render.render_many(jobs, "draft", runner=fake, cores=8)
         self.assertEqual(peak[0], 2)
-        self.assertEqual([r["workers"] for r in out.values()], [4, 4])
+        self.assertEqual([r["workers"] for r in out.values()], [2, 2])
         self.assertEqual(list(out), ["tutorial", "redes"])
 
 

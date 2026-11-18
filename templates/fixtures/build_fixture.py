@@ -10,7 +10,8 @@ Cuts three steps (nuevo, datos, guardar) out of proyectos/nexo-crm-contacto/edit
   brand.json               brand colors of the demo (no accent: it defaults to the primary, N5)
 The boxes and points are the real ones recorded by capture for those frames. Like edit's output (N1,
 C10), the first step opens with a hold before its click, clicks happen just before the page changes,
-clicks carry `screen_at` (the new screen) and fields carry `frame_box` (control + label, C9).
+clicks carry `screen_at` (the new screen) and fields carry `frame_box` (control + label, C9). Like
+capture (reglas-ronda3 L3), the actions inside the "Nuevo contacto" card carry its `form_box` (N10).
 """
 from __future__ import annotations
 
@@ -28,6 +29,9 @@ SEGMENTS = [("nuevo", 12.76, 17.28), ("datos", 17.28, 25.08), ("guardar", 39.68,
 # N1: edit holds the first frame of a step while the narration asks for the action.
 PRE_HOLD = {"nuevo": 1.5}
 
+# N10: the "Nuevo contacto" card (fields + buttons), measured on the recording.
+FORM = {"x": 273, "y": 152, "w": 878, "h": 585}
+
 # Events per step, times in seconds of SOURCE.
 EVENTS = {
     "nuevo": [
@@ -35,22 +39,22 @@ EVENTS = {
          "box": {"x": 1721.1, "y": 96, "w": 166.9, "h": 43}, "point": {"x": 1805, "y": 118}},
         {"type": "focus", "t": 14.747, "selector": "#c-nombre",
          "box": {"x": 301, "y": 203, "w": 400, "h": 45}, "point": {"x": 501, "y": 226},
-         "frame_box": {"x": 301, "y": 181, "w": 400, "h": 67}},
+         "frame_box": {"x": 301, "y": 181, "w": 400, "h": 67}, "form_box": FORM},
     ],
     "datos": [
         {"type": "type", "t": 17.575, "t_end": 18.48, "chars": 5, "selector": "#c-nombre",
          "box": {"x": 301, "y": 203, "w": 400, "h": 45}, "point": {"x": 501, "y": 226},
-         "frame_box": {"x": 301, "y": 181, "w": 400, "h": 67}},
+         "frame_box": {"x": 301, "y": 181, "w": 400, "h": 67}, "form_box": FORM},
         {"type": "type", "t": 18.842, "t_end": 20.126, "chars": 7, "selector": "#c-apellido",
          "box": {"x": 723, "y": 203, "w": 400, "h": 45}, "point": {"x": 923, "y": 226},
-         "frame_box": {"x": 723, "y": 181, "w": 400, "h": 67}},
+         "frame_box": {"x": 723, "y": 181, "w": 400, "h": 67}, "form_box": FORM},
         {"type": "type", "t": 20.532, "t_end": 24.496, "chars": 29, "selector": "#c-email",
          "box": {"x": 301, "y": 375, "w": 400, "h": 45}, "point": {"x": 501, "y": 398},
-         "frame_box": {"x": 301, "y": 353, "w": 400, "h": 67}},
+         "frame_box": {"x": 301, "y": 353, "w": 400, "h": 67}, "form_box": FORM},
     ],
     "guardar": [
         {"type": "click", "t": 40.46, "screen_c": 40.494, "selector": "#btn-guardar",
-         "box": {"x": 960.75, "y": 664, "w": 162.25, "h": 45}, "point": {"x": 1042, "y": 687}},
+         "box": {"x": 960.75, "y": 664, "w": 162.25, "h": 45}, "point": {"x": 1042, "y": 687}, "form_box": FORM},
         {"type": "result", "t": 41.611, "selector": "#toast",
          "box": {"x": 1594, "y": 999, "w": 294, "h": 49}},
         {"type": "highlight", "t": 43.04, "selector": "tr.new",
@@ -108,7 +112,7 @@ def timeline(video: str) -> dict:
         meta = STEPS[sid]
         events = []
         for ev in EVENTS[sid]:
-            ev = dict(ev)
+            ev = json.loads(json.dumps(ev))
             ev["t"] = round(cursor + hold + ev["t"] - a, 3)
             if "t_end" in ev:
                 ev["t_end"] = round(cursor + hold + ev["t_end"] - a, 3)
