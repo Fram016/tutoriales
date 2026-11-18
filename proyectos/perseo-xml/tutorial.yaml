@@ -1,0 +1,152 @@
+# Perseo XML (odd/tasks/perseo-xml.md T4, S1–S5). Brief: proyectos/perseo-xml/brief.md.
+# Selectors confirmed live in rehearsal (space 48, 2026-11-18) unless marked "sin confirmar".
+# The user logs in before the take; nothing here types credentials.
+title: "Cómo descargar tus XML del SRI con Perseo XML"
+product: "Perseo XML"
+app_url: https://srienlinea.sri.gob.ec/sri-en-linea/contribuyente/perfil   # start from the profile, then the portal menu
+viewport: [1920, 1080]
+language: es-EC
+device: desktop                      # L2: "haz clic"
+brand:                               # N5: popup.html CSS variables; accent = primary
+  dir: brand
+  primary: "#ca4100"                 # --primario (popup.html:32)
+  background: "#09090b"              # --texto, black of the Perseo logo (popup.html:36)
+  surface: "#09090b"
+  on_surface: "#ffffff"
+  text: "#ffffff"
+  font: "Segoe UI"                   # popup uses Instrument Sans (popup.html:11-27) but hyperframes has no @font-face for it
+glossary:                            # L3
+  comprobante: [documento, archivo]
+  extensión: [complemento, plugin]
+  descargar: [bajar]
+  carpeta de descargas: [directorio, ruta]
+censor:                              # S3 + L9: values live only in acceso.local.yaml
+  text: [env:PERSEO_XML_RUC, env:PERSEO_XML_NOMBRE, env:PERSEO_XML_EMAIL, env:PERSEO_XML_TELEFONO]
+  selectors:                         # third-party data in the recibidos table: col 2 "RUC y Razón social emisor", col 4 "Clave de acceso" (confirmed)
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(2)'
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(4)'
+surfaces:
+  popup:                             # S5: the real extension popup, composited under the toolbar icon
+    url: "chrome-extension://jakigokhcbfpebeiolidapdkeooiapeb/popup.html"
+    size: [420, 640]
+    dpr: 2
+    anchor: top-right
+    target_tab: "https://srienlinea.sri.gob.ec/*"
+    icon: brand/ext-icon48.png
+music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}
+
+steps:
+  - id: carpeta                      # S2: the download folder BEFORE any download
+    title: "Configura la carpeta de descargas"
+    narration: "Abre Perseo XML y haz clic en Carpeta de descargas. En la configuración, con Cambiar eliges dónde se guardan tus XML."
+    actions:
+      - open: popup
+      - focus: {in: popup, sel: ".cabecera"}
+      - click: {in: popup, sel: "#configure-folder"}
+      # No follow: tab. chrome://settings/downloads shows the Windows user folder path and the censor cannot reach chrome://
+      # pages (take 5, frame f000095); the settings tab opens in the background and the take stays on the SRI.
+      - focus: {in: popup, sel: "#configure-folder"}
+      - pause: 1200
+      - close: popup
+  - id: consultas                    # obvious navigation: RED omits it
+    title: "Abre Consultas"
+    narration: "En el menú, haz clic en Facturación Electrónica, luego en Producción y en Consultas. Ahí eliges qué comprobantes quieres consultar y descargar."
+    actions:
+      - click: "#sri-menu"                                           # hamburger (aria "Abrir o cerrar menu desplegado")
+      - wait: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
+      - click: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
+      - wait: "xpath=//a[normalize-space()='Producción']"
+      - click: "xpath=//a[normalize-space()='Producción']"
+      - wait: "xpath=//a[normalize-space()='Producción']/following-sibling::*//a[normalize-space()='Consultas']"   # 3 "Consultas" in the menu
+      - click: "xpath=//a[normalize-space()='Producción']/following-sibling::*//a[normalize-space()='Consultas']"
+      - wait: 'text="Comprobantes electrónicos emitidos"'
+  - id: emitidos                     # navigation: RED omits it
+    title: "Abre los emitidos"
+    narration: "Haz clic en Comprobantes electrónicos emitidos. Se abre el formulario de consulta."
+    actions:
+      - click: 'text="Comprobantes electrónicos emitidos"'
+      - wait: '[id="frmPrincipal:calendarFechaDesde_input"]'         # content-script.js:307
+  - id: fecha-emitidos
+    title: "Elige la fecha de emisión"
+    narration: "Escribe la fecha de emisión, anterior a hoy. Para una consulta corta, elige el establecimiento y escribe el punto de emisión."
+    actions:
+      - type: {into: '[id="frmPrincipal:calendarFechaDesde_input"]', text: "13/11/2026", clear: true}
+      - press: "Tab"                 # closes the calendar overlay (confirmed)
+      # Tipo de comprobante stays "Factura" (XML Desde el RIDE does not support Notas de Crédito, codDoc 04, take 5).
+      - select: {in: '[id="frmPrincipal:cmbEstablecimiento"]', option: "001"}
+      - type: {into: '[id="frmPrincipal:txtPuntoEmision"]', text: "901", clear: true}   # 13/11/2026 001-901: 12 facturas (rehearsal)
+  - id: consultar-emitidos
+    title: "Consulta los emitidos"
+    narration: "Haz clic en Consultar. Aparece la lista de comprobantes emitidos."
+    actions:
+      - click: '[id="frmPrincipal:btnConsultar"]'
+      - wait: '[id="frmPrincipal:tablaCompEmitidos_data"] tr'         # content-script.js:332
+      - highlight: '[id="frmPrincipal:tablaCompEmitidos"]'
+  - id: descargar-emitidos
+    title: "Descarga los XML emitidos"
+    narration: "Abre Perseo XML. En Comprobantes emitidos, haz clic en XML Desde el RIDE. Mientras trabaja, el botón dice En proceso. Al terminar, el resumen muestra cuántos comprobantes se descargaron y cuántos tuvieron error."
+    actions:
+      - open: popup
+      - click: {in: popup, sel: "#boton4"}
+      - wait: {in: popup, sel: "#boton4 b"}       # the button gets its <b>XML</b> back when the download ends (popup-script.js:53)
+      - pause: 2100                               # the summary refreshes every 2 s (popup-script.js:316)
+      - wait: {in: popup, sel: "#texto_correctos"}
+      - result: {in: popup, sel: "#texto_correctos"}
+      - close: popup
+  - id: recibidos                    # navigation: RED omits it
+    title: "Abre los recibidos"
+    narration: "Ahora vuelve a Consultas y haz clic en Comprobantes electrónicos recibidos. Se abre su formulario."
+    actions:
+      # Takes 6-7: after a successful download, Anterior left the page busy and the next click did not navigate.
+      # The Consultas link of S4 (works with the session open) reloads the list cleanly.
+      - goto: "https://srienlinea.sri.gob.ec/comprobantes-electronicos-internet/pages/consultas/menu.jsf?&contextoMPT=https://srienlinea.sri.gob.ec/tuportal-internet&pathMPT=Facturaci%F3n%20Electr%F3nica%20%2F%20Producci%F3n&actualMPT=Consultas%20&linkMPT=%2Fcomprobantes-electronicos-internet%2Fpages%2Fconsultas%2Fmenu.jsf%3F&esFavorito=S"
+      - wait: 'text="Validación de emisor"'     # ego waitForSelector fails on the xpath below; text= also matches a hidden side-menu span
+      - pause: 1000
+      - click: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos recibidos']"   # a hidden side-menu link comes first in the DOM
+      - wait: '[id="frmPrincipal:ano"]'                               # content-script.js:21
+  - id: fecha-recibidos
+    title: "Elige el periodo"
+    narration: "En Periodo emisión, elige el año, el mes y el día que quieres descargar. El tipo Factura ya viene elegido."
+    actions:
+      - select: {in: '[id="frmPrincipal:ano"]', option: "2026"}       # 01/11/2026 Factura: 6 comprobantes (rehearsal)
+      - select: {in: '[id="frmPrincipal:mes"]', option: "Noviembre"}
+      - select: {in: '[id="frmPrincipal:dia"]', option: "1"}
+  - id: consultar-recibidos
+    title: "Consulta los recibidos"
+    narration: "Haz clic en Consultar. Aparece la lista de comprobantes recibidos."
+    actions:
+      - click: '[id="frmPrincipal:btnBuscar"]'                        # invisible reCAPTCHA: no challenge in rehearsal
+      - wait: '[id="frmPrincipal:tablaCompRecibidos_data"] tr'        # content-script.js:46
+      - highlight: '[id="frmPrincipal:tablaCompRecibidos"]'
+  - id: descargar-recibidos
+    title: "Descarga los XML recibidos"
+    narration: "Abre Perseo XML. En Comprobantes recibidos, haz clic en XML Para importar. Cuando termina, el resumen muestra los descargados, y los XML quedan listos en tu carpeta de descargas para importarlos."
+    actions:
+      - open: popup
+      - click: {in: popup, sel: "#boton1"}
+      - wait: {in: popup, sel: "#boton1 b"}
+      - pause: 2100
+      - wait: {in: popup, sel: "#texto_correctos"}
+      - result: {in: popup, sel: "#texto_correctos"}
+      - close: popup
+
+videos:
+  - id: tutorial
+    type: TUT
+    format: "16:9"
+    steps: all
+    opening: {narration: "Aprendes a descargar XML."}
+    requirements: {narration: "Necesitas Perseo XML y sesión en el SRI.", text: "Requisito: Perseo XML instalada y sesión en SRI en línea"}
+    closing: {narration: "Siguiente: importarlos.", text: "Siguiente video: importar los XML en Perseo"}   # proposed (brief, open question 1)
+    music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}
+  - id: redes
+    type: RED
+    format: "9:16"
+    steps: [consultar-emitidos, descargar-emitidos, descargar-recibidos]   # 3 key actions; carpeta left out to stay within 35 s (RED2)
+    opening: {narration: "¿Muchos XML?", text: "Todos de una vez, sin abrir uno por uno"}
+    closing: {narration: "Mira nuestro perfil.", text: "Tutorial completo en el enlace de nuestro perfil"}   # N8, proposed destination
+    narration:
+      consultar-emitidos: "Haz clic en Consultar. Aparece la lista."
+      descargar-emitidos: "Abre Perseo XML y haz clic en XML Desde el RIDE. Se descargan todos juntos, sin abrir uno por uno, y el resumen te dice cuántos se descargaron y cuántos tuvieron error."
+      descargar-recibidos: "En recibidos, haz clic en XML Para importar. El resumen cuenta los descargados, y los XML quedan listos en tu carpeta para importarlos."
+    music: {prompt: "Energetic bright mood, punchy drums, bright synth plucks, fast tempo"}

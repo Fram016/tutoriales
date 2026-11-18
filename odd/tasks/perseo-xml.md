@@ -16,7 +16,7 @@ Reference videos transcribed in proyectos/perseo-xml/referencias/uso-1 (emitidos
 - [x] T1 S2 — Extension present in ego-lite as an unpacked test build (user: "estamos con una version de pruebas") — user + parent
 - [x] T2 S5 — Spike: popup.html opened as a page, chrome.tabs available, background screenshot 180 ms at 2x — parent
 - [x] T3 S3,S5 — Recorder censor + extension surface + follow tab; 326 tests; live on ext-demo only — worker — commit "feat: censor page data and composite extension popups"
-- [ ] T4 S1-S5 — Brief + guion (TUT + RED), rehearsal with user login handoff, capture, pipeline, QA — worker
+- [ ] T4 S1-S5 — Delivered partial: TUT 93.2 s + RED 32.3 s rendered; qa FAIL on tool-side items (C4 after nav click, O1/O2 table highlight, C1.context 1.5 s, C9/C10 popup coords false fail, N12 wide form_box, A2 RED); logo invisible on dark cards; waiting user decision — worker
 - [ ] T5 — Delivery and user review
 
 ## Log
