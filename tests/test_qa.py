@@ -203,12 +203,14 @@ class RoundTwoChecksTest(unittest.TestCase):
 
     def test_C7_new_screen_without_establishing_shot_fails(self):
         self.screen_change_at()
+        self.lay["tutorial"]["items"] = [i for i in self.lay["tutorial"]["items"] if i["kind"] != "result"]
         checks = self.checks()
         self.assertEqual(status(checks, "C7.establishing"), "FAIL")
         self.assertIn("3.40s", self.detail(checks, "C7.establishing"))
 
     def test_C7_cut_to_establishing_shot_passes_and_long_one_fails(self):
         self.screen_change_at()
+        self.lay["tutorial"]["items"] = [i for i in self.lay["tutorial"]["items"] if i["kind"] != "result"]
         cam = self.lay["tutorial"]["camera"]
         cam[3:4] = [{"t0": 1.9, "t1": 3.4, "scale": 2.0, "kind": "detail"},
                     {"t0": 3.4, "t1": 4.0, "scale": 1.0, "kind": "context", "reason": "establishing"},
@@ -217,6 +219,13 @@ class RoundTwoChecksTest(unittest.TestCase):
         self.assertEqual(status(checks, "C7.establishing"), "PASS", self.detail(checks, "C7.establishing"))
         self.assertEqual(status(checks, "C10.cut"), "PASS")
         cam[4]["t1"], cam[5]["t0"] = 4.6, 4.6
+        self.assertEqual(status(self.checks(), "C7.establishing"), "FAIL")
+
+    def test_C7_screen_change_that_cuts_to_the_toast_passes(self):
+        # S1 a: the click shows the list with the toast (result t0 3.8 s); the toast shot is the arrival shot.
+        self.screen_change_at(3.4)
+        self.assertEqual(status(self.checks(), "C7.establishing"), "PASS")
+        self.screen_change_at(2.2)  # toast 1.6 s later: no longer the arrival shot
         self.assertEqual(status(self.checks(), "C7.establishing"), "FAIL")
 
     def test_C7_whole_video_zoomed_fails_from_the_first_step(self):
@@ -266,7 +275,7 @@ class RoundTwoChecksTest(unittest.TestCase):
     def test_C9_frame_box_with_label_must_be_in_frame(self):
         self.add_typing([200, 600, 400, 100], frame_box={"x": 1300, "y": 380, "w": 200, "h": 80})
         self.assertEqual(status(self.checks("redes"), "C9.in_frame"), "FAIL")
-        self.tl["redes"]["steps"][0]["events"][-1]["frame_box"] = {"x": 800, "y": 380, "w": 150, "h": 80}
+        self.tl["redes"]["steps"][0]["events"][-1]["frame_box"] = {"x": 900, "y": 380, "w": 150, "h": 80}
         self.assertEqual(status(self.checks("redes"), "C9.in_frame"), "PASS")
 
     def test_C9_label_cut_at_the_top_fails_in_16_9(self):
@@ -275,7 +284,7 @@ class RoundTwoChecksTest(unittest.TestCase):
 
     # C10
     def test_C10_click_on_nothing_fails(self):
-        self.lay["redes"]["camera"][7]["x"] = -1590  # click point (1600, 730) lands at x=1930
+        self.lay["redes"]["camera"][7]["x"] = -1590  # click point (1600, 730) lands at x=1290
         checks = self.checks("redes")
         self.assertEqual(status(checks, "C10.click"), "FAIL")
         self.assertIn("#btn-guardar", self.detail(checks, "C10.click"))
@@ -382,6 +391,11 @@ class RoundTwoChecksTest(unittest.TestCase):
         self.assertEqual(qa.c4_ranges(self.tl["tutorial"], self.lay["tutorial"]), [(1.0, 3.8), (4.8, 5.0)])
         self.assertEqual(qa.c4_ranges(self.tl["tutorial"], None), [(1.0, 3.8), (4.8, 5.0)])
 
+    def test_C4_only_the_R2_window_is_exempt_not_the_zoom_around_it(self):
+        # S1 a: the near-empty frames between a screen change and the toast cut are checked.
+        item(self.lay["tutorial"], "result")["exempt"] = [3.0, 5.0]
+        self.assertEqual(qa.c4_ranges(self.tl["tutorial"], self.lay["tutorial"]), [(1.0, 3.8), (4.8, 5.0)])
+
     # N9
     def test_N9_vertical_frame_with_empty_bands_fails(self):
         self.lay["redes"]["camera"][3]["y"] = 288  # the source starts at y=288: band above the UI
@@ -393,6 +407,282 @@ class RoundTwoChecksTest(unittest.TestCase):
         for seg in self.lay["redes"]["camera"]:
             seg.pop("x"), seg.pop("y")
         self.assertEqual(status(self.checks("redes"), "N9.vertical"), "WARN")
+
+
+FORM = {"x": 560, "y": 200, "w": 800, "h": 500}
+FORM_V = {"x": 600, "y": 200, "w": 560, "h": 420}
+PURPLE = "#7c3aed"
+
+
+def field(selector, kind, t, x, y, w=340, form=FORM, t_end=None):
+    """A type/select event inside a form: box = the input, frame_box = input + label above it."""
+    ev = {"type": kind, "t": t, "selector": selector, "chars": 4 if kind == "type" else 0, "secret": False,
+          "box": {"x": x, "y": y + 30, "w": w, "h": 44}, "point": {"x": x + w / 2, "y": y + 52},
+          "frame_box": {"x": x, "y": y, "w": w, "h": 74}}
+    if t_end is not None:
+        ev["t_end"] = t_end
+    if form:
+        ev["form_box"] = dict(form)
+    return ev
+
+
+def spotlights(fields, camera, end, move=0.3, lead=0.1):
+    """One spotlight per field on its frame_box (output px), moving from the previous field."""
+    items = []
+    for i, ev in enumerate(fields):
+        t0 = ev["t"] - lead
+        t1 = fields[i + 1]["t"] - lead if i + 1 < len(fields) else end
+        rect = qa.map_box(ev["frame_box"], qa.frame_at(camera, ev["t"]))
+        spot = {"kind": "spotlight", "t0": round(t0, 3), "t1": round(t1, 3), "rect": [round(v, 1) for v in rect],
+                "color": PURPLE, "dim": 0.2, "step": "nuevo", "selector": ev["selector"]}
+        if i:
+            spot["move"] = move
+        items.append(spot)
+    return items
+
+
+class RoundThreeChecksTest(unittest.TestCase):
+    """C1 revised, N10-N12, R2 band and C4 window fixes (reglas/reglas-video.md Parte 5)."""
+
+    def setUp(self):
+        self.tl = {v: fixture(v, "timeline.json") for v in ("tutorial", "redes")}
+        self.lay = {v: fixture(v, "layout.json") for v in ("tutorial", "redes")}
+
+    def checks(self, video="tutorial"):
+        return qa.check_layout(self.lay[video], self.tl[video], TUTORIAL)
+
+    def detail(self, checks, check_id):
+        return next(c["detail"] for c in checks if c["id"] == check_id)
+
+    def form_frame(self, s=1.3, x=-288, y=-175, form=FORM, t0=1.9, t1=3.0):
+        return {"t0": t0, "t1": t1, "scale": s, "kind": "form", "x": x, "y": y, "form_box": dict(form)}
+
+    def tutorial_form(self, camera=None, spots=True):
+        """16:9: Nombre and Apellido side by side, Origen below; the form is framed whole at 1.3x."""
+        fields = [field("#c-nombre", "type", 2.0, 600, 230, t_end=2.3),
+                  field("#c-apellido", "type", 2.4, 980, 230, t_end=2.7),
+                  field("#c-origen", "select", 2.8, 600, 400)]
+        self.tl["tutorial"]["steps"][0]["events"] += fields
+        cam = self.lay["tutorial"]["camera"]
+        cam[3:4] = (camera or [self.form_frame()]) + [{"t0": 3.0, "t1": 5.0, "scale": 1.6, "kind": "detail"}]
+        if spots:
+            self.lay["tutorial"]["items"] += spotlights(fields, cam, 3.0)
+        return fields
+
+    def redes_form(self, order=("#c-nombre", "#c-apellido", "#c-telefono", "#c-origen"), camera=None, spots=True):
+        """9:16: two-column form framed whole across the width at the base scale (N12)."""
+        place = {"#c-nombre": (620, 230), "#c-apellido": (890, 230), "#c-telefono": (620, 330),
+                 "#c-origen": (890, 330)}
+        fields = []
+        for i, sel in enumerate(order):
+            t = 3.0 + i
+            kind = "select" if sel == "#c-origen" else "type"
+            fields.append(field(sel, kind, t + (0.5 if kind == "select" else 0), *place[sel], w=250, form=FORM_V,
+                                t_end=t + 0.8 if kind == "type" else None))
+        self.tl["redes"]["steps"][0]["events"] += fields
+        cam = self.lay["redes"]["camera"]
+        whole = camera or [self.form_frame(1.78, -1026.4, -49.8, FORM_V, 2.4, 8.3)]
+        cam[2].update(x=whole[0]["x"], y=whole[0]["y"], scale=whole[0]["scale"])
+        cam[3:6] = whole
+        leave = next(c for c in cam if c["t0"] == 8.3)
+        leave["from"] = {"x": whole[-1]["x"], "y": whole[-1]["y"], "s": whole[-1]["scale"]}
+        if spots:
+            self.lay["redes"]["items"] += spotlights(fields, cam, 8.3)
+        return fields
+
+    # C1 revised
+    def test_C1_detail_above_1_8_fails_in_both_formats(self):
+        self.assertEqual(status(self.checks(), "C1.zoom"), "PASS")
+        self.lay["tutorial"]["camera"][3]["scale"] = 2.0
+        checks = self.checks()
+        self.assertEqual(status(checks, "C1.zoom"), "FAIL")
+        self.assertIn("2", self.detail(checks, "C1.zoom"))
+        self.assertEqual(status(self.checks("redes"), "C1.zoom"), "PASS")
+        self.lay["redes"]["camera"][3]["scale"] = 2.2
+        self.assertEqual(status(self.checks("redes"), "C1.zoom"), "FAIL")
+
+    def test_C1_detail_floor_is_1_4(self):
+        cam = self.lay["tutorial"]["camera"]
+        cam[3]["scale"] = 1.45
+        checks = self.checks()
+        self.assertEqual(status(checks, "C1.context"), "PASS")
+        self.assertEqual(status(checks, "R1.detail"), "PASS")
+        cam[3]["scale"] = 1.3
+        checks = self.checks()
+        self.assertEqual(status(checks, "C1.context"), "FAIL")
+        self.assertEqual(status(checks, "R1.detail"), "FAIL")
+
+    def test_C1_form_shot_may_be_below_detail_but_not_above_1_8_or_below_base(self):
+        self.tutorial_form()
+        checks = self.checks()
+        self.assertEqual(status(checks, "C1.context"), "PASS", self.detail(checks, "C1.context"))
+        self.assertEqual(status(checks, "C1.zoom"), "PASS")
+        self.lay["tutorial"]["camera"][3]["scale"] = 1.9
+        self.assertEqual(status(self.checks(), "C1.zoom"), "FAIL")
+        self.lay["tutorial"]["camera"][3]["scale"] = 0.9
+        self.assertEqual(status(self.checks(), "C1.zoom"), "FAIL")
+
+    # N10
+    def test_N10_whole_form_shot_passes_every_round_three_check(self):
+        self.tutorial_form()
+        checks = self.checks()
+        self.assertEqual(failing(checks), [])
+        for check_id in ("N10.form", "N11.spotlight", "N12.form_fields"):
+            self.assertEqual(status(checks, check_id), "PASS", (check_id, self.detail(checks, check_id)))
+
+    def test_N10_per_field_reframing_inside_a_form_fails(self):
+        # v3: the camera jumps field by field inside the form.
+        self.tutorial_form(camera=[
+            {"t0": 1.9, "t1": 2.35, "scale": 1.6, "kind": "detail", "x": -300, "y": -150},
+            {"t0": 2.35, "t1": 2.75, "scale": 1.6, "kind": "detail", "x": -900, "y": -150},
+            {"t0": 2.75, "t1": 3.0, "scale": 1.6, "kind": "detail", "x": -300, "y": -420}])
+        checks = self.checks()
+        self.assertEqual(status(checks, "N10.form"), "FAIL")
+        self.assertIn("3 encuadres", self.detail(checks, "N10.form"))
+
+    def test_N10_tall_form_split_top_to_bottom_passes_and_bottom_to_top_fails(self):
+        tall = dict(FORM, h=900)
+        for ev in self.tutorial_form(camera=[self.form_frame(y=-175, form=tall, t1=2.75),
+                                             self.form_frame(y=-420, form=tall, t0=2.75)], spots=False):
+            ev["form_box"] = dict(tall)
+        checks = self.checks()
+        self.assertEqual(status(checks, "N10.form"), "PASS", self.detail(checks, "N10.form"))
+        self.assertEqual(status(checks, "N12.form_fields"), "PASS", self.detail(checks, "N12.form_fields"))
+        cam = self.lay["tutorial"]["camera"]
+        cam[3]["y"], cam[4]["y"] = -420, -175
+        self.assertEqual(status(self.checks(), "N10.form"), "FAIL")
+
+    def test_N10_more_form_shots_than_needed_fails(self):
+        self.tutorial_form(camera=[self.form_frame(y=-175, t1=2.6), self.form_frame(y=-200, t0=2.6)], spots=False)
+        checks = self.checks()
+        self.assertEqual(status(checks, "N10.form"), "FAIL")
+
+    def test_N10_fields_without_form_box_warn(self):
+        for ev in self.tutorial_form():
+            ev.pop("form_box")
+        self.assertEqual(status(self.checks(), "N10.form"), "WARN")
+
+    def test_N10_N11_without_forms_pass(self):
+        checks = self.checks()
+        self.assertEqual(status(checks, "N10.form"), "PASS")
+        self.assertEqual(status(checks, "N11.spotlight"), "PASS")
+        self.assertEqual(status(checks, "N12.form_fields"), "PASS")
+
+    # N11
+    def spot(self, selector):
+        return next(i for i in self.lay["tutorial"]["items"] if i.get("selector") == selector)
+
+    def test_N11_field_without_spotlight_fails(self):
+        self.tutorial_form()
+        self.lay["tutorial"]["items"].remove(self.spot("#c-apellido"))
+        checks = self.checks()
+        self.assertEqual(status(checks, "N11.spotlight"), "FAIL")
+        self.assertIn("#c-apellido", self.detail(checks, "N11.spotlight"))
+        self.lay["tutorial"]["items"] = [i for i in self.lay["tutorial"]["items"] if i["kind"] != "spotlight"]
+        self.assertEqual(status(self.checks(), "N11.spotlight"), "FAIL")
+
+    def test_N11_spotlight_on_the_wrong_field_fails(self):
+        self.tutorial_form()
+        self.spot("#c-apellido")["rect"] = list(self.spot("#c-nombre")["rect"])
+        self.assertEqual(status(self.checks(), "N11.spotlight"), "FAIL")
+
+    def test_N11_dim_color_and_move_limits(self):
+        self.tutorial_form()
+        for key, value in (("dim", 0.4), ("color", "#f97316"), ("color", "#9ca3af"), ("move", 0.6), ("move", 0.1)):
+            spot = self.spot("#c-apellido")
+            old = spot[key]
+            spot[key] = value
+            self.assertEqual(status(self.checks(), "N11.spotlight"), "FAIL", (key, value))
+            spot[key] = old
+        for value in (0.25, 0.4):
+            self.spot("#c-apellido")["move"] = value
+            self.assertEqual(status(self.checks(), "N11.spotlight"), "PASS", value)
+
+    def test_N11_compose_move_interval_and_source_box(self):
+        # compose writes move = [start, end] and the outlined field in source px (box).
+        fields = self.tutorial_form()
+        for spot, ev in zip([self.spot(f["selector"]) for f in fields], fields):
+            spot["box"] = dict(ev["frame_box"])
+            if "move" in spot:
+                spot["move"] = [spot["t0"] - 0.3, spot["t0"]]
+        self.assertEqual(status(self.checks(), "N11.spotlight"), "PASS")
+        self.spot("#c-apellido")["move"] = [1.75, 2.35]
+        self.assertEqual(status(self.checks(), "N11.spotlight"), "FAIL")
+        self.spot("#c-apellido")["move"] = [2.05, 2.35]
+        self.spot("#c-apellido")["box"] = dict(fields[0]["frame_box"])
+        self.assertEqual(status(self.checks(), "N11.spotlight"), "FAIL")
+
+    def test_N10_slow_push_in_keeps_the_form_shot(self):
+        # C8 push-in at the end of the form shot (linear from the still framing): still one shot for N10,
+        # both ends checked by N12.
+        push = {"t0": 2.5, "t1": 3.0, "scale": 1.35, "kind": "form", "x": -336, "y": -197.5,
+                "form_box": dict(FORM), "push": True, "from": {"x": -288, "y": -175, "s": 1.3}}
+        self.tutorial_form(camera=[self.form_frame(t1=2.5), push], spots=False)
+        checks = self.checks()
+        self.assertEqual(status(checks, "N10.form"), "PASS", self.detail(checks, "N10.form"))
+        self.assertEqual(status(checks, "N12.form_fields"), "PASS", self.detail(checks, "N12.form_fields"))
+        self.assertAlmostEqual(qa.frame_at(self.lay["tutorial"]["camera"], 2.75)["s"], 1.325)  # linear
+        push["x"] = 400  # the push-in drifts Apellido out of the frame
+        self.assertEqual(status(self.checks(), "N12.form_fields"), "FAIL")
+
+    def test_N11_missing_dim_or_move_warns(self):
+        self.tutorial_form()
+        self.spot("#c-apellido").pop("move")
+        self.assertEqual(status(self.checks(), "N11.spotlight"), "WARN")
+        self.spot("#c-apellido")["move"] = 0.3
+        self.spot("#c-origen").pop("dim")
+        self.assertEqual(status(self.checks(), "N11.spotlight"), "WARN")
+
+    # C8 + N11
+    def test_C8_spotlight_moves_break_a_long_form_shot(self):
+        self.redes_form(spots=False)  # 2.4-8.3 s = 5.9 s with the same framing (RED: 3 s)
+        self.assertEqual(status(self.checks("redes"), "C8.static"), "FAIL")
+        self.lay["redes"]["items"] += spotlights(self.tl["redes"]["steps"][0]["events"][1:],
+                                                  self.lay["redes"]["camera"], 8.3)
+        checks = self.checks("redes")
+        self.assertEqual(status(checks, "C8.static"), "PASS", self.detail(checks, "C8.static"))
+
+    # N12 / V2
+    def test_N12_vertical_form_across_the_width_passes(self):
+        self.redes_form()
+        checks = self.checks("redes")
+        self.assertEqual(failing(checks), [])
+        self.assertEqual(status(checks, "N12.form_fields"), "PASS")
+
+    def test_N12_neighbor_right_column_field_cut_in_9_16_fails(self):
+        # v3: «Ape», «Carg», «Telé», «Orig» cut at the right edge while a left-column field is active.
+        self.redes_form(order=("#c-nombre", "#c-telefono", "#c-apellido", "#c-origen"), spots=False, camera=[
+            self.form_frame(1.78, -900, -49.8, FORM_V, 2.4, 4.9),
+            self.form_frame(1.78, -1026.4, -49.8, FORM_V, 4.9, 8.3)])
+        checks = self.checks("redes")
+        self.assertEqual(status(checks, "C9.in_frame"), "PASS", self.detail(checks, "C9.in_frame"))
+        self.assertEqual(status(checks, "N12.form_fields"), "FAIL")
+        self.assertIn("#c-apellido", self.detail(checks, "N12.form_fields"))
+
+    def test_N12_neighbor_field_cut_in_16_9_fails(self):
+        self.tutorial_form(camera=[self.form_frame(x=312)], spots=False)
+        checks = self.checks()
+        self.assertEqual(status(checks, "N12.form_fields"), "FAIL")
+        self.assertIn("#c-apellido", self.detail(checks, "N12.form_fields"))
+
+    def test_N12_form_wider_than_the_viewport_fails(self):
+        self.redes_form(camera=[self.form_frame(1.78, -1026.4, -49.8, dict(FORM_V, w=700), 2.4, 8.3)], spots=False)
+        for ev in self.tl["redes"]["steps"][0]["events"][1:]:
+            ev["form_box"]["w"] = 700
+        self.assertEqual(status(self.checks("redes"), "N12.form_fields"), "FAIL")
+
+    # R2 band
+    def test_R2_caption_in_the_band_does_not_cover_the_toast(self):
+        # v3 RED: the toast rect reaches the band; the band caption is not over the UI.
+        item(self.lay["redes"], "result")["rect"] = [200, 1300, 700, 140]
+        checks = self.checks("redes")
+        self.assertEqual(status(checks, "R2.result_clear"), "PASS", self.detail(checks, "R2.result_clear"))
+
+    def test_R2_cursor_inside_the_viewport_still_covers_the_toast(self):
+        item(self.lay["redes"], "result")["rect"] = [200, 1300, 700, 140]
+        self.lay["redes"]["items"].append({"kind": "cursor", "t0": 10.0, "t1": 11.5, "rect": [400, 1310, 48, 48],
+                                           "step": "guardar"})
+        self.assertEqual(status(self.checks("redes"), "R2.result_clear"), "FAIL")
 
 
 class TimelineChecksTest(unittest.TestCase):
@@ -509,6 +799,18 @@ class MediaTest(unittest.TestCase):
         busy = self.make("busy.mp4", "-f", "lavfi", "-i", "testsrc=s=1920x1080:d=2:r=30", "-pix_fmt", "yuv420p")
         self.assertEqual(status(qa.check_empty_frames(solid, [(0.0, 2.0)], (1920, 1080)), "C4.empty_frames"), "FAIL")
         self.assertEqual(status(qa.check_empty_frames(busy, [(0.0, 2.0)], (1920, 1080)), "C4.empty_frames"), "PASS")
+
+    def test_C4_range_that_ends_right_before_a_flat_closing_card_passes(self):
+        # v3 smoke: the range 20.003-22.839 sampled at 4 fps read one frame of the closing card after it
+        # ("22.75s 95% vacío"). No sample may fall at or past the range end.
+        card = self.make("card.mp4", "-f", "lavfi", "-i", "testsrc=s=1920x1080:d=2.839:r=30", "-f", "lavfi",
+                         "-i", "color=c=0x1e3a8a:s=1920x1080:d=1.5:r=30", "-filter_complex",
+                         "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]", "-pix_fmt", "yuv420p")
+        checks = qa.check_empty_frames(card, [(0.003, 2.839)], (1920, 1080))
+        self.assertEqual(status(checks, "C4.empty_frames"), "PASS", checks)
+        # The card itself still fails when a range covers it.
+        checks = qa.check_empty_frames(card, [(0.003, 3.6)], (1920, 1080))
+        self.assertEqual(status(checks, "C4.empty_frames"), "FAIL", checks)
 
     def test_C4_ignores_opening_and_closing(self):
         solid = self.make("solid.mp4", "-f", "lavfi", "-i", "color=c=white:s=1920x1080:d=2:r=30",
@@ -697,18 +999,23 @@ class ProducerCheckerContractTest(unittest.TestCase):
             self.assertEqual(qa.instruction_end(step), step["instruction_end"])
             if step["action_t"] is not None:
                 self.assertLessEqual(step["instruction_end"], step["action_t"] + 0.3 + 1e-3)
-        # N6: the toast is framed >= 0.8 s while edit keeps it on screen, and C4 skips its zoom in and out.
+        # N6: the toast is framed >= 0.8 s while edit keeps it on screen; C4 skips only that R2 window
+        # (S1 a: the frames right before it, after the screen change, are checked).
         toast = next(e for s in timeline["steps"] for e in s["events"] if e["type"] == "result")
         res = next(i for i in layout["items"] if i["kind"] == "result")
         self.assertGreaterEqual(min(res["t1"], toast["t_end"]) - max(res["t0"], toast["t"]), 0.8 - 1e-3)
-        zoom_in = next(c for c in layout["camera"] if c["kind"] == "move" and abs(c["t1"] - res["t0"]) < 1e-3)
-        self.assertLessEqual(res["exempt"][0], zoom_in["t0"])
-        for a, b in qa.c4_ranges(timeline, layout):
-            self.assertFalse(a < res["exempt"][1] and b > res["exempt"][0], (a, b, res["exempt"]))
-        # C7: every screen (screen_start and each screen_at) opens with an establishing shot.
+        ranges = qa.c4_ranges(timeline, layout)
+        for a, b in ranges:
+            self.assertFalse(a < res["t1"] - 1e-3 and b > res["t0"] + 1e-3, (a, b, res["t0"], res["t1"]))
+        self.assertTrue(any(abs(b - res["t0"]) < 2e-3 for a, b in ranges), (ranges, res["t0"]))
+        # C7: every screen (screen_start and each screen_at) opens with an establishing shot, unless it cuts
+        # to its toast (a result starting within 1.5 s: S1 a, N6 > C7).
         starts = [timeline["screen_start"]] + [e["screen_at"] for s in timeline["steps"] for e in s["events"]
                                                 if e.get("screen_at") and e["screen_at"] < timeline["screen_end"]]
+        results = [i["t0"] for i in layout["items"] if i["kind"] == "result"]
         for ts in starts:
+            if any(ts - 1e-3 <= r <= ts + qa.ESTABLISH_WINDOW + 1e-3 for r in results):
+                continue
             shot = next((c for c in layout["camera"] if abs(c["t0"] - ts) < 1e-3), None)
             self.assertIsNotNone(shot, ts)
             self.assertEqual(shot.get("reason"), "establishing", (ts, shot))
