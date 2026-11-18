@@ -33,7 +33,8 @@ for (const button of document.querySelectorAll("button[data-action]")) {
   });
 }
 
+// In preview mode the local stand-in of chrome://settings/downloads (nested shadow roots) opens instead.
 document.getElementById("configure-folder").addEventListener("click", () => {
   if (hasTabs && chrome.tabs.create) chrome.tabs.create({ url: "chrome://settings/downloads" });
-  else window.open("about:blank#carpeta-de-descargas", "_blank");
+  else window.open("../site/ajustes.html", "_blank");
 });

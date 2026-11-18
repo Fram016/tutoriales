@@ -1,7 +1,8 @@
 # Example of censor + surfaces + follow on the local stand-in (odd/tasks/perseo-xml.md T3).
 # Serve demo-apps/ext-demo/ on http://127.0.0.1:8767/ and load extension/ unpacked to use the real popup;
 # without the extension, surfaces.popup.url can point to http://127.0.0.1:8767/extension/popup.html
-# (preview mode: the buttons only update the popup's status line).
+# (preview mode: the buttons only update the popup's status line, and "Carpeta de descargas" opens
+# site/ajustes.html, a stand-in of chrome://settings/downloads with the path inside nested shadow roots).
 title: "Cómo descargar comprobantes con Demo XML"
 product: "Demo XML"
 app_url: http://127.0.0.1:8767/site/
@@ -11,6 +12,7 @@ device: desktop
 censor:
   selectors: ["#contribuyente"]
   text: ['\b\d{13}\b', "NOMBRE DE PRUEBA"]   # or env:CENSOR_NOMBRE kept in acceso.local.yaml
+  regex_flags: "i"                            # optional (N25); "i" is the default
 surfaces:
   popup:
     url: "chrome-extension://<id>/popup.html"
@@ -19,6 +21,7 @@ surfaces:
     anchor: top-right
     target_tab: "http://127.0.0.1:8767/*"
     icon: extension/icons/icon48.png       # relative to the project folder
+    hide: [".promo"]                       # N23: promotions hidden before the first frame
 steps:
   - id: consultar
     narration: "Haz clic en Consultar para ver los comprobantes del mes."

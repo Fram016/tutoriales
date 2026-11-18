@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- Local stand-in for chrome://settings/downloads (odd/tasks/reglas-ronda4.md T1, N25): the downloads path with
+     the user's folder lives two open shadow roots deep, and the inner root is attached late (like Polymer
+     elements upgrading after load), so the censor must walk and observe shadow roots. Never click "Cambiar". -->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Configuración - Descargas (demo)</title>
+    <style>
+      body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #1f2933; background: #f1f3f4; }
+      #barra { height: 64px; padding: 0 32px; display: flex; align-items: center; font-size: 22px; background: #ffffff; }
+    </style>
+  </head>
+  <body>
+    <div id="barra">Configuración</div>
+    <demo-settings></demo-settings>
+    <script>
+      // Outer element: a card with the section title and a slot for the downloads page (open shadow root).
+      customElements.define("demo-settings", class extends HTMLElement {
+        connectedCallback() {
+          const root = this.attachShadow({ mode: "open" });
+          root.innerHTML = `
+            <style>
+              .card { max-width: 760px; margin: 32px auto; padding: 24px 28px; background: #fff; border-radius: 8px; }
+              h2 { margin: 0 0 18px; font-size: 20px; }
+            </style>
+            <div class="card"><h2>Descargas</h2><demo-downloads-page></demo-downloads-page></div>`;
+        }
+      });
+      // Inner element: defined later, so its shadow root (with the path) is attached after the page loaded.
+      setTimeout(() => {
+        customElements.define("demo-downloads-page", class extends HTMLElement {
+          connectedCallback() {
+            const root = this.attachShadow({ mode: "open" });
+            root.innerHTML = `
+              <style>
+                .fila { display: flex; justify-content: space-between; align-items: center; font-size: 17px; }
+                #defaultDownloadPath { margin-top: 6px; color: #5f6368; }
+                button { padding: 8px 18px; font-size: 15px; color: #1a73e8; background: #fff; border: 1px solid #dadce0; border-radius: 4px; }
+              </style>
+              <div class="fila">
+                <div><div>Ubicación</div><div id="defaultDownloadPath">C:\\Users\\NOMBRE DE PRUEBA\\Downloads</div></div>
+                <button id="changeDownloadsPath">Cambiar</button>
+              </div>`;
+          }
+        });
+      }, 600);
+    </script>
+  </body>
+</html>

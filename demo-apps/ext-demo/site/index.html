@@ -30,6 +30,9 @@
         color: #ffffff; background: #1f7a3a; border-radius: 8px; opacity: 0; transition: opacity 0.2s;
       }
       #demo-toast.visible { opacity: 1; }
+      /* Like the SRI side menu (reglas-ronda4 N13): hidden duplicates of the page's links and buttons. */
+      #menu-lateral { position: fixed; top: 64px; left: 0; width: 280px; transform: translateX(-100%); background: #ffffff; }
+      #menu-lateral .submenu { display: none; }
     </style>
   </head>
   <body>
@@ -37,6 +40,10 @@
       <h1>SRI en línea (demo)</h1>
       <div id="contribuyente">1708334097001 / NOMBRE DE PRUEBA</div>
     </header>
+    <nav id="menu-lateral" aria-hidden="true">
+      <a href="#">Consultar</a>
+      <ul class="submenu"><li><a href="#">Comprobantes electrónicos emitidos</a></li></ul>
+    </nav>
     <main>
       <div class="card">
         <h2>Comprobantes electrónicos emitidos</h2>

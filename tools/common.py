@@ -111,6 +111,11 @@ FORMATS = ("16:9", "9:16")
 DEFAULT_FORMAT = {"TUT": "16:9", "RED": "9:16", "PRO": "16:9", "NOV": "16:9"}
 REMOVED_KEYS = {"intro": "videos[].opening", "outro": "videos[].closing"}
 VIDEO_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+# N17: where a step happens (the context indicator of compose).
+CONTEXTS = ("sri", "extension", "page")
+# N25: JS flags of the censor patterns (the recorder always adds g); default case-insensitive.
+REGEX_FLAGS = "imsu"
+PY_FLAGS = {"i": re.I, "m": re.M, "s": re.S, "u": 0}
 
 
 def _fail(where: str, msg: str):
@@ -145,12 +150,32 @@ def _validate_surface_action(where: str, kind: str, arg, surfaces, opened: set) 
         _fail(where, f"'{kind}' en '{name}' pero no está abierta (usa open: {name} antes)")
 
 
-def _validate_steps(steps, surfaces=()) -> list[str]:
+def _validate_parts(parts) -> list[int]:
+    """N16: parts [{n, title}]; returns the part numbers."""
+    if not isinstance(parts, list) or not parts:
+        raise PipelineError("tutorial.yaml: 'parts' tiene que ser una lista de {n: NÚMERO, title: TÍTULO} (N16)")
+    numbers = []
+    for i, part in enumerate(parts):
+        if not isinstance(part, dict):
+            raise PipelineError("tutorial.yaml: 'parts' tiene que ser una lista de {n: NÚMERO, title: TÍTULO} (N16)")
+        n = part.get("n")
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            _fail(f"parts[{i}]", "'n' tiene que ser un número entero mayor que 0")
+        if not isinstance(part.get("title"), str) or not part["title"].strip():
+            _fail(f"parts[{i}]", "falta 'title'")
+        if n in numbers:
+            _fail("parts", f"la parte {n} está repetida")
+        numbers.append(n)
+    return numbers
+
+
+def _validate_steps(steps, surfaces=(), parts=None) -> list[str]:
     if not isinstance(steps, list) or not steps:
         raise PipelineError("tutorial.yaml: 'steps' tiene que ser una lista con al menos un paso")
     ids = []
     opened: set[str] = set()   # surfaces open at this point of the take (open/close run in step order)
     followed = False           # a tab adopted with follow: tab, until back: main
+    last_part = None
     for i, step in enumerate(steps):
         if not isinstance(step, dict) or not isinstance(step.get("id"), str) or not step["id"]:
             raise PipelineError("tutorial.yaml: cada paso necesita un 'id' único")
@@ -162,6 +187,16 @@ def _validate_steps(steps, surfaces=()) -> list[str]:
             _fail(f"paso {sid}", "'summary' ya no existe en v2; usa videos[].steps")
         if step.get("chapter") is not None and not isinstance(step["chapter"], int):
             _fail(f"paso {sid}", "'chapter' tiene que ser un número")
+        # N16: with parts, every step names its part and parts never go back.
+        if parts is not None or "part" in step:
+            part = step.get("part")
+            if isinstance(part, bool) or part not in (parts or []):
+                _fail(f"paso {sid}", "'part' tiene que ser un número de 'parts' (N16)")
+            if last_part is not None and part < last_part:
+                _fail(f"paso {sid}", f"la parte {part} va después de la parte {last_part} (N16)")
+            last_part = part
+        if "context" in step and step["context"] not in CONTEXTS:
+            _fail(f"paso {sid}", "'context' tiene que ser sri, extension o page (N17)")
         actions = step.get("actions", [])
         if not isinstance(actions, list):
             _fail(f"paso {sid}", "'actions' tiene que ser una lista")
@@ -205,8 +240,14 @@ def _validate_censor(censor) -> None:
     """S3: censor {selectors: [CSS], text: [regex]}; the patterns (names, RUC) are never echoed."""
     if not isinstance(censor, dict):
         raise PipelineError("tutorial.yaml: 'censor' tiene que ser un mapa {selectors: [...], text: [...]}")
-    if set(censor) - {"selectors", "text"}:
-        raise PipelineError("tutorial.yaml: 'censor' solo admite selectors y text")
+    if set(censor) - {"selectors", "text", "regex_flags"}:
+        raise PipelineError("tutorial.yaml: 'censor' solo admite selectors, text y regex_flags")
+    flags = censor.get("regex_flags", "i")
+    if not isinstance(flags, str) or set(flags) - set(REGEX_FLAGS) or len(set(flags)) != len(flags):
+        raise PipelineError("tutorial.yaml: 'censor.regex_flags' solo admite las letras i, m, s, u (sin repetir)")
+    py_flags = 0
+    for f in flags:
+        py_flags |= PY_FLAGS[f]
     listed = lambda v: isinstance(v, list) and all(isinstance(s, str) and s.strip() for s in v)  # noqa: E731
     if not listed(censor.get("selectors", [])):
         raise PipelineError("tutorial.yaml: 'censor.selectors' tiene que ser una lista de selectores CSS")
@@ -216,7 +257,7 @@ def _validate_censor(censor) -> None:
         if pattern.startswith("env:"):
             continue   # resolved by capture (the real name stays in acceso.local.yaml)
         try:
-            re.compile(pattern, re.I)
+            re.compile(pattern, py_flags)
         except re.error:
             raise PipelineError(f"tutorial.yaml: 'censor.text[{i}]' no es una expresión regular válida") from None
 
@@ -251,6 +292,9 @@ def _validate_surfaces(surfaces, viewport) -> list[str]:
             _fail(where, "'target_tab' tiene que ser un patrón de URL (texto)")
         if spec.get("icon") is not None and not isinstance(spec["icon"], str):
             _fail(where, "'icon' tiene que ser una ruta (texto)")
+        hide = spec.get("hide", [])
+        if not isinstance(hide, list) or not all(isinstance(s, str) and s.strip() for s in hide):
+            _fail(where, "'hide' tiene que ser una lista de selectores CSS (N23)")
     return list(surfaces)
 
 
@@ -287,7 +331,9 @@ def _validate_videos(videos, step_ids: list[str]) -> None:
                 _fail(where, "los pasos tienen que seguir el orden de la lista principal (E2)")
         # N2: the opening card text is optional (it must not paraphrase the title).
         _validate_card(f"{where}: opening", video.get("opening"), text_optional=True)
-        _validate_card(f"{where}: closing", video.get("closing"))
+        # N27: the closing card is optional in TUT (the video ends on the result).
+        if vtype != "TUT" or video.get("closing") is not None:
+            _validate_card(f"{where}: closing", video.get("closing"))
         if video.get("requirements") is not None:
             if vtype != "TUT":
                 _fail(where, "'requirements' solo existe en videos TUT (TUT1)")
@@ -348,7 +394,8 @@ def validate_tutorial(data) -> None:
     surfaces = []
     if data.get("surfaces") is not None:
         surfaces = _validate_surfaces(data["surfaces"], data.get("viewport") or [1920, 1080])
-    step_ids = _validate_steps(data["steps"], surfaces)
+    parts = _validate_parts(data["parts"]) if data.get("parts") is not None else None
+    step_ids = _validate_steps(data["steps"], surfaces, parts)
     # Checked when present; a tutorial without it fails in videos(), where stages need it.
     if "videos" in data:
         _validate_videos(data["videos"], step_ids)
@@ -388,7 +435,7 @@ def videos(tut: dict, only: str | None = None) -> list[dict]:
             "steps": steps,
             "opening": dict(video["opening"]),
             "requirements": dict(video["requirements"]) if video.get("requirements") else None,
-            "closing": dict(video["closing"]),
+            "closing": dict(video["closing"]) if video.get("closing") else None,
             "music": dict(video.get("music") or {}),
             "omit": list(video.get("omit") or []),
         })

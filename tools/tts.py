@@ -68,12 +68,13 @@ def synthesize(client, model: str, text: str, voice: str, style: str) -> bytes:
 
 
 def clips(video: dict) -> list[tuple[str, str]]:
-    """(name, text) in video order: opening, requirements?, each step, closing."""
+    """(name, text) in video order: opening, requirements?, each step, closing? (optional, N27)."""
     out = [("opening", video["opening"].get("narration", ""))]
     if video.get("requirements"):
         out.append(("requirements", video["requirements"].get("narration", "")))
     out += [(step["id"], step["narration"]) for step in video["steps"]]
-    out.append(("closing", video["closing"].get("narration", "")))
+    if video.get("closing"):
+        out.append(("closing", video["closing"].get("narration", "")))
     return [(name, (text or "").strip()) for name, text in out]
 
 

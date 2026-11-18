@@ -39,17 +39,19 @@ def resolve_actions(steps: list[dict]) -> list[dict]:
 
 
 def resolve_censor(censor: dict | None) -> dict | None:
-    """S3: censor for the recorder, env:NAME patterns resolved (never printed)."""
+    """S3: censor for the recorder, env:NAME patterns resolved (never printed); N25 regex_flags as `flags`."""
     if not censor:
         return None
     return {"selectors": list(censor.get("selectors") or []),
-            "text": [resolve_env_ref(p) for p in censor.get("text") or []]}
+            "text": [resolve_env_ref(p) for p in censor.get("text") or []],
+            "flags": censor.get("regex_flags", "i")}
 
 
 def resolve_surfaces(surfaces: dict | None) -> dict:
-    """S5: what the recorder needs of each surface (compose reads `icon` from tutorial.yaml)."""
+    """S5: what the recorder needs of each surface (compose reads `icon` from tutorial.yaml); N23 `hide`."""
     return {name: {"url": resolve_env_ref(spec["url"]), "size": list(spec["size"]), "dpr": spec.get("dpr", 1),
-                   "anchor": spec.get("anchor", "top-right"), "target_tab": spec.get("target_tab")}
+                   "anchor": spec.get("anchor", "top-right"), "target_tab": spec.get("target_tab"),
+                   "hide": list(spec.get("hide") or [])}
             for name, spec in (surfaces or {}).items()}
 
 
@@ -96,6 +98,12 @@ def capture(slug: str) -> dict:
     print(f"[capture] ok: {len(frames)} cuadros (~{fps:.1f} fps), {len(actions['steps'])} pasos")
     for name, surface in (actions.get("surfaces") or {}).items():
         print(f"[capture] superficie {name}: {surface['frames']} cuadros en {len(surface['windows'])} apertura(s)")
+    for step in actions["steps"]:
+        for ev in step["events"]:
+            if ev.get("tab") == "follow" and ev.get("censor"):
+                print(f"[capture] pestaña seguida en {step['id']}: censura por {ev['censor']} (N25)")
+    if actions.get("censor_regions"):
+        print(f"[capture] {len(actions['censor_regions'])} región(es) de censura para compose (N25)")
     return actions
 
 

@@ -219,7 +219,7 @@ class CensorSchemaTest(YamlCase):
                  ({"selectors": [""]}, "'censor.selectors' tiene que ser una lista de selectores CSS"),
                  ({"text": r"\d{13}"}, "'censor.text' tiene que ser una lista de expresiones regulares"),
                  ({"text": [13]}, "'censor.text' tiene que ser una lista de expresiones regulares"),
-                 ({"selectors": [], "text": [], "blur": 3}, "'censor' solo admite selectors y text")]
+                 ({"selectors": [], "text": [], "blur": 3}, "'censor' solo admite selectors, text y regex_flags")]
         for censor, message in cases:
             data = copy.deepcopy(BASE)
             data["censor"] = censor
@@ -233,6 +233,27 @@ class CensorSchemaTest(YamlCase):
             self.load(data)
         self.assertIn("'censor.text[1]' no es una expresión regular válida", str(ctx.exception))
         self.assertNotIn("JUAN", str(ctx.exception))
+
+    def test_regex_flags(self):
+        # N25: optional flags for the censor patterns (default "i", case-insensitive).
+        for flags in ("i", "", "is", "imsu"):
+            data = copy.deepcopy(BASE)
+            data["censor"] = {"text": [r"C:\\Users\\[^\\]+"], "regex_flags": flags}
+            with self.subTest(flags=flags):
+                self.assertEqual(self.load(data)["censor"]["regex_flags"], flags)
+        for flags in ("g", "ii", "x", 3):
+            data = copy.deepcopy(BASE)
+            data["censor"] = {"text": ["x"], "regex_flags": flags}
+            with self.subTest(flags=flags):
+                self.assertRejects(data, "'censor.regex_flags' solo admite las letras i, m, s, u (sin repetir)")
+
+    def test_capture_passes_flags_and_hide_to_the_recorder(self):
+        import capture
+        self.assertEqual(capture.resolve_censor({"text": ["x"]}), {"selectors": [], "text": ["x"], "flags": "i"})
+        self.assertEqual(capture.resolve_censor({"text": ["x"], "regex_flags": ""})["flags"], "")
+        surfaces = capture.resolve_surfaces({"popup": {**POPUP, "hide": [".promo"]}})
+        self.assertEqual(surfaces["popup"]["hide"], [".promo"])
+        self.assertEqual(capture.resolve_surfaces({"popup": dict(POPUP)})["popup"]["hide"], [])
 
 
 class SurfaceSchemaTest(YamlCase):
@@ -310,6 +331,17 @@ class SurfaceSchemaTest(YamlCase):
             with self.subTest(message=message):
                 self.assertRejects(with_popup(flow), message)
 
+    def test_hide_is_a_list_of_selectors(self):
+        # N23: promotions of the extension window hidden in the take.
+        data = with_popup({})
+        data["surfaces"]["popup"]["hide"] = [".club-perseo", "#facturito"]
+        self.assertEqual(self.load(data)["surfaces"]["popup"]["hide"], [".club-perseo", "#facturito"])
+        for bad in (".promo", [""], [3]):
+            data = with_popup({})
+            data["surfaces"]["popup"]["hide"] = bad
+            with self.subTest(hide=bad):
+                self.assertRejects(data, "surfaces.popup: 'hide' tiene que ser una lista de selectores CSS (N23)")
+
     def test_ext_demo_example_is_valid(self):
         example = Path(__file__).resolve().parents[1] / "demo-apps" / "ext-demo" / "tutorial.example.yaml"
         data = yaml.safe_load(example.read_text(encoding="utf-8"))
@@ -323,6 +355,70 @@ class SurfaceSchemaTest(YamlCase):
         self.assertEqual(len(self.load(data)["steps"][0]["actions"]), 4)
         self.assertRejects(with_popup({"login": [{"select": {"in": "#etapa"}}]}),
                            "'select' necesita {in: SELECTOR, option: VALOR}")
+
+
+PARTS = [{"n": 1, "title": "Configurar la carpeta"}, {"n": 2, "title": "Comprobantes emitidos"}]
+
+
+def with_parts(parts_by_step, parts=PARTS):
+    data = copy.deepcopy(BASE)
+    data["parts"] = copy.deepcopy(parts)
+    for step in data["steps"]:
+        if step["id"] in parts_by_step:
+            step["part"] = parts_by_step[step["id"]]
+    return data
+
+
+class RoundFourSchemaTest(YamlCase):
+    """reglas-ronda4: parts (N16), step context (N17), optional TUT closing (N27)."""
+
+    def test_parts_and_step_part_load(self):
+        tut = self.load(with_parts({"login": 1, "nuevo": 2, "guardar": 2}))
+        self.assertEqual(tut["parts"], PARTS)
+        self.assertEqual([s["part"] for s in common.videos(tut, "tutorial")[0]["steps"]], [1, 2, 2])
+
+    def test_parts_shape(self):
+        cases = [({"n": 1}, "'parts' tiene que ser una lista de {n: NÚMERO, title: TÍTULO} (N16)"),
+                 ([], "'parts' tiene que ser una lista de {n: NÚMERO, title: TÍTULO} (N16)"),
+                 ([{"n": 0, "title": "A"}], "parts[0]: 'n' tiene que ser un número entero mayor que 0"),
+                 ([{"n": True, "title": "A"}], "parts[0]: 'n' tiene que ser un número entero mayor que 0"),
+                 ([{"n": 1, "title": " "}], "parts[0]: falta 'title'"),
+                 ([{"n": 1, "title": "A"}, {"n": 1, "title": "B"}], "parts: la parte 1 está repetida")]
+        for parts, message in cases:
+            with self.subTest(parts=parts):
+                self.assertRejects(with_parts({}, parts), message)
+
+    def test_every_step_names_a_declared_part_in_order(self):
+        self.assertRejects(with_parts({"login": 1, "nuevo": 2}),
+                           "paso guardar: 'part' tiene que ser un número de 'parts' (N16)")
+        self.assertRejects(with_parts({"login": 1, "nuevo": 3, "guardar": 3}),
+                           "paso nuevo: 'part' tiene que ser un número de 'parts' (N16)")
+        self.assertRejects(with_parts({"login": 2, "nuevo": 1, "guardar": 2}),
+                           "paso nuevo: la parte 1 va después de la parte 2 (N16)")
+        data = copy.deepcopy(BASE)
+        data["steps"][0]["part"] = 1
+        self.assertRejects(data, "paso login: 'part' tiene que ser un número de 'parts' (N16)")
+
+    def test_step_context(self):
+        data = copy.deepcopy(BASE)
+        for step, ctx in zip(data["steps"], ("sri", "extension", "page")):
+            step["context"] = ctx
+        self.assertEqual([s["context"] for s in self.load(data)["steps"]], ["sri", "extension", "page"])
+        data["steps"][1]["context"] = "perseo"
+        self.assertRejects(data, "paso nuevo: 'context' tiene que ser sri, extension o page (N17)")
+
+    def test_tut_closing_is_optional(self):
+        data = copy.deepcopy(BASE)
+        del data["videos"][0]["closing"]
+        full, short = common.videos(self.load(data))
+        self.assertIsNone(full["closing"])
+        self.assertEqual(short["closing"]["narration"], "Mira el tutorial completo.")
+        # PRESERVE: a TUT closing that is present is still validated; RED keeps it required.
+        data["videos"][0]["closing"] = {"narration": " ", "text": "x"}
+        self.assertRejects(data, "video tutorial: closing: falta 'narration' (E1)")
+        data = copy.deepcopy(BASE)
+        del data["videos"][1]["closing"]
+        self.assertRejects(data, "video redes: closing: falta")
 
 
 if __name__ == "__main__":

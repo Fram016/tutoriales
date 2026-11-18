@@ -16,6 +16,7 @@ header {
 header img { width: 44px; height: 44px; }
 h1 { font-size: 22px; }
 header p { font-size: 14px; color: #616e7c; }
+.promo { margin: 14px 24px 0; padding: 14px 16px; font-size: 16px; font-weight: 600; color: #ffffff; background: #ca4100; border-radius: 8px; }
 section { padding: 18px 24px 6px; }
 h2 { font-size: 15px; color: #52606d; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
 button {

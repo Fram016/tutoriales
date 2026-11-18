@@ -8,7 +8,10 @@ For each video V in tutorial.yaml writes proyectos/<slug>/edit/V/{screen.mp4, ti
 Opening, requirements and closing are cards drawn by compose; screen.mp4 only covers
 screen_start..screen_end. Each step is a piecewise warp of its capture span:
 - typing runs at 13.5 chars/s, and texts over 30 chars go 3x after the first 15 (C6);
-- blank frames (page loads: no ink but a spinner) are cut (C4); sparse screens are content;
+- blank frames (page loads: no ink but a spinner, also under a header bar like the SRI shell) are cut (C4, N26);
+  sparse screens are content;
+- mixed frames (a screenshot caught mid-navigation: part old view, part new view, between two large changes
+  within MIXED_WINDOW) are cut (N26);
 - result/highlight events hold 1.5 s in TUT (TUT4), and results never less than 0.8 s (R2); every toast
   holds at 1.0x until compose's camera has landed on it (after a screen change, or after the pan from the
   previous target) plus R2's 0.8 s and a margin, in every video type (N6, S1b);
@@ -25,6 +28,9 @@ screen_start..screen_end. Each step is a piecewise warp of its capture span:
   when the instruction sentence would end more than SYNC_AFTER after it, the frame before the action
   is held so the voice (starting LEAD into the step) ends in time; the voice never slides past it, and
   the step records that end as `instruction_end` (absolute), the time qa checks;
+- N14: when the sentence after the instruction describes its effect ("Haz clic en Consultar. Aparece la lista"),
+  the click waits for the end of the instruction (no SYNC_AFTER) and the frame before the effect (the click's
+  first visible change, `effect_c`) is held until the effect sentence starts: `effect_t` / `effect_start`;
 - videos[].omit: typing/select on those selectors is cut from that video (the step and its number stay);
 - each voice is placed inside its step so the longest silence between voices is as short as
   possible (A2), keeping the LEAD when nothing needs to move.
@@ -34,7 +40,8 @@ that changes the screen also gets `screen_at`, the output time of the new screen
 Surfaces (perseo-xml S5, an extension popup recorded next to the tab): their frames go through the same
 warp into edit/V/surface-<name>.mp4, and timeline `surfaces.<name>.windows` says when each is open (output
 times). Events inside a surface keep `surface` (boxes in surface CSS px); `open` is the click on the
-toolbar icon, so it is a pointer action (C3 lead, N1 main action).
+toolbar icon, so it is a pointer action (C3 lead, N1 main action). The censor regions of a followed tab
+(actions.json `censor_regions`, N25) go through the same warp into timeline `censor_regions` (output times).
 """
 from __future__ import annotations
 
@@ -68,12 +75,24 @@ POINTER_EVENTS = ("click", "type", "select", "hover", "open")
 BLANK_SIZE = (480, 270)
 BLANK_INK = 0.003
 BLANK_DIST = 18
+# N26: a header bar (a run of rows >= HEADER_INK ink, starting in the top HEADER_START and ending in the top
+# HEADER_MAX of the frame) is not content: a white page under the SRI header is a load.
+HEADER_INK, HEADER_START, HEADER_MAX = 0.3, 0.1, 0.25
 # A click changed the screen when this share of a 64x36 thumbnail moved by more than CHANGE_DIFF levels
 # within CHANGE_WINDOW seconds (a modal, a new page); a checkbox or a typed letter does not.
 CHANGE_SIZE = (64, 36)
 CHANGE_DIFF, CHANGE_SHARE, CHANGE_WINDOW = 24, 0.3, 1.5
 SCREEN_EVENTS = ("click", "select", "press", "goto")
-EVENT_KEYS = ("key", "dy", "frame_box", "form_box", "surface", "tab")   # carried to the timeline as they are
+# N14: the visible effect of an action is its first change of >= EFFECT_SHARE of the thumbnail (a list appearing
+# under the form), searched until the step's next event and at most EFFECT_WINDOW seconds.
+EFFECT_SHARE, EFFECT_WINDOW = 0.05, 4.0
+EFFECT_EPS = 0.001   # the hold before the effect shows the frame just before it
+# N26: a frame between two changes of >= MIXED_SHARE less than MIXED_WINDOW apart, made of the two views around
+# it, is a screenshot caught mid-navigation. Made of: what matches neither view is at most MIXED_NEITHER of the
+# smaller change (a scroll shifts everything, so most of what changed matches neither).
+MIXED_SHARE, MIXED_WINDOW, MIXED_NEITHER = 0.1, 0.3, 0.2
+# Carried to the timeline as they are (target_ok / target_text: N13; censor: the N25 path of a followed tab).
+EVENT_KEYS = ("key", "dy", "frame_box", "form_box", "surface", "tab", "target_ok", "target_text", "censor")
 SYNC_AFTER = 0.3   # N1: the instruction ends at most this long after its action
 ACTION_EVENTS = ("click", "select", "type", "hover", "press")   # a step's single action (N1)
 OMIT_BEFORE = 0.5  # omit: the pointer reaching an omitted field is cut too
@@ -112,15 +131,31 @@ def typing_seconds(chars: int) -> float:
 
 # --- blank frames (C4) -------------------------------------------------------------------
 
+def header_rows(row_ink: np.ndarray) -> int:
+    """Rows of the header bar at the top (0 without one): the first run of heavy rows starting near the top."""
+    h = len(row_ink)
+    band = 0
+    for r in range(int(h * HEADER_MAX)):
+        if row_ink[r] >= HEADER_INK:
+            if band == 0 and r >= h * HEADER_START:
+                break
+            band = r + 1
+        elif band:
+            break
+    return band
+
+
 def is_blank_image(img: Image.Image) -> bool:
     img.draft("RGB", BLANK_SIZE)
     small = img.convert("RGB").resize(BLANK_SIZE)
-    px = np.asarray(small, dtype=np.int16).reshape(-1, 3)
-    keys = (px // 16) @ np.array([256, 16, 1])
+    px = np.asarray(small, dtype=np.int16)
+    flat = px.reshape(-1, 3)
+    keys = (flat // 16) @ np.array([256, 16, 1])
     dom = int(np.bincount(keys).argmax())
     ref = np.array([dom // 256, dom // 16 % 16, dom % 16], dtype=np.int16) * 16 + 8
-    ink = (np.abs(px - ref).max(axis=1) > BLANK_DIST).mean()
-    return ink < BLANK_INK
+    ink = np.abs(px - ref).max(axis=2) > BLANK_DIST
+    # N26: content is measured below the header band.
+    return ink[header_rows(ink.mean(axis=1)):].mean() < BLANK_INK
 
 
 def blank_flags(frames: list[dict], frames_dir) -> list[bool]:
@@ -137,8 +172,10 @@ def _thumb(path) -> np.ndarray:
         return np.asarray(img.convert("L").resize(CHANGE_SIZE), dtype=np.int16)
 
 
-def screen_change(frames: list[dict], flags: list[bool], frames_dir, c: float) -> float | None:
-    """Capture time of the first frame after `c` that shows another screen, or None."""
+def screen_change(frames: list[dict], flags: list[bool], frames_dir, c: float, share: float = CHANGE_SHARE,
+                  window: float = CHANGE_WINDOW) -> float | None:
+    """Capture time of the first frame after `c` that shows another screen (>= `share` of the thumbnail moved
+    within `window` seconds), or None."""
     times = [f["t"] for f in frames]
     k = bisect.bisect_right(times, c) - 1
     while k >= 0 and flags[k]:
@@ -147,18 +184,20 @@ def screen_change(frames: list[dict], flags: list[bool], frames_dir, c: float) -
         return None
     ref = _thumb(frames_dir / frames[k]["file"])
     for i in range(k + 1, len(frames)):
-        if times[i] > c + CHANGE_WINDOW:
+        if times[i] > c + window:
             break
-        if not flags[i] and (np.abs(_thumb(frames_dir / frames[i]["file"]) - ref) > CHANGE_DIFF).mean() >= CHANGE_SHARE:
+        if not flags[i] and (np.abs(_thumb(frames_dir / frames[i]["file"]) - ref) > CHANGE_DIFF).mean() >= share:
             return times[i]
     return None
 
 
 def mark_screen_changes(actions: dict, frames: list[dict], flags: list[bool], frames_dir) -> int:
-    """Adds `screen_c` (capture time of the new screen) to the events that changed it."""
+    """Adds `screen_c` (capture time of the new screen) to the events that changed it, and `effect_c` (their
+    first visible change, N14) to those that changed something."""
     found = 0
     for step in actions["steps"]:
-        for ev in step["events"]:
+        events = step["events"]
+        for k, ev in enumerate(events):
             # A click inside a surface changes the surface, not the recorded tab.
             if ev["type"] in SCREEN_EVENTS and not ev.get("surface"):
                 lag = CLICK_LAG if ev["type"] in ("click", "select") else 0.0
@@ -166,7 +205,31 @@ def mark_screen_changes(actions: dict, frames: list[dict], flags: list[bool], fr
                 if at is not None:
                     ev["screen_c"] = at
                     found += 1
+                # The effect is searched until the step's next event (a later change is not this action's).
+                until = min([e["t"] for e in events[k + 1:] if e["t"] > ev["t"]] + [step.get("t1", ev["t"] + EFFECT_WINDOW)])
+                effect = at if at is not None else screen_change(
+                    frames, flags, frames_dir, ev["t"] - lag, EFFECT_SHARE,
+                    max(0.0, min(EFFECT_WINDOW, until - (ev["t"] - lag))))
+                if effect is not None:
+                    ev["effect_c"] = effect
     return found
+
+
+def mixed_flags(frames: list[dict], flags: list[bool], frames_dir) -> list[bool]:
+    """N26: frames caught mid-navigation (two views in one frame, “Cr / usu”). Blank frames are skipped."""
+    good = [i for i, blank in enumerate(flags) if not blank]
+    thumbs = {i: _thumb(frames_dir / frames[i]["file"]) for i in good}
+    out = [False] * len(frames)
+    for prev, i, nxt in zip(good, good[1:], good[2:]):
+        if frames[nxt]["t"] - frames[i]["t"] > MIXED_WINDOW:
+            continue
+        from_prev = np.abs(thumbs[i] - thumbs[prev]) > CHANGE_DIFF
+        from_next = np.abs(thumbs[i] - thumbs[nxt]) > CHANGE_DIFF
+        change = min(from_prev.mean(), from_next.mean())
+        if change < MIXED_SHARE:
+            continue
+        out[i] = (from_prev & from_next).mean() <= MIXED_NEITHER * change
+    return out
 
 
 def blank_spans(frames: list[dict], flags: list[bool]) -> list[tuple[float, float]]:
@@ -345,6 +408,35 @@ def instruction_share(narration: str) -> float:
     return 1.0
 
 
+def _sentences(narration: str) -> tuple[str, list[str]]:
+    text = (narration or "").strip()
+    return text, re.findall(r"[^.!?…]+[.!?…]*\s*", text)
+
+
+def effect_share(narration: str) -> float | None:
+    """N14: share of the narration (by characters) before the sentence that describes the action's visible
+    effect ("Aparece la lista"): the sentence right after the instruction, when it asks for nothing. None
+    without one."""
+    text, sentences = _sentences(narration)
+    upto = 0
+    for k, sentence in enumerate(sentences):
+        upto += len(sentence)
+        if INSTRUCTION.search(sentence):
+            if k + 1 < len(sentences) and not INSTRUCTION.search(sentences[k + 1]):
+                return upto / len(text)
+            return None
+    return None
+
+
+def _split(pieces: list[dict], c: float) -> None:
+    """Cuts the piece running over capture time c in two (same speed), so a freeze can go exactly at c."""
+    for k, p in enumerate(pieces):
+        if p["c0"] < c < p["c1"]:
+            share = (c - p["c0"]) / (p["c1"] - p["c0"])
+            pieces[k:k + 1] = [{**p, "c1": c, "d": p["d"] * share}, {**p, "c0": c, "d": p["d"] * (1 - share)}]
+            return
+
+
 def main_action(events: list[dict]) -> dict | None:
     """N1: the action the narration asks for: the step's first click/select/open, or its single action."""
     ordered = sorted(events, key=lambda e: e["t"])
@@ -355,16 +447,23 @@ def main_action(events: list[dict]) -> dict | None:
 
 
 def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: dict,
-              instruction: float | None = None, action=..., carry: float | None = None) -> dict:
+              instruction: float | None = None, action=..., carry: float | None = None,
+              effect: float | None = None) -> dict:
     """Pick the slowest idle speed that keeps the step within voice + GAP (A2), leave compose room on
     new screens and toasts (C7/N6, leave_room; `carry` as there), hold the frame before the main action
     (default main_action(events)) until the instruction (`instruction` seconds into the voice, default
-    all of it) ends at most SYNC_AFTER after it (N1), then pad. `carry` of the result: for the next step."""
+    all of it) ends at most SYNC_AFTER after it (N1), then pad. `carry` of the result: for the next step.
+    N14 `effect`: seconds into the voice where the effect sentence starts; then the instruction ends before
+    the action and the frame before the action's `effect_c` is held until that sentence starts."""
     if action is ...:
         action = main_action(events)
     action = action if voice > 0 else None
     at = min(max(action["t"], a), b) if action else None
     instruction = voice if instruction is None else instruction
+    effect = effect if action else None
+    sync = SYNC_AFTER if effect is None else 0.0
+    effect_c = action.get("effect_c", action.get("screen_c")) if effect is not None else None
+    ce = max(at, min(effect_c - EFFECT_EPS, b)) if effect_c is not None else None
     speed = pc["pref"]
     while True:
         pieces = build_pieces(a, b, events, blanks, pc, speed)
@@ -373,10 +472,15 @@ def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: 
             pieces = build_pieces(a, b, events, blanks, pc, speed)
             screen, _ = leave_room(pieces, events, a, b, carry)
         if action:
-            deficit = LEAD + instruction - (warp(pieces, at) + SYNC_AFTER)
+            deficit = LEAD + instruction - (warp(pieces, at) + sync)
             if deficit > 1e-9:
                 k = next((i for i, p in enumerate(pieces) if p["c0"] >= at), len(pieces))
                 pieces.insert(k, {"c0": at, "c1": at, "d": deficit, "kind": "freeze"})
+        if ce is not None:
+            deficit = LEAD + effect - warp(pieces, ce)
+            if deficit > 1e-9:
+                _split(pieces, ce)
+                _freeze_before(pieces, ce, deficit)
         actions = sum(p["d"] for p in pieces)
         if voice <= 0 or actions <= voice + GAP or speed >= pc["max"]:
             break
@@ -394,6 +498,7 @@ def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: 
     carry_out = screen[1] + warp(pieces, b) - warp(pieces, screen[0]) if screen else None
     return {"pieces": pieces, "duration": duration, "voice_offset": offset, "speed": speed,
             "action_offset": warp(pieces, at) if action else None, "instruction": instruction,
+            "effect": effect, "effect_offset": warp(pieces, ce + EFFECT_EPS) if ce is not None else None,
             "carry": carry_out}
 
 
@@ -530,8 +635,9 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         action = main_action(captured_events)
         action = action if action is None or any(e is action for e in events) else None
         instruction = voice * instruction_share(step["narration"])
+        share = effect_share(step["narration"])
         plan = plan_step(cap["t0"], cap["t1"], events, list(blanks) + omitted, voice, pc, instruction, action,
-                         carry)
+                         carry, voice * share if share is not None else None)
         carry = plan["carry"]
         pieces = plan["pieces"]
         out_events = []
@@ -563,12 +669,15 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             # N1: output time of the main action and how much of the voice asks for it.
             "action_t": _r(t + plan["action_offset"]) if plan["action_offset"] is not None else None,
             "instruction_duration": _r(plan["instruction"]),
+            # N14: seconds into the voice where the effect sentence starts, and when the effect shows.
+            "effect_voice": _r(plan["effect"]) if plan["effect"] is not None else None,
+            "effect_t": _r(t + plan["effect_offset"]) if plan["effect_offset"] is not None else None,
             "speed": plan["speed"], "events": out_events, "warp": warped,
         })
         t += plan["duration"]
     screen_end = t
-    closing = card("closing", t)
-    total = t + closing["duration"]
+    closing = card("closing", t)   # N27: None when the TUT has no closing card
+    total = t + (closing["duration"] if closing else 0.0)
     blocks = [("opening", opening), ("requirements", requirements)] + \
         [(s["id"], s) for s in steps] + [("closing", closing)]
     voiced = [(name, b) for name, b in blocks if b and b["voice_duration"] > 0]
@@ -579,7 +688,10 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             return b["voice_start"], b["voice_start"]
         hi = b["start"] + b["duration"] - b["voice_duration"]
         if b["action_t"] is not None:
-            hi = min(hi, b["action_t"] + SYNC_AFTER - b["instruction_duration"])
+            sync = SYNC_AFTER if b["effect_voice"] is None else 0.0
+            hi = min(hi, b["action_t"] + sync - b["instruction_duration"])
+        if b["effect_t"] is not None:
+            hi = min(hi, b["effect_t"] - b["effect_voice"])
         return b["start"], max(hi, b["start"])
     windows = [window(b) for _, b in voiced]
     starts = place_voices([(lo, hi, b["voice_start"], b["voice_duration"])
@@ -589,6 +701,8 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         if "events" in b:
             # N1: the exact end of the instruction this plan used (qa checks this, it does not re-estimate).
             b["instruction_end"] = _r(start + b["instruction_duration"])
+            if b["effect_voice"] is not None:
+                b["effect_start"] = _r(start + b["effect_voice"])
     for (name_a, a), (name_b, b) in zip(voiced, voiced[1:]):
         gap = b["voice_start"] - (a["voice_start"] + a["voice_duration"])
         if gap > GAP + 1e-3:
@@ -606,6 +720,12 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
     surfaces = surface_specs(tut, actions, steps)
     if surfaces:
         timeline["surfaces"] = surfaces
+    # N25: text boxes of a followed tab where the censor script could not run, blurred by compose:
+    # [{t0, t1, box}] in output time (a region cut in two by the warp gives two items).
+    regions = [{"t0": o0, "t1": o1, "box": r["box"]} for r in actions.get("censor_regions") or []
+               for o0, o1 in surface_windows(steps, [(r["t0"], r["t1"])])]
+    if regions:
+        timeline["censor_regions"] = regions
     return timeline
 
 
@@ -711,9 +831,15 @@ def edit(slug: str, video: str | None = None) -> dict:
     frames = read_json(pdir / "capture" / "frames.json")["frames"]
     frames_dir = pdir / "capture" / "frames"
     flags = blank_flags(frames, frames_dir)
+    if any(flags):
+        print(f"[edit] {sum(flags)} cuadros en blanco (cargas, C4/N26)")
+    mixed = mixed_flags(frames, flags, frames_dir)
+    if any(mixed):
+        print(f"[edit] {sum(mixed)} cuadros con dos vistas mezcladas (N26)")
+    flags = [b or m for b, m in zip(flags, mixed)]
     blanks = blank_spans(frames, flags)
     if blanks:
-        print(f"[edit] corto {len(blanks)} cargas en blanco ({sum(b - a for a, b in blanks):.1f} s, C4)")
+        print(f"[edit] corto {len(blanks)} tramos ({sum(b - a for a, b in blanks):.1f} s, C4/N26)")
     mark_screen_changes(actions, frames, flags, frames_dir)
     result = {}
     for v in chosen:

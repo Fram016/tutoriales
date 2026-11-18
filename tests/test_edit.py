@@ -85,6 +85,99 @@ class BlankTest(unittest.TestCase):
         self.assertFalse(edit.is_blank_image(page))
 
 
+class HeaderBlankTest(unittest.TestCase):
+    """N26 "Hay una pantalla en blanco": a load of the SRI shell (header bar, white page) is cut too."""
+
+    def shell(self):
+        img = Image.new("RGB", (1920, 1080), "white")
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([0, 0, 1920, 60], fill="#0b3c8c")                 # header bar
+        draw.rectangle([70, 18, 180, 42], fill="white")                  # logo
+        for x in range(1700, 1900, 40):
+            draw.rectangle([x, 20, x + 20, 40], fill="white")          # header icons
+        return img, draw
+
+    def test_white_page_under_a_header_is_a_load(self):
+        img, _ = self.shell()
+        self.assertTrue(edit.is_blank_image(img))
+
+    def test_header_with_content_below_is_not(self):
+        img, draw = self.shell()
+        draw.rectangle([376, 120, 900, 150], fill="#333333")             # page title
+        for y in range(200, 480, 40):
+            draw.rectangle([376, y, 900, y + 10], fill="#555555")      # form labels and fields
+        self.assertFalse(edit.is_blank_image(img))
+
+    def test_sparse_menu_page_is_not_a_load(self):
+        # The SRI "Consulta de comprobantes" page: header, side menu and four links (real content).
+        img, draw = self.shell()
+        for y in range(70, 580, 38):
+            draw.rectangle([20, y, 200, y + 10], fill="#444444")       # side menu entries
+        draw.rectangle([376, 120, 950, 150], fill="#333333")
+        for y in (240, 278, 316, 354):
+            draw.rectangle([396, y, 640, y + 10], fill="#1f5fa8")
+        self.assertFalse(edit.is_blank_image(img))
+
+
+class MixedFrameTest(unittest.TestCase):
+    """N26 "Algunos fotogramas mezclan dos vistas ... “Cr / usu”": frames caught mid-navigation are cut."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir, True)
+
+    @staticmethod
+    def page(seed, shift=0):
+        """A textured page (rows of 'text' blocks), scrolled up by `shift` px."""
+        img = Image.new("RGB", (1920, 1080), "white")
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([0, 0, 1920, 60], fill="#0b3c8c")
+        for i in range(60):
+            y = 80 + i * 36 - shift
+            x0 = 200 + (i * 97 * seed) % 400
+            draw.rectangle([x0, y, x0 + 300 + (i * 53 * seed) % 900, y + 14],
+                           fill="#222222" if (i + seed) % 3 else "#1f5fa8")
+        return img
+
+    def save(self, images, step=0.1):
+        fr = frames(0, step * (len(images) - 1), step)
+        for f, img in zip(fr, images):
+            img.save(self.dir / f["file"])
+        return fr
+
+    def mixed(self, images, step=0.1):
+        fr = self.save(images, step)
+        return edit.mixed_flags(fr, [False] * len(fr), self.dir)
+
+    def test_half_old_half_new_frame_is_mixed(self):
+        a, b = self.page(1), self.page(2)
+        m = a.copy()
+        m.paste(b.crop((0, 0, 1920, 540)), (0, 0))
+        self.assertEqual(self.mixed([a, a, m, b, b]), [False, False, True, False, False])
+
+    def test_a_clean_change_is_not_mixed(self):
+        a, b = self.page(1), self.page(2)
+        self.assertEqual(self.mixed([a, a, b, b]), [False] * 4)
+
+    def test_smooth_scroll_is_kept(self):
+        # scrollIntoView moves the page between consecutive frames: motion, not two views.
+        self.assertEqual(self.mixed([self.page(1, s) for s in (0, 120, 240, 360, 480)]), [False] * 5)
+
+    def test_second_change_later_than_0_3_s_is_a_real_screen(self):
+        a, b = self.page(1), self.page(2)
+        m = a.copy()
+        m.paste(b.crop((0, 0, 1920, 540)), (0, 0))
+        self.assertEqual(self.mixed([a, m, b], step=0.5), [False] * 3)
+
+    def test_blank_frames_are_skipped(self):
+        a, b = self.page(1), self.page(2)
+        m = a.copy()
+        m.paste(b.crop((0, 0, 1920, 540)), (0, 0))
+        white = Image.new("RGB", (1920, 1080), "white")
+        fr = self.save([a, white, m, b])
+        self.assertEqual(edit.mixed_flags(fr, [False, True, False, False], self.dir), [False, False, True, False])
+
+
 class HoldTest(unittest.TestCase):
     def test_tut_holds_1_5_s_after_result_and_highlight(self):
         for kind in ("result", "highlight"):
@@ -215,6 +308,34 @@ class ScreenChangeTest(unittest.TestCase):
     def test_same_screen_is_not_a_change(self):
         fr = self.capture("ticked")
         self.assertIsNone(edit.screen_change(fr, [False] * len(fr), self.dir, 0.9))
+
+    def test_a_list_appearing_is_an_effect_not_a_screen(self):
+        # N14: "Aparece la lista" under the form is the click's visible effect (effect_c), not a new screen.
+        listed = self.images["page"].copy()
+        draw = ImageDraw.Draw(listed)
+        for y in range(400, 640, 40):
+            draw.rectangle([392, y, 1528, y + 20], fill="#374151")
+        self.images["listed"] = listed
+        fr = self.capture("listed")
+        flags = [False] * len(fr)
+        self.assertIsNone(edit.screen_change(fr, flags, self.dir, 0.9))
+        actions = {"steps": [{"id": "consultar", "t0": 0.0, "t1": 3.0, "events": [
+            {"type": "click", "t": 1.05, "selector": "#consultar"},
+            {"type": "click", "t": 1.05, "selector": "#boton4", "surface": "popup"}]}]}
+        edit.mark_screen_changes(actions, fr, flags, self.dir)
+        click, inside = actions["steps"][0]["events"]
+        self.assertAlmostEqual(click["effect_c"], 1.0)
+        self.assertNotIn("screen_c", click)
+        self.assertNotIn("effect_c", inside)   # a click inside a surface changes the surface only
+
+    def test_a_new_screen_is_also_the_effect(self):
+        fr = self.capture("modal")
+        actions = {"steps": [{"id": "nuevo", "t0": 0.0, "t1": 3.0, "events": [
+            {"type": "click", "t": 1.05, "selector": "#btn-new"}]}]}
+        edit.mark_screen_changes(actions, fr, [False] * len(fr), self.dir)
+        click = actions["steps"][0]["events"][0]
+        self.assertAlmostEqual(click["screen_c"], 1.0)
+        self.assertAlmostEqual(click["effect_c"], 1.0)
 
     def test_change_is_mapped_to_output_time(self):
         tut, video = tutorial_of(["nuevo"])
@@ -385,6 +506,69 @@ class SyncTest(unittest.TestCase):
         self.assertLess(share, 0.95)
 
 
+class NoClosingTest(unittest.TestCase):
+    def test_tut_without_closing_ends_on_the_last_step(self):
+        # N27 "quita el ultimo espacio que dice siguiente video": no closing card, the video ends on the result.
+        tut, video = video_of([("nuevo", "Haz clic aquí.")])
+        video["closing"] = None
+        actions = {"steps": [{"id": "nuevo", "t0": 0.0, "t1": 3.0, "events": [
+            {"type": "click", "t": 1.0, "selector": "#btn", **box(100, 100)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "nuevo": 1.0})
+        self.assertIsNone(tl["closing"])
+        self.assertEqual(tl["total"], tl["screen_end"])
+
+
+class EffectSyncTest(unittest.TestCase):
+    """N14/N1: “Haz clic en Consultar. Aparece la lista” llega cuando la lista ya está en pantalla (≈1:13).
+    The click comes after the instruction sentence and the list after the effect sentence starts."""
+
+    NARRATION = "Haz clic en Consultar. Aparece la lista"
+
+    def plan(self, click, narration=NARRATION, voice=2.6):
+        tut, video = video_of([("consultar", narration)])
+        actions = {"steps": [{"id": "consultar", "t0": 0.0, "t1": 3.2, "events": [
+            {"type": "click", "t": 1.0, "selector": "#btnConsultar", **box(700, 500), **click},
+            {"type": "highlight", "t": 2.6, "selector": "#tabla", **box(400, 600)}]}]}
+        return edit.plan_video(tut, video, actions, [], {"opening": 1.5, "consultar": voice, "closing": 1.5})
+
+    def check(self, tl, appears):
+        step, click = tl["steps"][0], event(tl, 0, "click")
+        self.assertLessEqual(step["instruction_end"], click["t"] + 1e-6)          # click after "Haz clic en Consultar."
+        self.assertGreater(step["effect_start"], step["instruction_end"])
+        self.assertLessEqual(step["effect_start"], step["effect_t"] + 1e-6)          # list after "Aparece" starts
+        self.assertLess(capture_at(step, step["effect_start"] - 0.01), appears)    # no list frame before it
+        self.assertGreaterEqual(capture_at(step, step["effect_t"] + 1e-3), appears - 1e-6)
+        self.assertGreaterEqual(step["voice_start"], step["start"] - 1e-6)
+        self.assertLessEqual(step["voice_start"] + step["voice_duration"], step["start"] + step["duration"] + 1e-6)
+        return step, click
+
+    def test_list_after_a_screen_change(self):
+        tl = self.plan({"screen_c": 1.3, "effect_c": 1.3})
+        step, click = self.check(tl, 1.3)
+        self.assertAlmostEqual(step["effect_t"], click["screen_at"], places=3)
+
+    def test_list_appearing_under_the_form(self):
+        self.check(self.plan({"effect_c": 1.3}), 1.3)
+
+    def test_effect_right_at_the_click(self):
+        self.check(self.plan({"effect_c": 1.0}), 1.0)
+
+    def test_effect_shares(self):
+        text = self.NARRATION
+        self.assertAlmostEqual(edit.effect_share(text), len("Haz clic en Consultar. ") / len(text))
+        self.assertIsNone(edit.effect_share("Haz clic en Consultar."))
+        # A second instruction is not a visible effect.
+        self.assertIsNone(edit.effect_share("Escribe la fecha. Para una consulta corta, elige el establecimiento."))
+
+    def test_without_an_effect_sentence_n1_is_unchanged(self):
+        # PRESERVE: one sentence keeps N1 (instruction ends at most SYNC_AFTER after the click).
+        tl = self.plan({"effect_c": 1.3}, narration="Haz clic en Consultar.", voice=1.6)
+        step, click = tl["steps"][0], event(tl, 0, "click")
+        self.assertIsNone(step["effect_t"])
+        self.assertLessEqual(step["instruction_end"], click["t"] + edit.SYNC_AFTER + 1e-6)
+        self.assertGreater(step["instruction_end"], click["t"] + 0.05)
+
+
 class OmitTest(unittest.TestCase):
     """videos[].omit: typing on those fields is cut from that video; the step and its number stay."""
 
@@ -441,6 +625,36 @@ class EventFieldsTest(unittest.TestCase):
              **box(790, 446)}]}]}
         tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "datos": 1.0, "closing": 1.5})
         self.assertEqual(tl["steps"][0]["events"][0]["form_box"], form)
+
+
+class RoundFourFieldsTest(unittest.TestCase):
+    def test_target_check_reaches_the_timeline(self):
+        # N13: qa reads target_ok / target_text per event.
+        tut, video = video_of([("nuevo", "Haz clic en Nuevo.")])
+        actions = {"steps": [{"id": "nuevo", "t0": 0.0, "t1": 3.0, "events": [
+            {"type": "click", "t": 1.0, "selector": "#btn", "target_ok": True, "target_text": "Nuevo", **box(100, 100)},
+            {"type": "highlight", "t": 2.0, "selector": "#t", "target_ok": True, **box(100, 300)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "nuevo": 1.0, "closing": 1.5})
+        click, mark = tl["steps"][0]["events"]
+        self.assertEqual((click["target_ok"], click["target_text"]), (True, "Nuevo"))
+        self.assertNotIn("target_text", mark)
+
+    def test_censor_regions_in_output_time(self):
+        # N25: regions of a followed chrome:// tab go through the warp like a surface window.
+        tut, video = video_of([("carpeta", "Haz clic en Carpeta.")])
+        b = {"x": 627, "y": 154, "w": 213, "h": 17}
+        actions = {"steps": [{"id": "carpeta", "t0": 0.0, "t1": 4.0, "events": [
+            {"type": "click", "t": 1.0, "selector": "#configure-folder", **box(100, 100)}]}],
+            "censor_regions": [{"t0": 2.0, "t1": 3.5, "box": b}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "carpeta": 1.0, "closing": 1.5})
+        step = tl["steps"][0]
+        (region,) = tl["censor_regions"]
+        self.assertEqual(region["box"], b)
+        self.assertAlmostEqual(capture_at(step, region["t0"] + 1e-3), 2.0, delta=0.01)
+        self.assertAlmostEqual(capture_at(step, region["t1"] - 1e-3), 3.5, delta=0.01)
+        # PRESERVE: without regions the key is absent.
+        del actions["censor_regions"]
+        self.assertNotIn("censor_regions", edit.plan_video(tut, video, actions, [], {"opening": 1.5, "carpeta": 1.0}))
 
 
 class ToastWindowTest(unittest.TestCase):
