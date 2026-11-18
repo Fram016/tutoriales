@@ -1,0 +1,369 @@
+{
+  "video": "partes",
+  "type": "TUT",
+  "format": "16:9",
+  "source": [
+    1920,
+    1080
+  ],
+  "output": [
+    1920,
+    1080
+  ],
+  "total": 34.86,
+  "product": "Nexo CRM",
+  "title": "Cómo crear un contacto en Nexo CRM",
+  "opening": {
+    "start": 0,
+    "duration": 3.0,
+    "text": "Aprende a crear un contacto en Nexo CRM",
+    "narration": "En este video aprendes a crear un contacto en Nexo CRM.",
+    "voice_start": 0.2,
+    "voice_duration": 2.6
+  },
+  "requirements": null,
+  "closing": null,
+  "screen_start": 3.0,
+  "screen_end": 34.36,
+  "steps": [
+    {
+      "id": "nuevo",
+      "number": 3,
+      "chapter": null,
+      "title": "Abre el formulario",
+      "narration": "Haz clic en Nuevo contacto para abrir el formulario.",
+      "start": 3.0,
+      "duration": 7.22,
+      "voice_start": 4.3,
+      "voice_duration": 5.52,
+      "events": [
+        {
+          "type": "click",
+          "t": 6.73,
+          "selector": "#btn-nuevo-contacto",
+          "box": {
+            "x": 1721.1,
+            "y": 96,
+            "w": 166.9,
+            "h": 43
+          },
+          "point": {
+            "x": 1805,
+            "y": 118
+          },
+          "screen_at": 6.767
+        },
+        {
+          "type": "focus",
+          "t": 7.687,
+          "selector": "#c-nombre",
+          "box": {
+            "x": 301,
+            "y": 203,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 501,
+            "y": 226
+          },
+          "frame_box": {
+            "x": 301,
+            "y": 181,
+            "w": 400,
+            "h": 67
+          },
+          "form_box": {
+            "x": 273,
+            "y": 152,
+            "w": 878,
+            "h": 585
+          }
+        }
+      ],
+      "part": 1
+    },
+    {
+      "id": "datos",
+      "number": 4,
+      "chapter": null,
+      "title": "Completa los datos",
+      "narration": "Escribe el nombre, el apellido y el correo con el que vas a contactar a la persona.",
+      "start": 10.22,
+      "duration": 7.8,
+      "voice_start": 10.47,
+      "voice_duration": 7.2,
+      "events": [
+        {
+          "type": "type",
+          "t": 10.515,
+          "t_end": 11.42,
+          "chars": 5,
+          "selector": "#c-nombre",
+          "box": {
+            "x": 301,
+            "y": 203,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 501,
+            "y": 226
+          },
+          "frame_box": {
+            "x": 301,
+            "y": 181,
+            "w": 400,
+            "h": 67
+          },
+          "form_box": {
+            "x": 273,
+            "y": 152,
+            "w": 878,
+            "h": 585
+          }
+        },
+        {
+          "type": "type",
+          "t": 11.782,
+          "t_end": 13.066,
+          "chars": 7,
+          "selector": "#c-apellido",
+          "box": {
+            "x": 723,
+            "y": 203,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 923,
+            "y": 226
+          },
+          "frame_box": {
+            "x": 723,
+            "y": 181,
+            "w": 400,
+            "h": 67
+          },
+          "form_box": {
+            "x": 273,
+            "y": 152,
+            "w": 878,
+            "h": 585
+          }
+        },
+        {
+          "type": "type",
+          "t": 13.472,
+          "t_end": 17.436,
+          "chars": 29,
+          "selector": "#c-email",
+          "box": {
+            "x": 301,
+            "y": 375,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 501,
+            "y": 398
+          },
+          "frame_box": {
+            "x": 301,
+            "y": 353,
+            "w": 400,
+            "h": 67
+          },
+          "form_box": {
+            "x": 273,
+            "y": 152,
+            "w": 878,
+            "h": 585
+          }
+        }
+      ],
+      "part": 1
+    },
+    {
+      "id": "guardar",
+      "number": 5,
+      "chapter": null,
+      "title": "Guarda el contacto",
+      "narration": "Haz clic en Guardar contacto. Sale el aviso verde y el contacto nuevo aparece primero en la lista, resaltado.",
+      "start": 18.02,
+      "duration": 10.34,
+      "voice_start": 19.32,
+      "voice_duration": 8.64,
+      "events": [
+        {
+          "type": "click",
+          "t": 20.3,
+          "selector": "#btn-guardar",
+          "box": {
+            "x": 960.75,
+            "y": 664,
+            "w": 162.25,
+            "h": 45
+          },
+          "point": {
+            "x": 1042,
+            "y": 687
+          },
+          "form_box": {
+            "x": 273,
+            "y": 152,
+            "w": 878,
+            "h": 585
+          },
+          "screen_at": 20.334
+        },
+        {
+          "type": "result",
+          "t": 21.451,
+          "selector": "#toast",
+          "box": {
+            "x": 1594,
+            "y": 999,
+            "w": 294,
+            "h": 49
+          }
+        },
+        {
+          "type": "highlight",
+          "t": 22.88,
+          "selector": "tr.new",
+          "box": {
+            "x": 273,
+            "y": 267,
+            "w": 1613,
+            "h": 52
+          }
+        }
+      ],
+      "part": 2
+    },
+    {
+      "id": "descargar",
+      "number": 6,
+      "chapter": null,
+      "title": "Descarga con la extensión",
+      "narration": "Abre Perseo XML y haz clic en XML. Al terminar, el resumen muestra los descargados y los errores.",
+      "start": 28.36,
+      "duration": 6.0,
+      "voice_start": 28.61,
+      "voice_duration": 5.4,
+      "events": [
+        {
+          "type": "open",
+          "t": 29.36,
+          "t_end": 29.36,
+          "surface": "popup",
+          "target_ok": true
+        },
+        {
+          "type": "click",
+          "t": 30.96,
+          "t_end": 30.96,
+          "surface": "popup",
+          "selector": "#boton1",
+          "box": {
+            "x": 24,
+            "y": 150,
+            "w": 176,
+            "h": 56
+          },
+          "point": {
+            "x": 112.0,
+            "y": 178.0
+          },
+          "frame_box": {
+            "x": 24,
+            "y": 150,
+            "w": 176,
+            "h": 56
+          },
+          "form_box": {
+            "x": 0,
+            "y": 0,
+            "w": 420,
+            "h": 640
+          },
+          "target_ok": true,
+          "target_text": "XML Para importar"
+        },
+        {
+          "type": "result",
+          "t": 32.16,
+          "t_end": 33.66,
+          "surface": "popup",
+          "selector": "#estado",
+          "box": {
+            "x": 24,
+            "y": 380,
+            "w": 372,
+            "h": 60
+          },
+          "point": {
+            "x": 210.0,
+            "y": 410.0
+          },
+          "target_ok": true
+        },
+        {
+          "type": "close",
+          "t": 33.96,
+          "t_end": 33.96,
+          "surface": "popup"
+        }
+      ],
+      "part": 2
+    }
+  ],
+  "parts": [
+    {
+      "n": 1,
+      "title": "Crear el contacto",
+      "start": 3.0,
+      "duration": 1.2
+    },
+    {
+      "n": 2,
+      "title": "Guardar y descargar",
+      "start": 18.02,
+      "duration": 1.2
+    }
+  ],
+  "surfaces": {
+    "popup": {
+      "size": [
+        420,
+        640
+      ],
+      "dpr": 2,
+      "anchor": "top-right",
+      "file": "partes-surface-popup.mp4",
+      "windows": [
+        [
+          29.36,
+          33.96
+        ]
+      ]
+    }
+  },
+  "censor_regions": [
+    {
+      "t0": 28.36,
+      "t1": 34.36,
+      "box": {
+        "x": 830,
+        "y": 268,
+        "w": 300,
+        "h": 104
+      }
+    }
+  ],
+  "context_labels": {
+    "page": "En el SRI",
+    "extension": "En Perseo XML"
+  }
+}

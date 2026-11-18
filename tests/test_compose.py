@@ -423,7 +423,10 @@ class LeaveToastTest(unittest.TestCase):
                 self.assertGreaterEqual(res["t1"] - res["t0"], compose.R2_CLEAN)   # R2/N6 untouched
                 html = compose.build(tl, BRAND)[0]
                 cut = next(s for s in cam if s["t0"] > 18.423 + 1e-6)
-                self.assertIn(f'"--s": {compose.num(cut["scale"])}}}, {compose.num(cut["t0"])});', html)
+                # N27: without a closing card the row framing holds to the end (C8 push-in): the cut lands
+                # on the push's start framing.
+                lands = (cut.get("from") or {"s": cut["scale"]})["s"]
+                self.assertIn(f'"--s": {compose.num(lands)}}}, {compose.num(cut["t0"])});', html)
 
     def test_pan_kept_to_a_target_next_to_the_toast(self):
         # A target already partly in the toast framing is in the same populated area: the ease-in-out pan stays.
@@ -491,13 +494,15 @@ class RoundTwoTest(unittest.TestCase):
                     self.assertGreaterEqual(nxt["t1"] - nxt["t0"], 0.4 - 1e-6)
                     self.assertLessEqual(nxt["t1"] - nxt["t0"], 0.6 + 1e-6)
                     self.assertGreaterEqual(nxt["scale"], max(1.0, lay["base_scale"]) - 1e-6)
-        # 16:9: the establishing shot shows the whole 1920x1080 screen inside the UI viewport.
+        # 16:9: the establishing shot shows the whole width of the screen. N20 (round 4) replaced the
+        # contain fit (0.83x with black bars at the sides) by cover: 1.0x, the height cropped around the target.
         lay = self.layouts["tutorial"]
         seg = lay["camera"][0]
         vx, vy, vw, vh = lay["viewport"]
-        self.assertTrue(inside(mapped({"x": 0, "y": 0, "w": 1920, "h": 1080},
-                                      {"x": seg["x"], "y": seg["y"], "s": seg["scale"]}), lay["viewport"]))
-        self.assertGreaterEqual(1080 * seg["scale"], vh - 1)
+        src = mapped({"x": 0, "y": 0, "w": 1920, "h": 1080}, {"x": seg["x"], "y": seg["y"], "s": seg["scale"]})
+        self.assertEqual((src[0], src[2]), (vx, vw))
+        self.assertLessEqual(src[1], vy)
+        self.assertGreaterEqual(src[1] + src[3], vy + vh)
 
     # C8: no identical framing longer than 4 s (TUT) / 3 s (RED); N11 spotlight moves count as changes.
     def test_no_identical_framing_longer_than_the_type_limit(self):
@@ -606,13 +611,13 @@ class RoundTwoTest(unittest.TestCase):
             self.assertFalse(overlap(rect, vp), (rect, vp))
             self.assertAlmostEqual(rect[1], vp[1] + vp[3], places=1)
             self.assertEqual(lay["band"], rect)
-            self.assertGreaterEqual(rect[3], 150)
+            # N21 (round 4): at most 1/8 of the height (was 180 px in 16:9), still two caption lines.
+            self.assertGreaterEqual(rect[3], 2 * lay["line_px"] + 20)
             for item in self.items(video, "caption") + self.items(video, "chip"):
                 self.assertTrue(inside(item["rect"], rect), (video, item))
             if lay["format"] == "16:9":
                 self.assertEqual(rect[1] + rect[3], H)
-                self.assertGreaterEqual(rect[3], 170)
-                self.assertLessEqual(rect[3], 200)
+                self.assertEqual(rect[3], 135)
                 chip = self.items(video, "chip")[0]["rect"]
                 cap = self.items(video, "caption")[0]["rect"]
                 self.assertLess(chip[0] + chip[2], cap[0] + 1)
@@ -663,6 +668,10 @@ class RoundTwoTest(unittest.TestCase):
             hue = lambda c: __import__("colorsys").rgb_to_hls(*compose._rgb(c))[0]
             for name, color in pal.items():
                 if color in brand_colors | {"#ffffff"}:
+                    continue
+                if name == "neutral":
+                    # N17 (round 4): the page context (SRI) badge is a neutral gray, never the brand color.
+                    self.assertEqual(saturation(color), 0, color)
                     continue
                 self.assertAlmostEqual(hue(color), hue(BRAND["primary"]), places=2, msg=(name, color))
             self.assertGreaterEqual(compose.contrast(pal["chip"], pal["chip_text"]), 4.5)
@@ -978,6 +987,507 @@ class SurfaceComposeTest(unittest.TestCase):
         html = compose.build(tl, BRAND)[0]
         self.assertNotIn("surface-", html)
         self.assertFalse([i for i in compose.plan(tl, BRAND)["items"] if i["kind"] in ("surface", "toolbar")])
+
+
+def covers(fr, view):
+    """N20: the 1920x1080 source covers the whole UI viewport (no pillarbox or letterbox)."""
+    x, y, w, h = mapped({"x": 0, "y": 0, "w": 1920, "h": 1080}, fr)
+    vx, vy, vw, vh = view
+    return x <= vx + 0.5 and y <= vy + 0.5 and x + w >= vx + vw - 0.5 and y + h >= vy + vh - 0.5
+
+
+def saturation(color):
+    return __import__("colorsys").rgb_to_hls(*compose._rgb(color))[2]
+
+
+def parts_timeline():
+    """N16: the tutorial fixture as two parts (nuevo+datos, guardar) with edit's separator times."""
+    tl = copy.deepcopy(fixture("tutorial"))
+    for step, part in zip(tl["steps"], (1, 1, 2)):
+        step["part"] = part
+    s2 = tl["steps"][2]["start"]
+    tl["parts"] = [{"n": 1, "title": "Crear el contacto", "start": tl["screen_start"], "duration": 1.2},
+                   {"n": 2, "title": "Guardar", "start": s2, "duration": 2.4}]
+    return tl
+
+
+class RoundFourTest(unittest.TestCase):
+    """reglas/reglas-video.md §Parte 6 (reglas-ronda4 T2): N13, N16, N17, N19-N22, N24, N25, N27."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tl = fixture("tutorial")
+        cls.layout = compose.plan(cls.tl, BRAND)
+
+    @staticmethod
+    def items(layout, kind):
+        return [i for i in layout["items"] if i["kind"] == kind]
+
+    # N21: "La franja negra inferior ... Ocupa alrededor de 1/6 de la pantalla": band <= 1/8 of the height.
+    def test_band_is_at_most_an_eighth_of_the_height(self):
+        for video in ("tutorial", "redes"):
+            lay = compose.plan(fixture(video), BRAND)
+            W, H = lay["output"]
+            band = lay["band"]
+            with self.subTest(video=video):
+                self.assertLessEqual(band[3], H / 8 + 1e-6, band)
+                self.assertAlmostEqual(band[1], lay["viewport"][3], places=1)
+                self.assertGreaterEqual(lay["font_px"], 40)                # T2
+                for cap in self.items(lay, "caption") + self.items(lay, "chip"):
+                    self.assertTrue(inside(cap["rect"], band), cap)
+                # Two caption lines always fit in the band.
+                stage = compose.Stage(lay["format"])
+                self.assertTrue(inside(stage.cap_rect(2), band), (stage.cap_rect(2), band))
+        lay = compose.plan(fixture("tutorial"), BRAND)
+        self.assertEqual(lay["band"], [0, 945, 1920, 135])
+        self.assertEqual(lay["viewport"], [0, 0, 1920, 945])
+
+    # N20: "la página del SRI ocupa solo una parte del cuadro, con negro alrededor": no pillarbox ever.
+    def test_source_always_covers_the_viewport(self):
+        for video in ("tutorial", "redes"):
+            lay = compose.plan(fixture(video), BRAND)
+            for seg in lay["camera"]:
+                for fr in ([seg["from"]] if seg.get("from") else []) + [{"x": seg["x"], "y": seg["y"], "s": seg["scale"]}]:
+                    self.assertTrue(covers(fr, lay["viewport"]), (video, seg))
+        lay = compose.plan(fixture("tutorial"), BRAND)
+        self.assertEqual(lay["base_scale"], 1.0)             # cover: scale = viewport_w / source_w
+        est = lay["camera"][0]
+        self.assertEqual((est["kind"], est["x"], est["scale"]), ("context", 0, 1.0))
+
+    def test_legible_scale_floor_except_short_establishing_shots(self):
+        # Source UI text ~12 px (cap height 9-11 px measured on the SRI capture) -> >= 1.3x gives ~16 px.
+        self.assertEqual(compose.LEGIBLE, 1.3)
+        for tl in (fixture("tutorial"), navigation_timeline(), surface_timeline()):
+            lay = compose.plan(tl, BRAND)
+            for seg in lay["camera"]:
+                if seg["kind"] in ("context", "move"):
+                    if seg["kind"] == "context":
+                        self.assertLessEqual(seg["t1"] - seg["t0"], 1.0 + 1e-6, seg)
+                    continue
+                self.assertGreaterEqual(seg["scale"], compose.LEGIBLE - 1e-6, seg)
+
+    def test_no_abrupt_scale_jumps_within_a_step(self):
+        # A very wide field (fits only at ~1.2x) followed by a small button (detail 1.6x): <= 0.35x apart.
+        tl = navigation_timeline()
+        tl["steps"][1]["events"] = [
+            field(12.79, 14.0, 100, 445, w=1500, selector="#nota"),
+            {"type": "click", "t": 15.5, "t_end": 15.5, "selector": "#ok", "box": {"x": 900, "y": 700, "w": 120, "h": 40},
+             "point": {"x": 960, "y": 720}}]
+        lay = compose.plan(tl, BRAND)
+        framings = [s for s in lay["camera"] if s["kind"] not in ("move", "context") and s["t1"] > 12.19 + 1e-6]
+        self.assertGreaterEqual(len(framings), 2, lay["camera"])
+        for a, b in zip(framings, framings[1:]):
+            lands = (b.get("from") or {"s": b["scale"]})["s"]      # a C8 push-in after it is gradual
+            self.assertLessEqual(abs(a["scale"] - lands), compose.JUMP_MAX + 1e-6, (a, b))
+        fr = compose.frame_at(lay["camera"], 13.4)
+        self.assertTrue(inside(mapped({"x": 100, "y": 423, "w": 1500, "h": 67}, fr), lay["viewport"]))   # C9 kept
+
+    # N22: "La ventana de Perseo aparece cortada en el borde ... justo cuando muestra el resumen".
+    def test_surface_panel_never_cut_by_the_frame(self):
+        for fmt in ("16:9", "9:16"):
+            lay = compose.plan(surface_timeline(fmt), BRAND)
+            t = 4.0
+            while t < 10.0:
+                fr = compose.frame_at(lay["camera"], t)
+                panel = compose.Stage.map(AREA, fr)
+                with self.subTest(fmt=fmt, t=round(t, 2)):
+                    self.assertTrue(inside(panel, lay["viewport"]) or not overlap(panel, lay["viewport"]), (panel, fr))
+                t += 0.1
+            # The result inside the panel ("6 descargados, 0 con error") is framed with the whole panel.
+            res = self.items(lay, "result")[0]
+            fr = compose.frame_at(lay["camera"], res["t0"])
+            self.assertTrue(inside(compose.Stage.map(AREA, fr), lay["viewport"]), fr)
+
+    # N24: "El texto Perseo es gris oscuro sobre fondo negro; solo se distingue la P".
+    def test_light_logo_variant_on_dark_cards(self):
+        import tempfile
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "logo.png"
+            im = Image.new("RGBA", (40, 10), (0, 0, 0, 0))
+            for x in range(10):
+                im.putpixel((x, 5), (2, 2, 2, 255))           # dark ink (the word and the square): most pixels
+                im.putpixel((x, 6), (2, 2, 2, 255))
+                im.putpixel((x + 10, 5), (255, 255, 255, 255))  # the white P inside the square
+                im.putpixel((x + 20, 5), (202, 65, 0, 255))     # brand color
+                im.putpixel((x + 30, 5), (2, 2, 2, 128))        # antialiased edge
+            im.save(src)
+            assets = Path(tmp) / "assets"
+            assets.mkdir()
+            path, info = compose.logo_for(src, {"background": "#09090b"}, assets)
+            self.assertEqual(path, assets / "logo-light.png")
+            self.assertEqual(info["variant"], "light")
+            self.assertGreaterEqual(info["contrast"], 3.0)
+            out = Image.open(path).convert("RGBA")
+            self.assertGreater(out.getpixel((0, 5))[0], 240)          # dark ink -> light
+            self.assertEqual(out.getpixel((0, 5))[3], 255)
+            self.assertLess(out.getpixel((10, 5))[0], 20)             # the P stays readable (inverted)
+            self.assertEqual(out.getpixel((20, 5)), (202, 65, 0, 255))  # colored pixels kept
+            self.assertEqual(out.getpixel((30, 5))[3], 128)          # alpha kept
+            self.assertEqual(out.getpixel((0, 0))[3], 0)
+            # A light card keeps the original logo.
+            path, info = compose.logo_for(src, {"background": "#ffffff"}, assets)
+            self.assertEqual((path, info["variant"]), (src, "original"))
+            # brand.logo_light wins when given.
+            given = Path(tmp) / "blanco.png"
+            im.save(given)
+            path, info = compose.logo_for(src, {"background": "#09090b", "logo_light": given}, assets)
+            self.assertEqual((path, info["variant"]), (given, "light"))
+
+    def test_logo_info_in_layout_and_html(self):
+        html, lay = compose.build(fixture("tutorial"), BRAND, "assets/logo-light.png",
+                                  logo_info={"variant": "light", "contrast": 14.2})
+        self.assertEqual(lay["logo"], {"variant": "light", "contrast": 14.2})
+        self.assertIn('id="opening-logo" src="assets/logo-light.png"', html)
+
+    # N17: "Hay que dejar claro cuándo se trabaja en el SRI y cuándo en Perseo".
+    def test_context_badge_next_to_the_chip(self):
+        tl = surface_timeline()
+        tl["product"] = "Perseo XML"
+        lay = compose.plan(tl, BRAND)
+        badges = self.items(lay, "badge")
+        self.assertEqual([(b["t0"], b["t1"], b["text"]) for b in badges],
+                         [(3.0, 4.0, "En el SRI"), (4.0, 9.0, "En Perseo XML"), (9.0, 10.0, "En Perseo XML"),
+                          (10.0, 12.0, "En el SRI")])
+        pal = lay["palette"]
+        chips = {c["step"]: c for c in self.items(lay, "chip")}
+        for badge in badges:
+            chip = chips[badge["step"]]["rect"]
+            self.assertTrue(inside(badge["rect"], lay["band"]), badge)
+            self.assertGreater(badge["rect"][0], chip[0] + chip[2])               # right of the chip
+            self.assertLess(badge["rect"][0] - (chip[0] + chip[2]), 40)
+            self.assertGreaterEqual(badge["contrast"], 4.5)
+            self.assertIn(badge["color"], pal.values())
+            for cap in self.items(lay, "caption"):
+                self.assertFalse(overlap(cap["rect"], badge["rect"]), (cap, badge))
+            if badge["context"] == "extension":
+                self.assertEqual(badge["color"], pal["chip"])                        # brand: Perseo
+            else:
+                self.assertLess(saturation(badge["color"]), 0.1, badge)             # neutral: SRI
+                self.assertGreater(compose.contrast(badge["color"], pal["surface"]), 1.3)
+        self.assertEqual(pal["highlight"], compose.readable(pal["accent"], "#ffffff", 3.0))     # outline: brand
+        html = compose.build(tl, BRAND)[0]
+        self.assertIn('class="ov badge"', html)
+        self.assertIn(">En Perseo XML<", html)
+        # An explicit step context wins over the open surface.
+        tl["steps"][0]["context"] = "sri"
+        first = [b for b in self.items(compose.plan(tl, BRAND), "badge") if b["step"] == "abrir"]
+        self.assertEqual([(b["t0"], b["t1"], b["text"], b["context"]) for b in first], [(3.0, 9.0, "En el SRI", "sri")])
+
+    # N17: "conviene usarlo solo para Perseo y los resaltados": with badges the step chip is neutral.
+    def test_chip_is_neutral_when_context_badges_are_shown(self):
+        tl = surface_timeline()
+        tl["product"] = "Perseo XML"
+        lay = compose.plan(tl, BRAND)
+        self.assertEqual({c["color"] for c in self.items(lay, "chip")}, {compose.NEUTRAL})
+        html, _ = compose.build(tl, BRAND)
+        self.assertIn(f"background: {compose.NEUTRAL}", html)
+        # PRESERVE: without contexts the chip keeps the brand color.
+        self.assertNotEqual({c["color"] for c in self.items(self.layout, "chip")}, {compose.NEUTRAL})
+
+    def test_no_badge_without_contexts(self):
+        # PRESERVE: a timeline with neither step contexts nor surfaces draws no badge (Nexo CRM).
+        self.assertFalse(self.items(self.layout, "badge"))
+        self.assertNotIn('class="ov badge"', compose.build(fixture("tutorial"), BRAND)[0])
+
+    # N16: "Debería dividirse en partes: Parte 1: Configurar la carpeta ...".
+    def test_parts_show_a_separator_and_restart_the_step_number(self):
+        tl = parts_timeline()
+        lay = compose.plan(tl, BRAND)
+        self.assertEqual([c["text"] for c in self.items(lay, "chip")],
+                         ["Parte 1 · Paso 1", "Parte 1 · Paso 2", "Parte 2 · Paso 1"])
+        seps = [i for i in lay["items"] if str(i.get("card", "")).startswith("part-")]
+        self.assertEqual([(s["card"], s["text"].replace(NBSP, " ")) for s in seps],
+                         [("part-1", "Parte 1: Crear el contacto"), ("part-2", "Parte 2: Guardar")])
+        self.assertEqual((seps[0]["t0"], seps[0]["t1"]), (tl["screen_start"], round(tl["screen_start"] + 1.2, 3)))
+        self.assertEqual(seps[1]["t0"], tl["steps"][2]["start"])
+        self.assertLessEqual(seps[1]["t1"] - seps[1]["t0"], 1.5 + 1e-6)             # capped at 1.5 s
+        html = compose.build(tl, BRAND)[0]
+        self.assertIn('id="part-2" class="clip scene"', html)
+        # Without edit's times the separator opens the first step of its part.
+        for part in tl["parts"]:
+            part.pop("start"), part.pop("duration")
+        seps = [i for i in compose.plan(tl, BRAND)["items"] if i.get("card") == "part-2"]
+        self.assertEqual(seps[0]["t0"], tl["steps"][2]["start"])
+        self.assertLessEqual(seps[0]["t1"] - seps[0]["t0"], 1.5 + 1e-6)
+
+    # N19: "Hay frases cortadas entre subtítulos" and "dos instrucciones en un solo bloque".
+    def test_one_caption_block_per_sentence(self):
+        cases = {
+            "Haz clic en Consultar. Aparece la lista.": [["Haz clic en Consultar."], ["Aparece la lista."]],
+            "Mientras trabaja, el botón dice En proceso. Al terminar, el resumen muestra cuántos se descargaron "
+            "y cuántos tuvieron error.": None,
+            "Abre Perseo XML. En Comprobantes emitidos, haz clic en XML Desde el RIDE.": None,
+        }
+        for text, want in cases.items():
+            blocks = compose.caption_blocks(text, "Perseo XML")
+            sentences = compose.sentences(text)
+            with self.subTest(text=text):
+                self.assertEqual([" ".join(lines).replace(NBSP, " ") for _, lines in blocks], sentences)
+                self.assertEqual([k for k, _ in blocks], list(range(len(sentences))))
+                if want:
+                    self.assertEqual(compose.segment_captions(text, "Perseo XML"), want)
+        # A sentence longer than 2 x 42 splits only at a clause boundary (comma or before "y").
+        text = ("Elige el año, el mes y el día de la consulta, que debe ser anterior a hoy, y después revisa "
+                "el tipo de comprobante que quieres descargar.")
+        blocks = compose.caption_blocks(text, "Perseo XML")
+        self.assertEqual({k for k, _ in blocks}, {0})
+        self.assertGreater(len(blocks), 1)
+        for (_, a), (_, b) in zip(blocks, blocks[1:]):
+            self.assertTrue(a[-1].endswith(",") or b[0].split()[0] in ("y", "e"), (a, b))
+        for _, lines in blocks:
+            self.assertLessEqual(len(lines), 2)
+            self.assertTrue(all(len(line) <= 42 for line in lines), lines)
+
+    def test_caption_items_carry_their_sentence(self):
+        tl = copy.deepcopy(self.tl)
+        tl["steps"][2]["narration"] = "Haz clic en Guardar contacto. Sale el aviso verde."
+        caps = [c for c in self.items(compose.plan(tl, BRAND), "caption") if c["step"] == "guardar"]
+        self.assertEqual([(c["sentence"], c["text"]) for c in caps],
+                         [(0, "Haz clic en Guardar contacto."), (1, "Sale el aviso verde.")])
+
+    # N27: "quita el ultimo espacio que dice siguiente video no es necesario".
+    def test_no_closing_card_ends_on_the_result(self):
+        tl = copy.deepcopy(self.tl)
+        se = tl["screen_end"]
+        tl["closing"] = None
+        tl["total"] = round(se + 0.5, 3)
+        html, lay = compose.build(tl, BRAND)
+        self.assertFalse([i for i in lay["items"] if i.get("card") == "closing"])
+        self.assertNotIn('id="closing"', html)
+        self.assertAlmostEqual(lay["camera"][-1]["t1"], tl["total"], places=3)
+        self.assertEqual(lay["screen"], [tl["screen_start"], tl["total"]])
+        self.assertIn(f'data-start="{compose.num(tl["screen_start"])}" data-duration="{compose.num(tl["total"] - tl["screen_start"])}"',
+                      html)
+        self.assertAlmostEqual(compose.screen_hold(tl), 0.5, places=3)
+        self.assertEqual(compose.screen_hold(self.tl), 0)            # with a closing card nothing is held
+        # The held frame keeps the last step's chip and stays censored (N25) through the end.
+        self.assertEqual(self.items(lay, "chip")[-1]["t1"], tl["total"])
+        tl["censor_regions"] = [{"t0": se - 2.0, "t1": se, "box": {"x": 700, "y": 270, "w": 400, "h": 50}},
+                                {"t0": se - 3.0, "t1": se - 1.0, "box": {"x": 10, "y": 10, "w": 40, "h": 20}}]
+        regions = self.items(compose.plan(tl, BRAND), "censor")
+        self.assertEqual({r["box"]["x"]: r["t1"] for r in regions}, {700: tl["total"], 10: round(se - 1.0, 3)})
+
+    # N25: censor regions from the recorder (pages where no script runs, e.g. chrome://settings).
+    def test_censor_regions_are_blurred_inside_the_camera(self):
+        tl = copy.deepcopy(self.tl)
+        tl["censor_regions"] = [{"t0": 30.0, "t1": 33.0, "box": {"x": 700, "y": 270, "w": 400, "h": 50}},
+                                {"t0": 31.0, "t1": 32.0, "x": 100, "y": 100, "w": 50, "h": 20}]
+        html, lay = compose.build(tl, BRAND)
+        regions = self.items(lay, "censor")
+        self.assertEqual([(r["t0"], r["t1"], r["box"]) for r in regions],
+                         [(30.0, 33.0, {"x": 700, "y": 270, "w": 400, "h": 50}),
+                          (31.0, 32.0, {"x": 100, "y": 100, "w": 50, "h": 20})])
+        fr = compose.frame_at(lay["camera"], 30.0)
+        self.assertEqual(regions[0]["rect"], compose.rnd(compose.Stage.map(regions[0]["box"], fr)))
+        self.assertIn('class="censor" id="censor-0" style="left: 700px; top: 270px; width: 400px; height: 50px"', html)
+        self.assertIn('tl.set("#censor-0", {opacity: 1}, 30);', html)
+        self.assertIn('tl.set("#censor-0", {opacity: 0}, 33);', html)
+        self.assertLess(html.index('id="censor-0"'), html.index('id="cursor-layer"'))   # follows the zoom
+        self.assertGreater(html.index('id="censor-0"'), html.index('id="screen"'))
+        self.assertIn("backdrop-filter: blur(", html)
+        # PRESERVE: no regions, no markup.
+        self.assertNotIn('class="censor"', compose.build(self.tl, BRAND)[0])
+
+    # N13: "Hay resaltados sobre zonas vacías": nothing is outlined on an unverified target.
+    def test_unverified_targets_get_no_outline(self):
+        tl = copy.deepcopy(self.tl)
+        row = next(e for e in tl["steps"][2]["events"] if e["type"] == "highlight")
+        row["target_ok"] = False
+        mail = next(e for e in tl["steps"][1]["events"] if e.get("selector") == "#c-email")
+        mail["target_ok"] = False
+        html, lay = compose.build(tl, BRAND)
+        self.assertFalse(self.items(lay, "highlight"))
+        self.assertNotIn('class="hl"', html)
+        self.assertNotIn("#c-email", [s["selector"] for s in self.items(lay, "spotlight")])
+        # Verified (or older captures without the flag) are drawn.
+        row["target_ok"], mail["target_ok"] = True, True
+        lay = compose.plan(tl, BRAND)
+        self.assertEqual(len(self.items(lay, "highlight")), 1)
+        self.assertIn("#c-email", [s["selector"] for s in self.items(lay, "spotlight")])
+
+
+class ScreenChangeTest(unittest.TestCase):
+    """N26 ("pantalla en blanco" ≈0:58, "dos vistas pegadas" ≈0:27): the camera must not keep a framing of
+    the old page once the recording shows the new one. WB4 found both source frames clean: the page changed
+    at 59.74 s while the goto was marked at 60.845 s, and the click on Consultas (24.209 s) had no screen_at
+    while the page changed at 24.573 s."""
+
+    def test_late_mark_moves_to_the_change_seen_in_the_pixels(self):
+        tl = navigation_timeline()
+        tl["steps"][1]["events"].insert(0, {"type": "goto", "t": 12.5, "t_end": 12.5})
+        self.assertEqual(compose.screen_bounds(tl), [12.5])
+        tl["screen_cuts"] = [11.4]
+        self.assertEqual(compose.screen_bounds(tl), [11.4])
+        cam = compose.plan(tl, BRAND)["camera"]
+        seg = next(s for s in cam if abs(s["t0"] - 11.4) < 1e-3)        # a cut to the new screen there
+        self.assertEqual(seg["kind"], "context", cam)
+        self.assertFalse([s for s in cam if s["t0"] < 11.4 < s["t1"]])
+        # A mark within CUT_KEEP of the change seen in the pixels cuts at the change itself: _demo smoke
+        # (round 4) marked the login click's page at 6.61 s, the recording showed it at 6.60 s, so the frame at
+        # 6.60 s drew the list page under the login form framing and its spotlight (N26).
+        tl["screen_cuts"] = [12.45]
+        self.assertEqual(compose.screen_bounds(tl), [12.45])
+        tl["screen_cuts"] = [12.55]
+        self.assertEqual(compose.screen_bounds(tl), [12.55])
+        tl["screen_cuts"] = [10.6]                                          # too early to explain it
+        self.assertEqual(compose.screen_bounds(tl), [12.5])
+
+    def test_toast_at_a_mark_moved_to_the_seen_change_still_opens_the_new_screen(self):
+        # _demo smoke (round 4, redes): "guardar" marked at 11.963 s with its toast at 11.963 s, the page seen
+        # changing at 11.967 s: the new screen still opens on the toast (S1 a, N6), not on an establishing shot.
+        tl = fixture("tutorial")
+        click, res = tl["steps"][2]["events"][:2]
+        res["t"] = click["screen_at"]
+        at = round(click["screen_at"] + 0.004, 3)
+        tl["screen_cuts"] = [at]
+        self.assertEqual(compose.screen_bounds(tl)[-1], at)
+        cam = compose.plan(tl, BRAND)["camera"]
+        seg = next(s for s in cam if abs(s["t0"] - at) < 1e-3)
+        self.assertEqual(seg["kind"], "detail", cam)
+        fr = {"x": seg["x"], "y": seg["y"], "s": seg["scale"]}
+        self.assertTrue(inside(mapped(res["box"], fr), [0, 0, 1920, 945]), seg)
+
+    def test_click_without_screen_at_gets_the_change_after_it(self):
+        tl = navigation_timeline()                                          # click at 8.24, no screen_at
+        tl["screen_cuts"] = [8.6]
+        self.assertEqual(compose.screen_bounds(tl), [8.6])
+        tl["screen_cuts"] = [9.6]                                           # 1.36 s later: a scroll, not the click
+        self.assertEqual(compose.screen_bounds(tl), [])
+        tl["screen_cuts"] = []
+        self.assertEqual(compose.screen_bounds(tl), [])                    # PRESERVE: nothing seen, nothing new
+        # A popup click (the SRI loading overlay after it) is not a page change.
+        stl = surface_timeline()
+        before = compose.screen_bounds(compose.with_surfaces(stl))
+        stl["screen_cuts"] = [5.6]
+        self.assertEqual(compose.screen_bounds(compose.with_surfaces(stl)), before)
+
+    def test_detects_a_page_change_but_not_a_typed_field(self):
+        import shutil
+        import tempfile
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg")
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "s.mp4"
+            graph = ("color=c=white:s=1920x1080:r=30:d=3,"
+                     "drawbox=x=0:y=0:w=1920:h=500:color=0x1e3a8a:t=fill:enable='gte(t,1)',"   # new page at 1.0 s
+                     "drawbox=x=600:y=800:w=200:h=40:color=black:t=fill:enable='gte(t,2)'")    # typed text at 2.0 s
+            subprocess.run([shutil.which("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i", graph, "-c:v", "libx264",
+                            "-pix_fmt", "yuv420p", str(path)], check=True)
+            self.assertEqual(compose.detect_screen_changes(path, 5.0), [6.0])
+
+
+INK_TILE = 24
+
+
+def ink_grid(*boxes, tile=INK_TILE):
+    """screen_ink entry of a 1920x1080 page whose content is `boxes` (x0, y0, x1, y1 in source px)."""
+    cols, rows = 1920 // tile, 1080 // tile
+    grid = [["0"] * cols for _ in range(rows)]
+    for x0, y0, x1, y1 in boxes:
+        for r in range(y0 // tile, -(-y1 // tile)):
+            for c in range(x0 // tile, -(-x1 // tile)):
+                grid[r][c] = "1"
+    return {"tile": tile, "rows": ["".join(r) for r in grid]}
+
+
+# DemoCRM "Clientes" (_demo smoke, 6.61 s): header bar, title, "+ Nuevo cliente" and a two-row table in the
+# top third; the rest of the page is empty (73 % of the 16:9 frame empty at 1.0x, C4).
+SPARSE = ((0, 0, 1920, 60), (392, 115, 520, 145), (1377, 110, 1528, 152), (392, 190, 1528, 336))
+
+
+def empty_share(fr, ink, view):
+    """Share of the viewport that shows no content tile under framing `fr`."""
+    tile, rows = ink["tile"], ink["rows"]
+    vx, vy, vw, vh = view
+    x0, y0 = (vx - fr["x"]) / fr["s"], (vy - fr["y"]) / fr["s"]
+    x1, y1 = x0 + vw / fr["s"], y0 + vh / fr["s"]
+    cells = [rows[r][c] for r in range(int(y0 // tile), min(len(rows), int(-(-y1 // tile))))
+             for c in range(int(x0 // tile), min(len(rows[0]), int(-(-x1 // tile))))]
+    return cells.count("0") / len(cells)
+
+
+class SparseScreenTest(unittest.TestCase):
+    """C4 "Ningún fotograma ... más del 70 % del área sin contenido" on a real but sparse page: the C7
+    establishing shot frames the populated part of the screen (N20: still covering the viewport, at most the
+    legible floor; C1: ≤ 1.0 s)."""
+
+    @staticmethod
+    def timeline(fmt="16:9", ink=None):
+        tl = navigation_timeline()
+        tl["format"] = fmt
+        tl["steps"][0]["events"][0]["screen_at"] = 8.6         # the list page opens at 8.6 s
+        if ink is not None:
+            tl["screen_ink"] = [{"t": 8.6, **ink}]
+        return tl
+
+    @staticmethod
+    def establishing(lay, t=8.6):
+        return next(s for s in lay["camera"] if abs(s["t0"] - t) < 1e-3)
+
+    def test_sparse_page_establishing_shot_frames_its_content(self):
+        ink = ink_grid(*SPARSE)
+        lay = compose.plan(self.timeline(ink=ink), BRAND)
+        seg = self.establishing(lay)
+        fr = {"x": seg["x"], "y": seg["y"], "s": seg["scale"]}
+        view = lay["viewport"]
+        self.assertEqual((seg["kind"], seg.get("reason")), ("context", "establishing"), seg)
+        self.assertLessEqual(seg["t1"] - seg["t0"], 1.0 + 1e-6)                      # C1
+        self.assertGreater(seg["scale"], lay["base_scale"] + 1e-6, seg)
+        self.assertLessEqual(seg["scale"], compose.LEGIBLE + 1e-6, seg)              # N20: up to the floor
+        self.assertTrue(covers(fr, view), seg)                                       # N20: no bars
+        self.assertTrue(inside(mapped({"x": 392, "y": 190, "w": 1136, "h": 146}, fr), view), seg)   # the table
+        first = self.timeline()["steps"][1]["events"][0]                               # the screen's first target
+        self.assertTrue(inside(mapped(label_box(first), fr), view), seg)
+        before = compose.plan(self.timeline(), BRAND)
+        old = self.establishing(before)
+        wide = empty_share({"x": old["x"], "y": old["y"], "s": old["scale"]}, ink, view)
+        # C4 is measured on the whole frame, the band counting as content: ≤ 70 % empty.
+        self.assertGreater(wide * view[3] / 1080, 0.70)
+        self.assertLess(empty_share(fr, ink, view), wide)
+        self.assertLessEqual(empty_share(fr, ink, view) * view[3] / 1080, 0.70)
+        nxt = lay["camera"][lay["camera"].index(seg) + 1]
+        self.assertEqual((nxt["kind"], nxt["from"]), ("move", fr), nxt)                # then the zoom (C7)
+
+    def test_full_page_and_unknown_pixels_keep_the_full_screen(self):
+        # PRESERVE: without the screen's pixels (fixtures) or on a populated page the establishing shot stays
+        # the full screen at the base scale around the first target.
+        before = self.establishing(compose.plan(self.timeline(), BRAND))
+        self.assertEqual(before["scale"], 1.0)
+        full = self.establishing(compose.plan(self.timeline(ink=ink_grid((0, 0, 1920, 1080))), BRAND))
+        self.assertEqual(full, before)
+
+    def test_vertical_crop_keeps_its_framing_on_the_target(self):
+        # 9:16: the base crop already is the legible floor (N12/N20): no room to zoom, the target with its
+        # neighbors stays framed as before.
+        before = self.establishing(compose.plan(self.timeline("9:16"), BRAND))
+        after = self.establishing(compose.plan(self.timeline("9:16", ink_grid(*SPARSE)), BRAND))
+        self.assertEqual(after, before)
+
+    def test_reads_the_content_tiles_of_the_screen(self):
+        import shutil
+        import tempfile
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg")
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "s.mp4"
+            # Login page until 1.0 s (busy), then the sparse list page.
+            graph = ("testsrc=s=1920x1080:r=30:d=1[a];color=c=0xf1f5f9:s=1920x1080:r=30:d=2,"
+                     "drawbox=x=0:y=0:w=1920:h=60:color=white:t=fill,"
+                     "drawbox=x=392:y=190:w=1136:h=146:color=0x334155:t=fill[b];[a][b]concat=n=2:v=1")
+            subprocess.run([shutil.which("ffmpeg"), "-v", "error", "-y", "-filter_complex", graph, "-c:v", "libx264",
+                            "-pix_fmt", "yuv420p", str(path)], check=True)
+            got = compose.detect_screen_ink(path, 5.0, [(6.0, 8.0)])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["t"], 6.0)
+        rows, tile = got[0]["rows"], got[0]["tile"]
+        self.assertEqual((len(rows), len(rows[0])), (1080 // tile, 1920 // tile))
+        self.assertEqual(rows[0], "1" * len(rows[0]))                                  # header bar
+        self.assertEqual(rows[260 // tile][392 // tile + 1:1528 // tile - 1], "1" * (1528 // tile - 392 // tile - 2))
+        self.assertEqual(rows[260 // tile][:392 // tile], "0" * (392 // tile))          # page beside the table
+        self.assertEqual(set("".join(rows[400 // tile:])), {"0"})                       # empty below it
 
 
 class ParallelRenderTest(unittest.TestCase):

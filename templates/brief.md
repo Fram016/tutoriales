@@ -18,7 +18,7 @@
 
 | id | Tipo (TUT/RED/PRO/NOV) | Formato | Duración objetivo | Apertura | Cierre |
 | --- | --- | --- | --- | --- | --- |
-| tutorial | TUT | 16:9 | libre (capítulos si > 5 min) | En este video aprendes a… | Siguiente video: … |
+| tutorial | TUT | 16:9 | libre (partes si hay 2+ flujos o > 5 min, N16) | En este video aprendes a… | ninguno (N27) o Siguiente video: … si el usuario lo pide |
 | redes | RED | 9:16 | 15–35 s | Gancho: ¿…? | Mira el tutorial completo + destino (N8) |
 
 ## Enfoque
@@ -49,6 +49,17 @@
 - background (color oscuro de la marca, tarjetas):
 - surface (banda de subtítulos; por defecto = background):
 - on_surface (texto de la banda; por defecto #ffffff):
+- logo (N24): variante legible sobre background (clara sobre fondo oscuro, contraste ≥ 3:1):
+
+## Datos sensibles
+
+<!-- N25: un solo criterio para todo el video. O todo es dato de demostración, o se difumina igual
+     en todo el video (todas las tablas, perfil, encabezado y páginas del navegador como chrome://settings).
+     Va a censor: (text con env:NAME, selectors por columna). Nunca escribir aquí los valores. -->
+
+- Criterio: datos de demostración / difuminado uniforme
+- Categorías a difuminar: identidad del contribuyente (RUC, nombre, correo, teléfono), RUC y razón social de terceros, claves de acceso, montos, rutas con el usuario del sistema
+- Dónde aparecen (pantalla → selector):
 
 ## Historia / escenario
 
@@ -95,7 +106,9 @@
 
 1. 
 
-<!-- Marca login, navegación obvia y campos opcionales (con su selector): RED los omite
+<!-- Un paso = una acción del usuario, una tarea (N15); lo que solo pasa va en la narración.
+     2+ flujos → partes (N16). Marca en qué sistema ocurre cada paso (N17: página / extensión).
+     Marca login, navegación obvia y campos opcionales (con su selector): RED los omite
      (videos[].steps / videos[].omit, RED3). -->
 
 ## Datos de la serie

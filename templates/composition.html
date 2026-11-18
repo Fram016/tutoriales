@@ -84,6 +84,17 @@
       .toolbar-icon { position: absolute; object-fit: contain; }
       .toolbar-glyph { border-radius: 6px; background: #5f6368; }
 
+      /* N25: censor region in source px inside the camera (it follows every zoom): the screen under it
+         blurred and veiled; hidden until the timeline shows it. */
+      .censor {
+        position: absolute;
+        opacity: 0;
+        border-radius: 6px;
+        backdrop-filter: blur({{CENSOR_BLUR}}px);
+        -webkit-backdrop-filter: blur({{CENSOR_BLUR}}px);
+        background: rgba(255, 255, 255, 0.35);
+      }
+
       /* R3/N5: new element outlined in the brand accent (constant width on screen), with a pulsing glow. */
       .hl {
         position: absolute;
@@ -159,6 +170,14 @@
       }
       .cap { color: var(--on-surface); text-align: center; }
       .chip { padding: {{CHIP_PAD_Y}}px 0; text-align: center; background: {{CHIP_BG}}; color: {{CHIP_FG}}; }
+      /* N17: where the user works, right of the chip: neutral for the page (SRI), brand for the product. */
+      .badge {
+        padding: {{BADGE_PAD_Y}}px 0;
+        text-align: center;
+        font-size: {{BADGE_PX}}px;
+        font-weight: 700;
+        line-height: {{BADGE_LINE}}px;
+      }
 
       /* E1 cards: opening (objective / hook), requirements, closing (next video / CTA). */
       .scene { z-index: 10; background: var(--ground); }
@@ -170,6 +189,8 @@
       }
       .scene .card-title, .scene .card-text { color: var(--ink); opacity: 1; }
       .scene .logo { position: absolute; left: 50%; height: 150px; max-width: 60%; transform: translateX(-50%); object-fit: contain; }
+      /* N24: a logo with no light variant that reads on the card sits on a white plate (>= 3:1). */
+      .scene .logo.plate { padding: 18px 28px; border-radius: {{RADIUS}}px; background: #ffffff; }
       .scene .bar {
         position: absolute;
         left: 50%;
@@ -196,6 +217,7 @@
           <video id="screen" class="clip" src="assets/screen.mp4" muted playsinline
                  data-start="{{SCREEN_START}}" data-duration="{{SCREEN}}"></video>
 {{SURFACES}}
+{{CENSORS}}
 {{HIGHLIGHTS}}
 {{SPOTLIGHTS}}
           <div id="cursor-layer" class="clip" data-start="{{SCREEN_START}}" data-duration="{{SCREEN}}">

@@ -1,7 +1,7 @@
 """Stage: compose. Builds one HyperFrames project per video from the edit + mix artifacts.
 
 Usage: python tools/compose.py <slug> [--video ID]
-       python tools/compose.py --fixture tutorial|redes --out DIR   (templates/fixtures, for QA of compose)
+       python tools/compose.py --fixture tutorial|redes|partes --out DIR   (templates/fixtures, for QA of compose)
 
 For every video V of tutorial.yaml reads edit/V/timeline.json (v2), edit/V/screen.mp4 and
 audio/V/mix.wav, and writes proyectos/<slug>/hf-V/ (index.html, assets/, meta.json,
@@ -23,6 +23,15 @@ Surfaces (perseo-xml S5, timeline `surfaces`): an extension popup is drawn as th
 card under a toolbar strip with the extension icon, anchored top-right of the screen and only while open.
 Its events are moved into source px first (with_surfaces): `open` becomes a click on the icon, and the
 panel plus the strip is the form box of its actions, so camera (N10), cursor and spotlight (N11) follow.
+
+Round 4 (reglas-video.md §Parte 6): N13 (no outline, framing or cursor on an event with target_ok false),
+N16 (parts: "Parte N: título" separator card, chip "Parte N · Paso M"), N17 (context badge next to the chip:
+neutral "En el SRI", brand "En <product>" while the extension works), N19 (one caption block per sentence),
+N20 (the source covers the viewport, no pillarbox; legible floor LEGIBLE; jumps <= JUMP_MAX), N21 (band <=
+1/8 of the height), N22 (a surface panel is never cut by the frame), N24 (light logo on dark cards), N25
+(timeline `censor_regions` blurred inside the camera), N27 (no closing card: the last frame is held).
+C4 on a sparse page: the establishing shot frames the populated part of the screen (timeline `screen_ink`,
+read from the recording by detect_screen_ink), up to the legible floor.
 """
 from __future__ import annotations
 
@@ -53,9 +62,27 @@ BRAND_DEFAULTS = {"primary": "#2563eb", "background": "#0f172a", "text": "#fffff
 
 # Camera (C1-C3, C7-C10).
 DETAIL_MIN, DETAIL_MAX, DETAIL_PREF = 1.4, 1.8, 1.6     # C1 revised (§Parte 5)
+# N20: legible floor of every framing but the establishing shot (<= 1.0 s). Measured on the perseo-xml SRI
+# capture (1920x1080, 34.5 s): cap height 9 px in the side menu ("Claves", "Certificados", ~12 px font) to
+# 10-11 px in tables and form labels (~13-14 px font); 12 px x 1.3 = 15.6 px, ~16 px of output text.
+LEGIBLE = 1.3
+JUMP_MAX = 0.35         # N20: consecutive framings of one step differ at most this much in scale
+SURFACE_PAD = 8         # N22: output px kept between a surface panel and the viewport edge
 CONTEXT_MAX = 1.0       # C1/C7: the establishing shot (full screen) lasts at most this long
 ESTABLISH_MIN = 0.3     # shorter establishing shots are skipped: cut straight to the first target
 ESTABLISH_WANT = 0.6    # a first target without pointer (toast, row) waits this long on the full screen
+# Screen changes seen in the pixels (N26): >= CUT_AREA of the frame changes by > CUT_DELTA gray levels between
+# two frames (192x108); a burst within CUT_BURST counts once; they correct edit's marks as screen_bounds says.
+# Measured on perseo-xml: the unmarked SRI page change at 24.57 s moves 17.6 % of the frame, the late-marked
+# one at 59.74 s 38 %; a typed field or the cursor stays under 7 %.
+CUT_DELTA, CUT_AREA, CUT_BURST = 12, 0.15, 0.7
+CUT_KEEP, CUT_LATE, CUT_AFTER = 0.2, 1.5, 1.0
+# C4: content tiles of a new screen (detect_screen_ink): INK_TILE source px, uniform within INK_STD levels and
+# within INK_DIST of the page background = empty (qa.py measures C4 alike). The establishing shot of a sparse
+# page zooms in steps of ESTABLISH_STEP up to the legible floor until at most ESTABLISH_EMPTY of the viewport
+# is empty (_demo "Clientes", round 4: 83 % of the 16:9 viewport empty at 1.0x, 73 % of the frame).
+INK_TILE, INK_STD, INK_DIST = 24, 3.0, 10.0
+ESTABLISH_EMPTY, ESTABLISH_STEP = 0.70, 0.05
 MOVE, MOVE_MIN, MOVE_MAX = 0.5, 0.4, 0.6   # C2: pans/zooms of 400-600 ms
 LEAD = 0.5              # C3: target framed this long before the event
 LEAD_BY_TYPE = {"type": 0.3, "select": 0.3}
@@ -94,16 +121,25 @@ CHAR_W = 0.58           # average advance of the bold sans, in em (conservative)
 CAPTION_MIN = 1.2       # T1
 RADIUS = 18
 PAD_X, PAD_Y, CHIP_PAD_Y, MARGIN, BAND_PAD = 32, 14, 10, 24, 40
+# N17: context badge right of the chip (smaller text than the captions, same family and radius).
+BADGE_FONT, BADGE_PAD_X, BADGE_PAD_Y, BADGE_GAP = 32, 20, 8, 12
+NEUTRAL = "#404040"     # N17: the page (SRI) context is neutral gray, the brand color is kept for the product
+CONTEXT_LABELS = {"sri": "En el SRI", "page": "En el SRI"}    # extension: "En <product>"
+# N16: part separator card, at most 1.5 s; without edit's times it opens the part's first step.
+PART_MAX, PART_DEFAULT = 1.5, 1.2
+CENSOR_BLUR = 14        # N25: source px of blur of a censor region
 
 FORMATS = {
-    # N3: the screen is drawn in the upper 1920x900 and a 180 px caption band sits below it.
-    # The establishing shot fits the whole 1920x1080 screen in the viewport (0.83x).
-    "16:9": {"size": (1920, 1080), "view_h": 900, "band_bottom": 1080, "fit": "contain", "font": 44,
-             "chars": 42, "safe_top": 0, "safe_bottom": 1080, "card_font": 80, "card_pad": 160},
+    # N3/N21: the screen is drawn in the upper 1920x945 and a 135 px (1/8) caption band sits below it: two
+    # caption lines of 44 px at 1.12 line height. N20: the source covers the viewport width (1.0x, the
+    # 1080 px are cropped to 945 around the target), never a pillarbox; framings stay >= LEGIBLE.
+    "16:9": {"size": (1920, 1080), "view_h": 945, "band_bottom": 1080, "fit": "cover", "font": 44, "line": 1.12,
+             "legible": LEGIBLE, "chars": 42, "safe_top": 0, "safe_bottom": 1080, "card_font": 80, "card_pad": 160},
     # N3/N9/V1/V4: UI from the top through 71 % of the height (the source always covers it, no bars),
-    # caption band right below it ending at the bottom 20 % unsafe area, brand background under it.
-    "9:16": {"size": (1080, 1920), "view_h": 1365, "band_bottom": 1536, "fit": "cover", "font": 48,
-             "chars": 28, "safe_top": 288, "safe_bottom": 1536, "card_font": 76, "card_pad": 130},
+    # caption band right below it ending at the bottom 20 % unsafe area, brand background under it (171 px,
+    # N21 <= 1/8). N12 wins over the legible floor: forms are fitted to the width at the base scale.
+    "9:16": {"size": (1080, 1920), "view_h": 1365, "band_bottom": 1536, "fit": "cover", "font": 48, "line": 1.25,
+             "legible": None, "chars": 28, "safe_top": 288, "safe_bottom": 1536, "card_font": 76, "card_pad": 130},
 }
 # Back-compat for readers that only need the output size per format.
 LAYOUTS = {k: {"size": v["size"]} for k, v in FORMATS.items()}
@@ -134,14 +170,24 @@ def hyperframes(*args, quiet: bool = True, extra_env: dict | None = None, **kwar
 
 
 def brand_of(tut: dict, pdir) -> dict:
+    """Brand of tutorial.yaml with `logo` (brand dir logo.svg/png) and `logo_light` (N24: `brand.logo_light`, a
+    path relative to the project, or logo-light.svg/png in the brand dir) resolved to files."""
     brand = {**BRAND_DEFAULTS, **{k: v for k, v in (tut.get("brand") or {}).items() if v}}
-    logo = None
+    logo = light = None
     if brand.get("dir"):
         for name in ("logo.svg", "logo.png"):
             if (pdir / brand["dir"] / name).exists():
                 logo = pdir / brand["dir"] / name
                 break
-    brand["logo"] = logo
+        for name in ("logo-light.svg", "logo-light.png"):
+            if (pdir / brand["dir"] / name).exists():
+                light = pdir / brand["dir"] / name
+                break
+    if brand.get("logo_light"):
+        light = pdir / brand["logo_light"]
+        if not light.exists():
+            raise PipelineError(f"brand.logo_light: no existe {light}")
+    brand["logo"], brand["logo_light"] = logo, light
     return brand
 
 
@@ -172,6 +218,62 @@ def contrast(a: str, b: str) -> float:
         return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
     hi, lo = sorted((lum(a), lum(b)), reverse=True)
     return (hi + 0.05) / (lo + 0.05)
+
+
+def luminance(color: str) -> float:
+    ch = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in _rgb(color)]
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+
+def logo_for(logo: Path, brand: dict, assets: Path) -> tuple[Path, dict]:
+    """N24: the logo that reads on the card background (contrast >= 3:1) and how: `original`, `light`
+    (brand.logo_light, or assets/logo-light.png: neutral pixels inverted, so dark ink turns white and a white
+    letter inside a dark shape turns dark; colored pixels and alpha kept) or `plate` (on a white plate, when
+    neither reads: an SVG without a light version, or a mid-gray card)."""
+    ground = norm({**BRAND_DEFAULTS, **{k: v for k, v in brand.items() if v}}["background"])
+    ink = _logo_ink(logo)
+    if ink is not None and contrast(ink, ground) >= 3.0:
+        return logo, {"variant": "original", "contrast": round(contrast(ink, ground), 2)}
+    light = brand.get("logo_light")
+    if light:
+        light = Path(light)
+        ink = _logo_ink(light)
+        return light, {"variant": "light", "contrast": round(contrast(ink or "#ffffff", ground), 2)}
+    if ink is not None and contrast("#ffffff", ground) >= 3.0:
+        from PIL import Image
+        import numpy as np
+        px = np.asarray(Image.open(logo).convert("RGBA")).copy()
+        rgb = px[..., :3].astype(int)
+        neutral = rgb.max(axis=2) - rgb.min(axis=2) < 40
+        px[..., :3][neutral] = 255 - px[..., :3][neutral]
+        out = assets / "logo-light.png"
+        Image.fromarray(px, "RGBA").save(out)
+        ink = _logo_ink(out)
+        if contrast(ink, ground) >= 3.0:
+            return out, {"variant": "light", "contrast": round(contrast(ink, ground), 2)}
+    return logo, {"variant": "plate", "contrast": round(contrast("#ffffff", ground), 2)}
+
+
+def _logo_ink(path: Path) -> str | None:
+    """Main color of a raster logo: mean of the larger group (dark or light) of its opaque neutral pixels (all
+    opaque pixels when none is neutral); None for SVG or unreadable files."""
+    if path.suffix.lower() == ".svg":
+        return None
+    try:
+        from PIL import Image
+        import numpy as np
+        px = np.asarray(Image.open(path).convert("RGBA")).reshape(-1, 4).astype(float)
+    except (OSError, ValueError):
+        return None
+    px = px[px[:, 3] >= 128, :3]
+    if not len(px):
+        return None
+    neutral = px[px.max(axis=1) - px.min(axis=1) < 40]
+    group = neutral if len(neutral) else px
+    dark = group[group.mean(axis=1) < 128]
+    light = group[group.mean(axis=1) >= 128]
+    main = dark if len(dark) >= len(light) else light
+    return _hex(main.mean(axis=0) / 255)
 
 
 def readable(color: str, ground: str, minimum: float) -> str:
@@ -257,9 +359,67 @@ def break_lines(text: str, product: str | None, max_chars: int) -> list[str]:
     return _lines(words, max_chars, len(words))[1]
 
 
+def sentences(text: str) -> list[str]:
+    """N19: the sentences of a narration (a stop, question or exclamation mark followed by a capital)."""
+    parts = re.split(r"(?<=[.!?…])\s+(?=[¿¡\"«(]?[A-ZÁÉÍÓÚÑÜ0-9])", (text or "").strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _clauses(words: list[str]) -> list[list[str]]:
+    """N19: a sentence cut at its clause boundaries: after a comma (or ; :) and before "y"/"e"."""
+    out: list[list[str]] = [[]]
+    for k, word in enumerate(words):
+        if out[-1] and _bare(word) in ("y", "e") and word == word.lower():
+            out.append([])
+        out[-1].append(word)
+        if re.search(r"[,;:]$", word) and k < len(words) - 1:
+            out.append([])
+    return [c for c in out if c]
+
+
+def caption_blocks(text: str, product: str | None, max_chars: int = 42,
+                   max_lines: int = 2) -> list[tuple[int, list[str]]]:
+    """N19 + T1: (sentence index, lines) per caption block. One block = one sentence; a sentence longer than
+    max_lines x max_chars is split only at clause boundaries, into the fewest blocks; a single clause that is
+    still too long falls back to the T1 word segmentation."""
+    out = []
+    for k, sentence in enumerate(sentences(text)):
+        words = split_words(protect_product(sentence, product))
+        cost, lines = _lines(words, max_chars, max_lines)
+        if lines and cost < INF and max(len(line) for line in lines) <= max_chars:
+            out.append((k, lines))
+            continue
+        units = _clauses(words)
+        n = len(units)
+        best: list[tuple[float, list[list[str]]]] = [(INF, [])] * (n + 1)
+        best[0] = (0, [])
+        for j in range(1, n + 1):
+            for i in range(j - 1, -1, -1):
+                if best[i][0] == INF:
+                    continue
+                chunk = [w for u in units[i:j] for w in u]
+                cost, lines = _lines(chunk, max_chars, max_lines)
+                if lines and cost < INF and max(len(line) for line in lines) <= max_chars:
+                    blocks = [lines]
+                    cost += 100 + (20 if _width(chunk) < 24 else 0)   # one more block; a stub reads badly
+                elif j - i == 1:
+                    blocks = _segment(chunk, max_chars, max_lines)
+                    cost = 100 * len(blocks) + 1000   # a clause cut inside: only when nothing else works
+                else:
+                    continue
+                if best[i][0] + cost < best[j][0]:
+                    best[j] = (best[i][0] + cost, best[i][1] + blocks)
+        out.extend((k, lines) for lines in best[n][1])
+    return out
+
+
 def segment_captions(text: str, product: str | None, max_chars: int = 42, max_lines: int = 2) -> list[list[str]]:
-    """T1: captions of <= max_lines lines x max_chars, no line ending in a function word, product whole."""
-    words = split_words(protect_product(text, product))
+    """T1/N19: captions of <= max_lines lines x max_chars, one sentence each, product whole."""
+    return [lines for _, lines in caption_blocks(text, product, max_chars, max_lines)]
+
+
+def _segment(words: list[str], max_chars: int, max_lines: int) -> list[list[str]]:
+    """T1: words cut into captions of <= max_lines lines x max_chars, no line ending in a function word."""
     n = len(words)
     best = [(INF, [])] * (n + 1)
     best[0] = (0, [])
@@ -314,7 +474,9 @@ def palette_of(brand: dict | None) -> dict:
             # O1: chip = the primary (darkened within its hue if needed) with white text >= 4.5:1.
             "chip": readable(b["primary"], "#ffffff", 4.5), "chip_text": "#ffffff",
             # R3: outline in the accent (= primary) with >= 3:1 against the light rows around it.
-            "highlight": readable(b["accent"], "#ffffff", 3.0), "cursor": "#ffffff"}
+            "highlight": readable(b["accent"], "#ffffff", 3.0), "cursor": "#ffffff",
+            # N17: the page (SRI) context badge is neutral; the product's is the chip color (brand).
+            "neutral": NEUTRAL}
 
 
 def _content_words(text: str) -> set[str]:
@@ -434,6 +596,69 @@ def with_surfaces(timeline: dict) -> dict:
     return {**timeline, "steps": steps, "surfaces_placed": True}
 
 
+def verified(timeline: dict) -> dict:
+    """N13: an event whose target the recorder could not verify (target_ok false: hidden, empty or covered)
+    keeps its time but loses its boxes and point, so nothing is framed, outlined or pointed at there."""
+    if not any(ev.get("target_ok") is False for step in timeline["steps"] for ev in step["events"]):
+        return timeline
+    drop = ("box", "point", "frame_box", "form_box")
+    steps = [{**step, "events": [{k: v for k, v in ev.items() if k not in drop} if ev.get("target_ok") is False
+                                  else ev for ev in step["events"]]} for step in timeline["steps"]]
+    return {**timeline, "steps": steps}
+
+
+def screen_hold(timeline: dict) -> float:
+    """N27: seconds the last screen frame is held when there is no closing card (the video ends on the
+    result instead of on an empty background)."""
+    if timeline.get("closing") or timeline.get("screen_held"):
+        return 0
+    return round(max(0.0, timeline["total"] - timeline["screen_end"]), 3)
+
+
+def prepared(timeline: dict) -> dict:
+    """The timeline compose plans: surfaces in source px, unverified targets dropped (N13), and the screen
+    held through the end when there is no closing card (N27)."""
+    timeline = verified(with_surfaces(timeline))
+    hold = screen_hold(timeline)
+    if hold > 1e-3:
+        timeline = {**timeline, "screen_end": timeline["total"], "screen_held": hold}
+    return timeline
+
+
+def surface_areas(timeline: dict) -> list[tuple[float, float, dict]]:
+    """N22: (t0, t1, strip + panel box) of every open surface window."""
+    return [(t0, t1, surface_geometry(spec)["area"]) for spec in (timeline.get("surfaces") or {}).values()
+            for t0, t1 in spec.get("windows") or []]
+
+
+def censor_regions(timeline: dict) -> list[dict]:
+    """N25: regions to blur, {t0, t1, box} in source px, from timeline `censor_regions` ({t0, t1, box} or
+    {t0, t1, x, y, w, h}, or `rect` [x, y, w, h]; a `surface` region is relative to its panel) and from step
+    events of type `censor` (t, t_end, box; already in source px, see with_surfaces). A region still on at the
+    end of the recorded screen stays on through the N27 hold."""
+    specs = timeline.get("surfaces") or {}
+    held = timeline.get("screen_held") or 0
+    last = timeline["screen_end"] - held
+    raw = list(timeline.get("censor_regions") or [])
+    raw += [{"t0": ev["t"], "t1": ev.get("t_end") or ev["t"], **ev, "surface": None} for step in timeline["steps"]
+            for ev in step["events"] if ev["type"] == "censor"]
+    out = []
+    for reg in raw:
+        box = reg.get("box") or (dict(zip("xywh", reg["rect"])) if reg.get("rect") else
+                                 {k: reg[k] for k in "xywh" if k in reg})
+        t0, t1 = reg.get("t0"), reg.get("t1")
+        if len(box) != 4 or t0 is None or t1 is None or t1 <= t0:
+            continue
+        box = {k: box[k] for k in "xywh"}
+        if reg.get("surface") in specs:
+            panel = surface_geometry(specs[reg["surface"]])["panel"]
+            box = {**box, "x": box["x"] + panel["x"], "y": box["y"] + panel["y"]}
+        if held and t1 >= last - 0.05:
+            t1 = timeline["screen_end"]
+        out.append({"t0": round(t0, 3), "t1": round(t1, 3), "box": box})
+    return out
+
+
 def plan_surfaces(timeline: dict, camera: list[dict], stage: "Stage") -> list[dict]:
     """`surface` items (the panel, only while open) and `toolbar` items (the strip, from before the icon click
     until just after closing), with their source box and output rect when they appear."""
@@ -460,6 +685,7 @@ class Stage:
     """Output geometry of one format: UI viewport, caption band, safe area for the action, framings."""
 
     def __init__(self, fmt: str, chip_w: float = 0):
+        """`chip_w`: width of what sits left of the captions in the band (chip, plus the context badge)."""
         if fmt not in FORMATS:
             raise PipelineError(f"timeline.json: formato desconocido '{fmt}' (usa 16:9 o 9:16)")
         self.fmt = fmt
@@ -470,7 +696,7 @@ class Stage:
         self.view = [0, 0, self.W, self.VH]
         self.band = [0, self.VH, self.W, spec["band_bottom"] - self.VH]
         self.font = spec["font"]
-        self.line_h = round(self.font * 1.25)
+        self.line_h = round(self.font * spec["line"])
         self.chip_h = self.line_h + 2 * CHIP_PAD_Y
         # N3: chip at the left of the band, captions in the rest of it (same place in every step).
         self.chip_x = BAND_PAD
@@ -482,8 +708,9 @@ class Stage:
         self.safe = (MARGIN, top, self.W - 2 * MARGIN, self.VH - MARGIN - top)
         fits = (self.W / SRC_W, self.VH / SRC_H)
         self.base = min(fits) if spec["fit"] == "contain" else max(fits)
+        self.legible = max(spec.get("legible") or 0, self.base)     # N20
         self.detail_min = max(DETAIL_MIN, self.base)
-        self.form_min = max(FORM_MIN, self.base)
+        self.form_min = max(FORM_MIN, self.legible)
 
     def cap_rect(self, lines: int) -> list[float]:
         bx, by, bw, bh = self.band
@@ -493,6 +720,13 @@ class Stage:
     def chip_rect(self, text: str) -> list[float]:
         bx, by, bw, bh = self.band
         return [self.chip_x, by + (bh - self.chip_h) / 2, text_width(text, self.font) + 2 * PAD_X, self.chip_h]
+
+    def badge_rect(self, text: str, chip: list[float] | None) -> list[float]:
+        """N17: the context badge, right after the chip (or where the chip goes), centered in the band."""
+        bx, by, bw, bh = self.band
+        h = round(BADGE_FONT * 1.25) + 2 * BADGE_PAD_Y
+        x = chip[0] + chip[2] + BADGE_GAP if chip else self.chip_x
+        return [x, by + (bh - h) / 2, text_width(text, BADGE_FONT) + 2 * BADGE_PAD_X, h]
 
     def frame(self, cx: float, cy: float, s: float) -> dict:
         """Framing that centers (cx, cy) in the safe area; the source always covers the viewport (N9)."""
@@ -509,6 +743,55 @@ class Stage:
     def context(self, point=None) -> dict:
         cx, cy = (point["x"], point["y"]) if point else (SRC_W / 2, SRC_H / 2)
         return self.frame(cx, cy, self.base)
+
+    def establish(self, ink: dict | None, point=None, box: dict | None = None) -> dict:
+        """C7/C4: establishing framing of a new screen whose content tiles are `ink` (detect_screen_ink). The full
+        screen around `point` when its pixels are unknown, when that leaves at most ESTABLISH_EMPTY of the
+        viewport empty or when the format has no room above its base scale (9:16). Else the lowest scale up to
+        the legible floor (N20) whose window, covering the viewport, shows the most content and leaves at most
+        ESTABLISH_EMPTY empty (the emptiest one otherwise), keeping `box` (the first target) whole when it fits."""
+        full = self.context(point)
+        if not ink or self.legible <= self.base + 1e-6:
+            return full
+        tile, grid = ink["tile"], [[c == "1" for c in row] for row in ink["rows"]]
+        rows, cols = len(grid), len(grid[0])
+        acc = [[0] * (cols + 1) for _ in range(rows + 1)]     # summed-area table of the content tiles
+        for r in range(rows):
+            for c in range(cols):
+                acc[r + 1][c + 1] = grid[r][c] + acc[r][c + 1] + acc[r + 1][c] - acc[r][c]
+
+        def empty(x0, y0, s):
+            c0, r0 = int(x0 // tile), int(y0 // tile)
+            c1 = min(cols, max(c0 + 1, -int(-(x0 + self.W / s) // tile)))
+            r1 = min(rows, max(r0 + 1, -int(-(y0 + self.VH / s) // tile)))
+            return 1 - (acc[r1][c1] - acc[r0][c1] - acc[r1][c0] + acc[r0][c0]) / ((r1 - r0) * (c1 - c0))
+
+        if empty(-full["x"] / full["s"], -full["y"] / full["s"], full["s"]) <= ESTABLISH_EMPTY:
+            return full
+        filled_r = [r for r in range(rows) if any(grid[r])]
+        filled_c = [c for c in range(cols) if any(grid[r][c] for r in range(rows))]
+        if not filled_r:
+            return full
+        # Equal content: the window centered on the populated region.
+        cx = (filled_c[0] + filled_c[-1] + 1) * tile / 2
+        cy = (filled_r[0] + filled_r[-1] + 1) * tile / 2
+        best = None
+        for k in range(int(round((self.legible - self.base) / ESTABLISH_STEP)) + 1):
+            s = round(min(self.base + k * ESTABLISH_STEP, self.legible), 4)
+            w, h = self.W / s, self.VH / s
+            xs = sorted({min(x, SRC_W - w) for x in range(0, int(SRC_W - w) + tile, tile)})
+            ys = sorted({min(y, SRC_H - h) for y in range(0, int(SRC_H - h) + tile, tile)})
+            if box and box["w"] <= w and box["h"] <= h:
+                xs = [x for x in xs if x <= box["x"] and box["x"] + box["w"] <= x + w] or xs
+                ys = [y for y in ys if y <= box["y"] and box["y"] + box["h"] <= y + h] or ys
+            e, _, x0, y0 = min((round(empty(x, y, s), 6), abs(x + w / 2 - cx) + abs(y + h / 2 - cy), x, y)
+                               for x in xs for y in ys)
+            if best is None or e < best[0] - 1e-9:
+                best = (e, x0, y0, s)
+            if e <= ESTABLISH_EMPTY:
+                break
+        _, x0, y0, s = best
+        return {"x": round(-x0 * s, 1), "y": round(-y0 * s, 1), "s": s}
 
     def focus_box(self, ev: dict) -> dict:
         """The part of the event box the camera frames: fields whole (C9), big boxes cropped to detail."""
@@ -575,14 +858,15 @@ class Stage:
     def contains(self, fr: dict, box: dict) -> bool:
         return p_range(fr, fr, box, self.view) is not None
 
-    def push(self, fr: dict, box: dict, boxes: list[dict] | None = None) -> dict | None:
-        """C8: the framing at the end of a slow push-in on `box` (scale +0.1), keeping it (and `boxes`)
-        whole; when no scale does, a slow drift of DRIFT px at the same scale (source still covering)."""
+    def push(self, fr: dict, box: dict, boxes: list[dict] | None = None, top: float = DETAIL_MAX) -> dict | None:
+        """C8: the framing at the end of a slow push-in on `box` (scale +0.1, at most `top`), keeping it (and
+        `boxes`) whole; when no scale does, a slow drift of DRIFT px at the same scale (source still covering).
+        N20: a push-out never goes below the legible floor."""
         whole = (lambda to: self.holds(to, boxes)) if boxes else (lambda to: self.contains(to, box))
         boxes = boxes or [box]
         for d in (PUSH, PUSH / 2, -PUSH):
             s = fr["s"] + d
-            if not self.base <= s <= DETAIL_MAX + 1e-9:
+            if not min(fr["s"], self.legible) <= s <= max(top, fr["s"]) + 1e-9:
                 continue
             to = self.frame(*center(box), s)
             if to != fr and whole(to):
@@ -649,17 +933,90 @@ def p_range(f0: dict, f1: dict, box: dict, rect, tol: float = 0.5):
 
 
 def screen_bounds(timeline: dict) -> list[float]:
-    """Times where the screen changes (edit's screen_at, gotos): each starts a new screen (C7, C10)."""
+    """Times where the screen changes: each starts a new screen (C7, C10). Edit's marks (screen_at, gotos),
+    checked against the changes seen in the pixels (`screen_cuts`, detect_screen_changes; N26: a framing of
+    the old page held over the new one shows an empty area or two views):
+    - a mark with no seen change within CUT_KEEP moves to the last change up to CUT_LATE before it (perseo-xml
+      0:58: the goto was marked 1.1 s after the page had changed);
+    - a page click without screen_at gets the first change up to CUT_AFTER after it (perseo-xml 0:24).
+    - a mark within CUT_KEEP of a seen change moves to it (_demo round 4: marked 6.61 s, the page changed at
+      6.60 s and that frame drew the new page under the old framing).
+    Other seen changes (a loading overlay, a table appended, a scroll) do not start a screen."""
     ss, se = timeline["screen_start"], timeline["screen_end"]
+    cuts = sorted(timeline.get("screen_cuts") or [])
     times = set()
     for step in timeline["steps"]:
         for ev in step["events"]:
             at = ev.get("screen_at")
             if at is None and ev["type"] == "goto":
                 at = ev["t"]
-            if at is not None and ss + 1e-6 < at < se - 1e-6:
+            if at is not None:
+                near = [d for d in cuts if abs(at - d) <= CUT_KEEP]
+                if near:
+                    at = min(near, key=lambda d: abs(at - d))
+                else:
+                    at = max((d for d in cuts if at - CUT_LATE <= d < at), default=at)
+            elif ev["type"] == "click" and not ev.get("surface"):
+                at = next((d for d in cuts if ev["t"] < d <= ev["t"] + CUT_AFTER), None)
+            if at is not None:
                 times.add(round(at, 3))
-    return sorted(times)
+    return sorted(t for t in times if ss + 1e-6 < t < se - 1e-6)
+
+
+def detect_screen_changes(screen: Path, start: float) -> list[float]:
+    """Output times (screen clip starting at `start`) where most of the recording changes at once: a new
+    page, a menu or dialog over it. The first frame of every burst (a load that settles within CUT_BURST
+    counts once)."""
+    import numpy as np
+    w, h = 192, 108
+    proc = subprocess.run([which("ffmpeg"), "-v", "error", "-i", str(screen), "-vf", f"scale={w}:{h},format=gray",
+                           "-f", "rawvideo", "-"], capture_output=True)
+    if proc.returncode or not proc.stdout:
+        raise PipelineError(f"No pude leer {Path(screen).name} para detectar los cambios de pantalla")
+    fps = media_fps(screen)
+    frames = np.frombuffer(proc.stdout, np.uint8).reshape(-1, h, w).astype(np.int16)
+    changed = (np.abs(np.diff(frames, axis=0)) > CUT_DELTA).mean(axis=(1, 2))
+    out: list[float] = []
+    for k in np.nonzero(changed >= CUT_AREA)[0]:
+        t = (k + 1) / fps
+        if not out or t - out[-1] > CUT_BURST:
+            out.append(round(t, 3))
+    return [round(start + float(t), 3) for t in out]
+
+
+def detect_screen_ink(screen: Path, start: float, spans: list[tuple[float, float]]) -> list[dict]:
+    """C4: content tiles of the screen shown over each output span (a, b) (screen clip starting at `start`), read
+    from the frame in the middle of its establishing shot: {"t": a, "tile": INK_TILE, "rows": ["0101...", ...]}
+    over the 1920x1080 source, "1" where a tile is not uniform or not the page background."""
+    import numpy as np
+    k, w, h = INK_TILE // 4, SRC_W // 4, SRC_H // 4
+    out = []
+    for a, b in spans:
+        at = max(a + min(CONTEXT_MAX, b - a) / 2 - start, 0.0)
+        proc = subprocess.run([which("ffmpeg"), "-v", "error", "-ss", f"{at:.3f}", "-i", str(screen), "-frames:v", "1",
+                               "-vf", f"scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
+        if proc.returncode or len(proc.stdout) < w * h * 3:
+            continue          # no frame there: that screen keeps the full-screen establishing shot
+        frame = np.frombuffer(proc.stdout[:w * h * 3], np.uint8).reshape(h, w, 3).astype(np.float32)
+        rows, cols = h // k, w // k
+        tiles = frame[:rows * k, :cols * k].reshape(rows, k, cols, k, 3).transpose(0, 2, 1, 3, 4)
+        tiles = tiles.reshape(rows, cols, k * k, 3)
+        flat = tiles.std(axis=2).max(axis=-1) < INK_STD
+        mean = tiles.mean(axis=2)
+        empty = flat
+        if flat.any():
+            keys, counts = np.unique(np.round(mean[flat] / 8), axis=0, return_counts=True)
+            empty = flat & (np.abs(mean - keys[counts.argmax()] * 8).max(axis=-1) < INK_DIST)
+        out.append({"t": round(a, 3), "tile": INK_TILE,
+                    "rows": ["".join("0" if e else "1" for e in row) for row in empty]})
+    return out
+
+
+def media_fps(path: Path) -> float:
+    out = run([which("ffprobe"), "-v", "error", "-select_streams", "v", "-show_entries", "stream=r_frame_rate",
+               "-of", "default=nw=1:nk=1", str(path)], quiet=True).stdout.strip()
+    num_, _, den = out.partition("/")
+    return float(num_) / float(den or 1)
 
 
 def form_boxes(timeline: dict) -> dict[int, dict]:
@@ -772,8 +1129,9 @@ def shots_of(timeline: dict, stage: Stage) -> list[dict]:
     shots: list[dict] = []
     for step in timeline["steps"]:
         for ev in sorted((e for e in step["events"] if e["type"] in BOXED and e.get("box")), key=lambda e: e["t"]):
-            # A toast/row at the very screen change (edit cuts the wait for it) belongs to the new screen.
-            edge = 1e-6 if ev["type"] in POINTER else -1e-6
+            # A toast/row at the very screen change (edit cuts the wait for it) belongs to the new screen, also
+            # when screen_bounds moved the mark up to CUT_KEEP later, to the change seen in the pixels.
+            edge = 1e-6 if ev["type"] in POINTER else -CUT_KEEP
             period = sum(1 for b in bounds if b < ev["t"] - edge)
             fbox = stage.focus_box(ev)
             end = ev.get("t_end") or ev["t"]
@@ -817,7 +1175,81 @@ def shots_of(timeline: dict, stage: Stage) -> list[dict]:
         shot["frame"] = stage.shot_frame(shot)
         shot["keep"] = shot["frame_box"]
         prev = shot
+    areas = surface_areas(timeline)
+    keep_surfaces(shots, stage, areas)
+    smooth_scales(shots, stage)
+    keep_surfaces(shots, stage, areas)
     return shots
+
+
+def within(rect, view, tol: float = 0.5) -> bool:
+    x, y, w, h = rect
+    vx, vy, vw, vh = view
+    return x >= vx - tol and y >= vy - tol and x + w <= vx + vw + tol and y + h <= vy + vh + tol
+
+
+def shot_span(shot: dict) -> tuple[float, float]:
+    return shot["t"] - shot["lead"], shot["end"] + HOLD[shot["events"][-1]["type"]]
+
+
+def shot_ok(shot: dict, fr: dict, stage: Stage) -> bool:
+    return stage.holds(fr, shot["boxes"]) if shot.get("boxes") else stage.contains(fr, shot["keep"])
+
+
+def keep_surfaces(shots: list[dict], stage: Stage, areas: list[tuple[float, float, dict]]) -> None:
+    """N22: a framing during an open surface window either leaves its panel (strip included) out of the
+    viewport or keeps it whole: a framing that would cut it is widened to the union of its target and the
+    panel. The panel then joins the boxes a C8 push-in must keep whole."""
+    for shot in shots:
+        t0, t1 = shot_span(shot)
+        for a0, a1, area in areas:
+            if t1 <= a0 or t0 >= a1:
+                continue
+            fr = shot["frame"]
+            rect = Stage.map(area, fr)
+            if not overlaps(rect, stage.view):
+                continue
+            if not within(rect, stage.view):
+                u = union(shot["keep"], area)
+                fit = min((stage.W - 2 * SURFACE_PAD) / u["w"], (stage.VH - 2 * SURFACE_PAD) / u["h"])
+                to = stage.frame(*center(u), max(min(fr["s"], fit), stage.base))
+                if not within(Stage.map(area, to), stage.view):
+                    continue                       # taller than the viewport even at the base scale
+                shot["frame"], shot["aim"] = to, u
+            if not any(same_box(b, area, 0.5) for b in shot.get("boxes") or []):
+                shot["boxes"] = (shot.get("boxes") or [shot["keep"]]) + [area]
+
+
+def shot_floor(shot: dict, stage: Stage) -> float:
+    """Lowest scale a shot may be eased to (N20): forms at their minimum, buttons in detail (C1), fields and
+    toasts as low as keeping them whole needs."""
+    if shot.get("form"):
+        return stage.form_min
+    if shot["field"] or shot["events"][0]["type"] == "result":
+        return stage.base
+    return stage.detail_min
+
+
+def smooth_scales(shots: list[dict], stage: Stage) -> None:
+    """N20: consecutive framings of one step on one screen differ at most JUMP_MAX in scale: the closer one
+    is eased out (never in, so its targets stay whole) as far as its floor allows."""
+    for _ in range(3):
+        changed = False
+        for a, b in zip(shots, shots[1:]):
+            if a["step"] != b["step"] or a["period"] != b["period"]:
+                continue
+            hi, lo = (a, b) if a["frame"]["s"] >= b["frame"]["s"] else (b, a)
+            if hi["frame"]["s"] - lo["frame"]["s"] <= JUMP_MAX + 1e-6:
+                continue
+            s = math.floor(max(lo["frame"]["s"] + JUMP_MAX, shot_floor(hi, stage)) * 1e4) / 1e4
+            if s >= hi["frame"]["s"] - 1e-6:
+                continue
+            to = stage.frame(*center(hi.get("aim") or hi["frame_box"]), s)
+            if shot_ok(hi, to, stage):
+                hi["frame"] = to
+                changed = True
+        if not changed:
+            break
 
 
 def same_box(a: dict, b: dict, tol: float = 6) -> bool:
@@ -872,7 +1304,21 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
     ss, se = timeline["screen_start"], timeline["screen_end"]
     shots = shots_of(timeline, stage)
     starts = [ss] + screen_bounds(timeline)
+    areas = surface_areas(timeline)
     limit = HOLD_LIMIT.get(timeline.get("type", "TUT"), HOLD_LIMIT_DEFAULT)
+
+    def after_surface(start: float, dur: float, frm: dict, shot: dict) -> tuple[float, float]:
+        """N22: a pan away from a whole open panel waits until it closes (then a short pan, or a cut)."""
+        for a0, a1, area in areas:
+            if not (a0 < start + dur and start < a1) or not within(Stage.map(area, frm), stage.view):
+                continue
+            to = Stage.map(area, shot["frame"])
+            if within(to, stage.view) or not overlaps(Stage.map(area, frm), stage.view):
+                continue
+            start = max(start, a1)
+            room = shot["t"] - start
+            dur = 0.0 if room < MOVE_MIN else min(MOVE, room)
+        return start, dur
     segs: list[dict] = []
 
     def frozen(shot, t0, t1) -> bool:
@@ -880,7 +1326,8 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
         return any(b - a > limit + 1e-6 for a, b in static_runs(t0, t1, shot.get("moves", [])))
 
     def pushed(shot) -> dict | None:
-        return stage.push(shot["frame"], shot["keep"], shot.get("boxes"))
+        # N10: a form shot stays at most FORM_PREF (1.5x) while it pushes in.
+        return stage.push(shot["frame"], shot["keep"], shot.get("boxes"), FORM_PREF if shot.get("form") else DETAIL_MAX)
 
     def hold(shot, t0, t1, end):
         if shot.get("form"):
@@ -914,8 +1361,10 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
         if k > 0 and first["events"][0]["type"] == "result":
             first["arrive"] = a       # S1(a)/C4: the click's new screen opens on the toast: cut straight to it
         elif est - a >= ESTABLISH_MIN - 1e-9:
-            # C7: the whole new screen first, then an ease-in-out zoom to the first target.
-            ctx = stage.context(first["point"])
+            # C7: the whole new screen first (C4: its populated part), then an ease-in-out zoom to the first target.
+            ink = next((i for i in timeline.get("screen_ink") or [] if abs(i["t"] - a) < 1e-3), None)
+            aim = stage.focus_box(first["events"][0]) if first["events"][0].get("box") else None
+            ctx = stage.establish(ink, first["point"], aim)
             add("context", a, est, ctx, ctx, reason="establishing")
             add("move", est, min(est + MOVE, b), ctx, first["frame"])
             first["arrive"] = est + MOVE
@@ -932,6 +1381,7 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
                 # C8: a long hold becomes a slow push-in; the pan then leaves from the pushed framing.
                 end = pushed(prev) or end
                 start, dur = transition(prev, shot, free, stage, end)
+            start, dur = after_surface(start, dur, end, shot)
             start = min(start, b)
             if leaves_toast(prev, shot, end, stage):
                 # A hard cut once the toast had its R2 time, when the next target is due (it needs no travel).
@@ -1020,16 +1470,18 @@ def subtract(spans: list[tuple[float, float]], blocked: list[tuple[float, float]
     return [(a, b) for a, b in out if b - a > 1e-6]
 
 
-def schedule(caps: list[list[str]], v0: float, vdur: float, s0: float, s1: float,
-             blocked: list[tuple[float, float]] = ()) -> list[tuple[float, float, list[str]]]:
-    """T1/N1: captions follow the voice in time order inside the step, >= 1.2 s each."""
-    if not caps:
+def schedule(blocks: list[tuple[int, list[str]]], v0: float, vdur: float, s0: float, s1: float,
+             blocked: list[tuple[float, float]] = ()) -> list[tuple[float, float, list[str], int]]:
+    """T1/N1: captions (caption_blocks) follow the voice in time order inside the step, >= 1.2 s each.
+    Returns (t0, t1, lines, sentence)."""
+    if not blocks:
         return []
+    caps = [lines for _, lines in blocks]
     free = subtract([(max(v0, s0), s1)], list(blocked))
     total = sum(len(" ".join(c)) for c in caps)
     wants = [max(CAPTION_MIN, max(vdur, CAPTION_MIN) * len(" ".join(c)) / total) for c in caps]
     out, t, k = [], None, 0
-    for lines, want in zip(caps, wants):
+    for (sentence, lines), want in zip(blocks, wants):
         while k < len(free):
             a, b = free[k]
             t = a if t is None or t < a else t
@@ -1038,31 +1490,66 @@ def schedule(caps: list[list[str]], v0: float, vdur: float, s0: float, s1: float
             k += 1
             t = None
         if k >= len(free):
-            # No room left: the rest joins the last caption if it still fits in two lines.
-            if out and len(out[-1][2]) + len(lines) <= 2:
-                out[-1] = (out[-1][0], out[-1][1], out[-1][2] + lines)
+            # No room left: a piece of the same sentence joins the last caption if it still fits in two
+            # lines; another sentence (N19: never joined) takes the second half of the last caption's time.
+            if out and out[-1][3] == sentence and len(out[-1][2]) + len(lines) <= 2:
+                out[-1] = (out[-1][0], out[-1][1], out[-1][2] + lines, sentence)
+            elif out:
+                a, b, prev, ps = out[-1]
+                mid = round((a + b) / 2, 3)
+                out[-1] = (a, mid, prev, ps)
+                out.append((mid, b, lines, sentence))
             continue
         end = min(t + want, free[k][1])
-        out.append((t, end, lines))
+        out.append((t, end, lines, sentence))
         t = end
     # Stretch each caption up to the next one (or its interval end) so text never blinks out mid-step.
     final = []
-    for i, (t0, t1, lines) in enumerate(out):
+    for i, (t0, t1, lines, sentence) in enumerate(out):
         limit = next((b for a, b in free if a - 1e-9 <= t0 < b), t1)
         nxt = out[i + 1][0] if i + 1 < len(out) else limit
-        final.append((t0, min(max(t1, t0 + CAPTION_MIN), nxt, limit) if nxt > t0 else t1, lines))
+        final.append((t0, min(max(t1, t0 + CAPTION_MIN), nxt, limit) if nxt > t0 else t1, lines, sentence))
     return final
 
 
+def part_of(step: dict):
+    return step.get("part") or step.get("chapter")
+
+
 def step_label(timeline: dict, step: dict) -> str | None:
-    """N2/N7/PRO4: only TUT shows a chip, "Paso N" ("Parte N · Paso M" with chapters, E3)."""
+    """N2/N7/PRO4: only TUT shows a chip, "Paso N" ("Parte N · Paso M" with parts, M from 1 in each part:
+    E3, N16)."""
     if timeline.get("type", "TUT") != "TUT":
         return None
     number = step.get("number") or (timeline["steps"].index(step) + 1)
-    if step.get("chapter"):
-        same = [s for s in timeline["steps"] if s.get("chapter") == step["chapter"]]
-        return f"Parte {step['chapter']} · Paso {same.index(step) + 1}"
+    if part_of(step):
+        same = [s for s in timeline["steps"] if part_of(s) == part_of(step)]
+        return f"Parte {part_of(step)} · Paso {same.index(step) + 1}"
     return f"Paso {number}"
+
+
+def uses_context(timeline: dict) -> bool:
+    """N17: the badge shows where the user works when the steps declare it or an extension surface opens."""
+    return bool(timeline.get("surfaces")) or any(s.get("context") for s in timeline["steps"])
+
+
+def context_label(timeline: dict, context: str) -> str:
+    labels = {**CONTEXT_LABELS, "extension": f"En {timeline.get('product') or 'la extensión'}",
+              **(timeline.get("context_labels") or {})}
+    return labels.get(context) or labels["page"]
+
+
+def step_contexts(timeline: dict, step: dict) -> list[tuple[float, float, str]]:
+    """N17: (t0, t1, context) over the step: its declared `context`, else `extension` while a surface is
+    open and `page` the rest of the time."""
+    s0, s1 = step["start"], step["start"] + step["duration"]
+    if step.get("context"):
+        return [(s0, s1, step["context"])]
+    windows = [(max(a, s0), min(b, s1)) for spec in (timeline.get("surfaces") or {}).values()
+               for a, b in spec.get("windows") or [] if a < s1 and b > s0]
+    spans = [(a, b, "page") for a, b in subtract([(s0, s1)], windows)]
+    spans += [(a, b, "extension") for a, b in windows if b - a > 1e-6]
+    return sorted(spans)
 
 
 def card_lines(text: str, product: str | None, width: float, font: float, max_lines: int = 3):
@@ -1078,7 +1565,7 @@ def card_lines(text: str, product: str | None, width: float, font: float, max_li
 
 def plan(timeline: dict, brand: dict) -> dict:
     """Everything compose decides, in output pixels: the layout.json of the video (L5)."""
-    timeline = with_surfaces(timeline)
+    timeline = prepared(timeline)
     kind = timeline.get("type", "TUT")
     fmt = timeline.get("format", "16:9")
     product = timeline.get("product")
@@ -1087,6 +1574,12 @@ def plan(timeline: dict, brand: dict) -> dict:
     labels = {s["id"]: step_label(timeline, s) for s in timeline["steps"]}
     font = FORMATS.get(fmt, FORMATS["16:9"])["font"]
     chip_w = max((text_width(label, font) + 2 * PAD_X for label in labels.values() if label), default=0)
+    badges = uses_context(timeline) and any(labels.values())
+    if badges:
+        # N17: with a context badge the brand color belongs to the product only; the step chip goes neutral.
+        pal = {**pal, "chip": pal["neutral"]}
+        texts = {context_label(timeline, c) for s in timeline["steps"] for _, _, c in step_contexts(timeline, s)}
+        chip_w += BADGE_GAP + max(text_width(t, BADGE_FONT) + 2 * BADGE_PAD_X for t in texts)
     stage = Stage(fmt, chip_w)
     camera, shots = camera_shots(timeline, stage)
     arrival = {id(ev): shot["arrive"] for shot in shots for ev in shot["events"]}
@@ -1129,6 +1622,9 @@ def plan(timeline: dict, brand: dict) -> dict:
 
     items.extend(plan_spotlights(shots, camera, stage, pal, timeline))
     items.extend(plan_surfaces(timeline, camera, stage))
+    for reg in censor_regions(timeline):
+        items.append({"kind": "censor", **reg, "rect": rnd(stage.map(reg["box"], frame_at(camera, reg["t0"]))),
+                      "color": pal["cursor"]})
 
     # Cursor (C5): samples at each pointer event; hidden while a toast is on screen (R2, N6).
     hidden: list[tuple[float, float]] = []
@@ -1149,15 +1645,28 @@ def plan(timeline: dict, brand: dict) -> dict:
         s0, s1 = step["start"], step["start"] + step["duration"]
         label = labels[step["id"]]
         if label:
-            items.append({"kind": "chip", "t0": round(s0, 3), "t1": round(s1, 3), "rect": rnd(stage.chip_rect(label)),
+            if timeline.get("screen_held") and step is timeline["steps"][-1]:
+                s1 = max(s1, se)          # N27: the held last frame keeps its chip
+            chip = stage.chip_rect(label)
+            items.append({"kind": "chip", "t0": round(s0, 3), "t1": round(s1, 3), "rect": rnd(chip),
                           "text": label, "step": step["id"], "style": style, "opacity": 1,
                           "color": pal["chip"], "text_color": pal["chip_text"],
                           "contrast": round(contrast(pal["chip_text"], pal["chip"]), 2), "font_px": stage.font})
-        caps = segment_captions(step.get("narration") or "", product, stage.chars)
-        for t0, t1, lines in schedule(caps, step.get("voice_start", s0), step.get("voice_duration", 0), s0, s1):
+            spans = step_contexts(timeline, step) if badges else []
+            if spans:
+                spans[-1] = (spans[-1][0], max(spans[-1][1], s1), spans[-1][2])
+            for t0, t1, context in spans:
+                text = context_label(timeline, context)
+                color = pal["chip"] if context == "extension" else pal["neutral"]
+                items.append({"kind": "badge", "t0": round(t0, 3), "t1": round(t1, 3), "step": step["id"],
+                              "rect": rnd(stage.badge_rect(text, chip)), "text": text, "context": context,
+                              "color": color, "text_color": pal["chip_text"], "font_px": BADGE_FONT,
+                              "contrast": round(contrast(pal["chip_text"], color), 2)})
+        blocks = caption_blocks(step.get("narration") or "", product, stage.chars)
+        for t0, t1, lines, sentence in schedule(blocks, step.get("voice_start", s0), step.get("voice_duration", 0), s0, s1):
             items.append({"kind": "caption", "t0": round(t0, 3), "t1": round(t1, 3), "rect": rnd(stage.cap_rect(len(lines))),
-                          "text": " ".join(lines), "lines": lines, "step": step["id"], "style": style,
-                          "color": pal["on_surface"], "background": pal["surface"], "font_px": stage.font})
+                          "text": " ".join(lines), "lines": lines, "step": step["id"], "sentence": sentence,
+                          "style": style, "color": pal["on_surface"], "background": pal["surface"], "font_px": stage.font})
 
     items.extend(plan_cards(timeline, stage, product, kind, pal))
     items.sort(key=lambda i: (i["t0"], i["kind"]))
@@ -1165,8 +1674,8 @@ def plan(timeline: dict, brand: dict) -> dict:
             "output": [stage.W, stage.H], "viewport": stage.view, "band": rnd(stage.band),
             "base_scale": round(stage.base, 4),
             "safe": {"top": stage.spec["safe_top"], "bottom": stage.spec["safe_bottom"], "action": rnd(stage.safe)},
-            "cursor_px": CURSOR_PX, "font_px": stage.font, "screen": [ss, se], "palette": pal,
-            "camera": camera, "cursor_hidden": [[round(a, 3), round(b, 3)] for a, b in hidden], "items": items}
+            "cursor_px": CURSOR_PX, "font_px": stage.font, "line_px": stage.line_h, "screen": [ss, se], "palette": pal,
+            "screen_changes": screen_bounds(timeline), "camera": camera, "cursor_hidden": [[round(a, 3), round(b, 3)] for a, b in hidden], "items": items}
 
 
 def plan_spotlights(shots: list[dict], camera: list[dict], stage: Stage, pal: dict, timeline: dict) -> list[dict]:
@@ -1199,13 +1708,22 @@ def plan_spotlights(shots: list[dict], camera: list[dict], stage: Stage, pal: di
 
 
 def plan_cards(timeline: dict, stage: Stage, product: str | None, kind: str, pal: dict) -> list[dict]:
-    """E1 cards. N2: the TUT opening shows the title, plus opening.text only when it adds something."""
+    """E1 cards. N2: the TUT opening shows the title, plus opening.text only when it adds something. N16: a
+    "Parte N: título" separator card (<= 1.5 s) opens every part. N27: no closing card when there is none."""
     spec = stage.spec
     width = stage.W - 2 * spec["card_pad"]
     mid = (spec["safe_top"] + spec["safe_bottom"]) / 2
     out = []
-    parts = [("opening", timeline.get("opening")), ("requirements", timeline.get("requirements")),
-             ("closing", timeline.get("closing"))]
+    parts = [("opening", timeline.get("opening")), ("requirements", timeline.get("requirements"))]
+    for part in timeline.get("parts") or []:
+        first = next((s for s in timeline["steps"] if part_of(s) == part.get("n")), None)
+        start = part.get("start", first["start"] if first else None)
+        if start is None:
+            continue
+        text = f"Parte {part['n']}: {part['title']}" if part.get("title") else f"Parte {part['n']}"
+        parts.append((f"part-{part['n']}", {"start": start, "text": text,
+                                            "duration": min(part.get("duration") or PART_DEFAULT, PART_MAX)}))
+    parts.append(("closing", timeline.get("closing")))
     for name, card in parts:
         if not card:
             continue
@@ -1263,10 +1781,13 @@ def cam_vars(fr: dict) -> str:
 
 
 def build(timeline: dict, brand: dict, logo_src: str | None = None,
-          icon_srcs: dict[str, str] | None = None) -> tuple[str, dict]:
-    """(index.html, layout) for one video. `icon_srcs`: surface name -> src of its toolbar icon."""
-    timeline = with_surfaces(timeline)
+          icon_srcs: dict[str, str] | None = None, logo_info: dict | None = None) -> tuple[str, dict]:
+    """(index.html, layout) for one video. `icon_srcs`: surface name -> src of its toolbar icon; `logo_info`:
+    how the logo reads on the cards (logo_for, N24), copied to layout `logo`."""
+    timeline = prepared(timeline)
     layout = plan(timeline, brand)
+    if logo_info:
+        layout["logo"] = dict(logo_info)
     pal = layout["palette"]
     b = resolve_brand(brand)
     W, H = layout["output"]
@@ -1391,7 +1912,7 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None,
             f'<div class="toolbar-press" id="{sid}-press"></div>{icon}</div>\n'
             f'          <div class="surface" id="{sid}" style="{box_style([g["panel"][k] for k in "xywh"])}">'
             f'<video id="{sid}-video" class="clip" src="assets/{esc(spec["file"])}" muted playsinline '
-            f'data-start="{num(ss)}" data-duration="{num(se - ss)}"></video></div>')
+            f'data-start="{num(ss)}" data-duration="{num(se - timeline.get("screen_held", 0) - ss)}"></video></div>')
         for item in (i for i in items if i["kind"] == "surface" and i["name"] == name):
             for target in (f"#{sid}", f"#{sid}-press"):
                 script.append(f'tl.set("{target}", {{opacity: 1}}, {num(item["t0"])});')
@@ -1400,12 +1921,24 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None,
             script.append(f'tl.to("#{sid}-bar", {{opacity: 1, duration: 0.2, ease: "power1.out"}}, {num(item["t0"])});')
             script.append(f'tl.to("#{sid}-bar", {{opacity: 0, duration: 0.2, ease: "power1.in"}}, {num(item["t1"])});')
 
-    # Chip + captions: absolute rects in the band; they appear at 100 % opacity at once (O1).
+    # Censor (N25): blurred rects in source px inside the camera, so they follow every zoom and pan.
+    censor_markup = []
+    for i, item in enumerate(i for i in items if i["kind"] == "censor"):
+        censor_markup.append(f'          <div class="censor" id="censor-{i}" style="{box_style([item["box"][k] for k in "xywh"])}"></div>')
+        script.append(f'tl.set("#censor-{i}", {{opacity: 1}}, {num(item["t0"])});')
+        script.append(f'tl.set("#censor-{i}", {{opacity: 0}}, {num(item["t1"])});')
+
+    # Chip, context badge (N17) + captions: absolute rects in the band; at 100 % opacity at once (O1).
     overlays = []
     for i, item in enumerate(i for i in items if i["kind"] == "chip"):
         overlays.append(f'      <div id="chip-{i}" class="clip ov-layer" data-start="{num(item["t0"])}" '
                         f'data-duration="{num(item["t1"] - item["t0"])}"><div class="ov chip" '
                         f'style="{box_style(item["rect"])}">{esc(item["text"])}</div></div>')
+    for i, item in enumerate(i for i in items if i["kind"] == "badge"):
+        overlays.append(f'      <div id="badge-{i}" class="clip ov-layer" data-start="{num(item["t0"])}" '
+                        f'data-duration="{num(item["t1"] - item["t0"])}"><div class="ov badge" '
+                        f'style="{box_style(item["rect"])}; background: {item["color"]}; color: {item["text_color"]}">'
+                        f'{esc(item["text"])}</div></div>')
     for i, item in enumerate(i for i in items if i["kind"] == "caption"):
         overlays.append(f'      <div id="cap-{i}" class="clip ov-layer" data-start="{num(item["t0"])}" '
                         f'data-duration="{num(item["t1"] - item["t0"])}"><div class="ov cap" '
@@ -1423,7 +1956,8 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None,
         inner = []
         if logo_src and name in ("opening", "closing"):
             top = min(p["rect"][1] for p in parts)
-            inner.append(f'        <img class="logo" id="{name}-logo" src="{logo_src}" alt="" '
+            plate = " plate" if (logo_info or {}).get("variant") == "plate" else ""
+            inner.append(f'        <img class="logo{plate}" id="{name}-logo" src="{logo_src}" alt="" '
                          f'style="top: {num(max(stage_top(layout), top - 190))}px" />')
         for k, p in enumerate(parts):
             cls = "card-title" if p["kind"] == "title" else "card-text"
@@ -1440,10 +1974,13 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None,
     values = {
         "WIDTH": W, "HEIGHT": H, "VIEW_H": layout["viewport"][3], "ORIENTATION": "portrait" if H > W else "landscape",
         "PRIMARY": pal["primary"], "ACCENT": pal["accent"], "BACKGROUND": pal["background"], "TEXT": pal["text"],
-        "SURFACE": pal["surface"], "ON_SURFACE": pal["on_surface"], "CHIP_BG": pal["chip"],
+        "SURFACE": pal["surface"], "ON_SURFACE": pal["on_surface"],
+        "CHIP_BG": next((i["color"] for i in layout["items"] if i["kind"] == "chip"), pal["chip"]),
         "CHIP_FG": pal["chip_text"], "BAND": box_style(layout["band"]),
         "FONT": f'"{b["font"]}", "Segoe UI", Arial, sans-serif',
-        "FONT_PX": layout["font_px"], "LINE_H": round(layout["font_px"] * 1.25), "PAD_X": PAD_X,
+        "FONT_PX": layout["font_px"], "LINE_H": layout["line_px"], "PAD_X": PAD_X,
+        "BADGE_PX": BADGE_FONT, "BADGE_PAD_Y": BADGE_PAD_Y, "BADGE_LINE": round(BADGE_FONT * 1.25),
+        "CENSOR_BLUR": CENSOR_BLUR, "CENSORS": "\n".join(censor_markup),
         "CHIP_PAD_Y": CHIP_PAD_Y, "RADIUS": RADIUS, "CURSOR_PX": CURSOR_PX, "CURSOR_W": CURSOR_W,
         "TOTAL": num(total), "SCREEN_START": num(ss), "SCREEN": num(se - ss),
         "HIGHLIGHTS": "\n".join(hl_markup), "SPOTLIGHTS": "\n".join(spot_markup), "OVERLAYS": "\n".join(overlays), "CARDS": "\n".join(cards),
@@ -1467,13 +2004,31 @@ def compose_video(timeline: dict, screen: Path, mix: Path, brand: dict, out: Pat
         raise PipelineError("Falta node_modules/gsap. Corré: npm install")
     assets = out / "assets"
     assets.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(screen, assets / "screen.mp4")
+    if "screen_cuts" not in timeline:
+        # N26: where the recording really changes page, so no framing of the old page outlives it.
+        timeline = {**timeline, "screen_cuts": detect_screen_changes(screen, timeline["screen_start"])}
+    if "screen_ink" not in timeline:
+        # C4: what each new screen shows, so the establishing shot of a sparse page frames its content.
+        starts = [timeline["screen_start"]] + screen_bounds(timeline) + [timeline["screen_end"]]
+        timeline = {**timeline, "screen_ink": detect_screen_ink(screen, timeline["screen_start"],
+                                                                list(zip(starts, starts[1:])))}
+    hold = screen_hold(timeline)
+    if hold > 1e-3:
+        # N27: no closing card, the last frame of the screen is held until the end of the video.
+        length = timeline["total"] - timeline["screen_start"]
+        ffmpeg("-i", str(screen), "-vf", f"tpad=stop_mode=clone:stop_duration={hold + 0.2:.3f}", "-t", f"{length:.3f}",
+               "-an", "-c:v", "libx264", "-crf", "14", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+               "-movflags", "+faststart", str(assets / "screen.mp4"))
+    else:
+        shutil.copyfile(screen, assets / "screen.mp4")
     shutil.copyfile(mix, assets / "mix.wav")
     shutil.copyfile(GSAP, assets / "gsap.min.js")
-    logo_src = None
+    logo_src = logo_info = None
     if logo:
-        logo_src = f"assets/{logo.name}"
-        shutil.copyfile(logo, assets / logo.name)
+        path, logo_info = logo_for(logo, brand, assets)        # N24
+        if path.parent != assets:
+            shutil.copyfile(path, assets / path.name)
+        logo_src = f"assets/{path.name}"
     icon_srcs = {}
     for name, spec in (timeline.get("surfaces") or {}).items():
         track = screen.parent / spec["file"]
@@ -1484,7 +2039,7 @@ def compose_video(timeline: dict, screen: Path, mix: Path, brand: dict, out: Pat
         if icon:
             icon_srcs[name] = f"assets/surface-{name}-icon{icon.suffix}"
             shutil.copyfile(icon, out / icon_srcs[name])
-    page, layout = build(timeline, brand, logo_src, icon_srcs)
+    page, layout = build(timeline, brand, logo_src, icon_srcs, logo_info)
     (out / "index.html").write_text(page, encoding="utf-8")
     write_json(out / "layout.json", layout)
     video = timeline.get("video") or out.name
@@ -1563,20 +2118,24 @@ def compose(slug: str, video: str | None = None) -> dict:
 
 
 def compose_fixture(video: str, out_root: Path) -> dict:
-    """templates/fixtures/<video>.timeline.json + screen.mp4 -> <out_root>/hf-<video> (mix: quiet sine)."""
+    """templates/fixtures/<video>.timeline.json + screen.mp4 (or <video>-screen.mp4) -> <out_root>/hf-<video>
+    (mix: quiet sine; logo: <video>-logo.png when the fixture has one)."""
     timeline = read_json(FIXTURES / f"{video}.timeline.json")
     brand = read_json(FIXTURES / "brand.json")
     out_root.mkdir(parents=True, exist_ok=True)
     mix = out_root / f"{video}-mix.wav"
     ffmpeg("-f", "lavfi", "-i", f"sine=frequency=220:sample_rate=48000:duration={timeline['total']}",
            "-af", "volume=-30dB", "-ac", "2", str(mix))
-    return compose_video(timeline, FIXTURES / "screen.mp4", mix, brand, out_root / f"hf-{video}")
+    screen = FIXTURES / f"{video}-screen.mp4"
+    logo = FIXTURES / f"{video}-logo.png"
+    return compose_video(timeline, screen if screen.exists() else FIXTURES / "screen.mp4", mix, brand,
+                         out_root / f"hf-{video}", logo if logo.exists() else None)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("slug", nargs="?")
-    ap.add_argument("--fixture", choices=["tutorial", "redes"], help="compose a fixture of templates/fixtures")
+    ap.add_argument("--fixture", choices=["tutorial", "redes", "partes"], help="compose a fixture of templates/fixtures")
     ap.add_argument("--out", type=Path, help="output folder for --fixture (outside the repository)")
     ap.add_argument("--video", help="id del video (por defecto: todos)")
     args = ap.parse_args()

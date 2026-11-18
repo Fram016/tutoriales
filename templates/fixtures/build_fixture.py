@@ -12,12 +12,23 @@ The boxes and points are the real ones recorded by capture for those frames. Lik
 C10), the first step opens with a hold before its click, clicks happen just before the page changes,
 clicks carry `screen_at` (the new screen) and fields carry `frame_box` (control + label, C9). Like
 capture (reglas-ronda3 L3), the actions inside the "Nuevo contacto" card carry its `form_box` (N10).
+
+       python templates/fixtures/build_fixture.py partes
+
+Writes only the round-4 fixture (reglas-ronda4 T2), leaving the files above untouched:
+  partes-screen.mp4             the three steps plus a "descargar" step on the contact list, with held frames
+                                under the two part separators
+  partes-surface-popup.mp4      a stand-in extension popup (420x640 CSS px at DPR 2) on the screen's clock
+  partes-logo.png               a dark logo (black square with a white letter, a black word, a brand dot)
+  partes.timeline.json          TUT 16:9 in two parts (N16), the popup (S5/N17/N22), a censor region over
+                                the e-mail column (N25), no closing card (N27)
 """
 from __future__ import annotations
 
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -91,23 +102,23 @@ VIDEOS = {
 BRAND = {"primary": "#7c3aed", "background": "#1f1235", "text": "#ffffff", "font": "Segoe UI"}
 
 
-def cut_screen() -> None:
+def cut_screen(segments=SEGMENTS, holds=PRE_HOLD, out: Path = HERE / "screen.mp4") -> None:
     parts = "".join(f"[0:v]trim={a}:{b},setpts=PTS-STARTPTS"
-                    + (f",tpad=start_duration={PRE_HOLD[sid]}:start_mode=clone" if sid in PRE_HOLD else "")
-                    + f"[v{i}];" for i, (sid, a, b) in enumerate(SEGMENTS))
-    chain = "".join(f"[v{i}]" for i in range(len(SEGMENTS)))
-    graph = f"{parts}{chain}concat=n={len(SEGMENTS)}:v=1:a=0,fps=30,format=yuv420p[out]"
+                    + (f",tpad=start_duration={holds[sid]}:start_mode=clone" if sid in holds else "")
+                    + f"[v{i}];" for i, (sid, a, b) in enumerate(segments))
+    chain = "".join(f"[v{i}]" for i in range(len(segments)))
+    graph = f"{parts}{chain}concat=n={len(segments)}:v=1:a=0,fps=30,format=yuv420p[out]"
     subprocess.run([shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(SOURCE),
                     "-filter_complex", graph, "-map", "[out]", "-c:v", "libx264", "-crf", "30",
-                    "-preset", "veryfast", "-movflags", "+faststart", str(HERE / "screen.mp4")], check=True)
+                    "-preset", "veryfast", "-movflags", "+faststart", str(out)], check=True)
 
 
-def timeline(video: str) -> dict:
+def timeline(video: str, segments=SEGMENTS, holds=PRE_HOLD) -> dict:
     spec = VIDEOS[video]
     start = spec["opening"]
     steps, cursor = [], start
-    for sid, a, b in SEGMENTS:
-        hold = PRE_HOLD.get(sid, 0)
+    for sid, a, b in segments:
+        hold = holds.get(sid, 0)
         dur = round(b - a + hold, 3)
         meta = STEPS[sid]
         events = []
@@ -139,7 +150,130 @@ def timeline(video: str) -> dict:
             "screen_start": start, "screen_end": screen_end, "steps": steps}
 
 
+# --- round 4 (reglas-ronda4 T2): parts, popup, context badge, censor region, no closing, dark logo ---------
+
+# A fourth step on the contact list (source 49.5-55.5 s) where the popup downloads; the part separators
+# (1.2 s) cover held frames at the start of "nuevo" (part 1) and "guardar" (part 2).
+PARTES_SEGMENTS = SEGMENTS + [("descargar", 49.5, 55.5)]
+PARTES_HOLDS = {"nuevo": 2.7, "guardar": 1.5}
+SEPARATOR = 1.2
+PARTS = [{"n": 1, "title": "Crear el contacto", "steps": ("nuevo", "datos")},
+         {"n": 2, "title": "Guardar y descargar", "steps": ("guardar", "descargar")}]
+# Popup boxes in popup CSS px (420x640), like the recorder writes them for a surface.
+POPUP = {"size": [420, 640], "dpr": 2, "anchor": "top-right", "file": "partes-surface-popup.mp4"}
+BOTON = {"x": 24, "y": 150, "w": 176, "h": 56}
+ESTADO = {"x": 24, "y": 380, "w": 372, "h": 60}
+POPUP_TIMES = (1.0, 2.6, 3.8, 5.6)      # open, click, result, close: seconds after "descargar" starts
+# The e-mail column of the contact list (N25: third-party data blurred during the step).
+CORREO = {"x": 830, "y": 268, "w": 300, "h": 104}
+FONTS = Path("C:/Windows/Fonts")
+
+
+def partes_timeline() -> dict:
+    VIDEOS["partes"] = {**VIDEOS["tutorial"], "closing": 0.5}
+    STEPS["descargar"] = {"number": 6, "title": "Descarga con la extensión",
+                          "TUT": "Abre Perseo XML y haz clic en XML. Al terminar, el resumen muestra los "
+                                 "descargados y los errores."}
+    EVENTS["descargar"] = []
+    tl = timeline("partes", PARTES_SEGMENTS, PARTES_HOLDS)
+    steps = {s["id"]: s for s in tl["steps"]}
+    for part in PARTS:
+        for sid in part["steps"]:
+            steps[sid]["part"] = part["n"]
+    tl["parts"] = [{"n": p["n"], "title": p["title"], "start": steps[p["steps"][0]]["start"], "duration": SEPARATOR}
+                   for p in PARTS]
+    for sid in ("nuevo", "guardar"):        # the voice starts after the separator
+        steps[sid]["voice_start"] = round(steps[sid]["start"] + SEPARATOR + 0.1, 3)
+        steps[sid]["voice_duration"] = round(steps[sid]["duration"] - SEPARATOR - 0.5, 3)
+    d0 = steps["descargar"]["start"]
+    t_open, t_click, t_result, t_close = (round(d0 + t, 3) for t in POPUP_TIMES)
+
+    def mid(b):
+        return {"x": b["x"] + b["w"] / 2, "y": b["y"] + b["h"] / 2}
+
+    steps["descargar"]["events"] = [
+        {"type": "open", "t": t_open, "t_end": t_open, "surface": "popup", "target_ok": True},
+        {"type": "click", "t": t_click, "t_end": t_click, "surface": "popup", "selector": "#boton1", "box": BOTON,
+         "point": mid(BOTON), "frame_box": BOTON, "form_box": {"x": 0, "y": 0, "w": 420, "h": 640},
+         "target_ok": True, "target_text": "XML Para importar"},
+        {"type": "result", "t": t_result, "t_end": round(t_result + 1.5, 3), "surface": "popup",
+         "selector": "#estado", "box": ESTADO, "point": mid(ESTADO), "target_ok": True},
+        {"type": "close", "t": t_close, "t_end": t_close, "surface": "popup"}]
+    tl["surfaces"] = {"popup": {**POPUP, "windows": [[t_open, t_close]]}}
+    tl["censor_regions"] = [{"t0": d0, "t1": round(d0 + steps["descargar"]["duration"], 3), "box": CORREO}]
+    # Fixture stand-ins for the Perseo XML labels (the screen is the Nexo CRM demo).
+    tl["context_labels"] = {"page": "En el SRI", "extension": "En Perseo XML"}
+    tl["closing"] = None                    # N27: ends on the result, the last 0.5 s held
+    tl["video"] = "partes"
+    return tl
+
+
+def _font(name: str) -> str:
+    """A font path for ffmpeg drawtext (the drive colon escaped)."""
+    return (FONTS / name).as_posix().replace(":", "\\:")
+
+
+def popup_track(tl: dict) -> None:
+    """A stand-in popup on the screen's clock: header, four download buttons, a status line that turns to
+    "En proceso" on the click and to the summary on the result, and the folder link at the bottom."""
+    ss = tl["screen_start"]
+    ev = {e["type"]: e["t"] - ss for s in tl["steps"] for e in s["events"] if e.get("surface")}
+    reg, bold = _font("segoeui.ttf"), _font("segoeuib.ttf")
+
+    def text(t, x, y, size, color, font=reg, enable=None):
+        on = f":enable='{enable}'" if enable else ""
+        return f"drawtext=fontfile='{font}':text='{t}':x={x}:y={y}:fontsize={size}:fontcolor={color}{on}"
+
+    def box(b, color):
+        return f"drawbox=x={2 * b['x']}:y={2 * b['y']}:w={2 * b['w']}:h={2 * b['h']}:color={color}:t=fill"
+
+    buttons = [(BOTON, "0xfff1e8", "XML", "Para importar"), ({**BOTON, "x": 220}, "0xf4f4f5", "PDF", "RIDE recibidos"),
+               ({**BOTON, "y": 270}, "0xf4f4f5", "PDF", "RIDE emitidos"),
+               ({**BOTON, "x": 220, "y": 270}, "0xf4f4f5", "XML", "Desde el RIDE")]
+    chain = [text("PERSEO", 300, 40, 64, "0x09090b", bold),
+             text("Descarga de comprobantes del SRI", 190, 120, 28, "0xca4100"),
+             text("COMPROBANTES RECIBIDOS", 48, 250, 26, "0x52525b", bold),
+             text("COMPROBANTES EMITIDOS", 48, 490, 26, "0x52525b", bold), box(ESTADO, "0xf4f4f5")]
+    for b, color, title, sub in buttons:
+        chain += [box(b, color), text(title, 2 * b["x"] + 32, 2 * b["y"] + 18, 34, "0x09090b", bold),
+                  text(sub, 2 * b["x"] + 32, 2 * b["y"] + 58, 24, "0x52525b")]
+    chain += [text("Listo para descargar", 80, 788, 30, "0x52525b", enable=f"lt(t,{ev['click']:.3f})"),
+              text("En proceso", 80, 788, 30, "0xca4100", bold, f"between(t,{ev['click']:.3f},{ev['result']:.3f})"),
+              text("6 descargados, 0 con error", 80, 788, 30, "0x15803d", bold, f"gte(t,{ev['result']:.3f})"),
+              text("Carpeta de descargas", 250, 1180, 28, "0xca4100", bold)]
+    length = tl["screen_end"] - ss
+    subprocess.run([shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    f"color=c=white:s=840x1280:r=30:d={length:.3f}", "-vf", ",".join(chain), "-c:v", "libx264",
+                    "-crf", "30", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                    str(HERE / POPUP["file"])], check=True)
+
+
+def dark_logo() -> None:
+    """N24: a logo that is invisible on the dark brand background unless compose makes its light variant."""
+    from PIL import Image, ImageDraw, ImageFont
+    im = Image.new("RGBA", (640, 200), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle((10, 10, 190, 190), radius=36, fill=(2, 2, 2, 255))
+    letter, word = (ImageFont.truetype(str(FONTS / "segoeuib.ttf"), size) for size in (140, 110))
+    d.text((52, 6), "N", font=letter, fill=(255, 255, 255, 255))
+    d.text((220, 30), "Nexo", font=word, fill=(2, 2, 2, 255))
+    d.ellipse((560, 120, 600, 160), fill=(124, 58, 237, 255))
+    im.save(HERE / "partes-logo.png")
+
+
+def build_partes() -> None:
+    cut_screen(PARTES_SEGMENTS, PARTES_HOLDS, HERE / "partes-screen.mp4")
+    tl = partes_timeline()
+    popup_track(tl)
+    dark_logo()
+    (HERE / "partes.timeline.json").write_text(json.dumps(tl, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"fixture partes -> {HERE.relative_to(ROOT)}")
+
+
 def main() -> None:
+    if sys.argv[1:] == ["partes"]:
+        build_partes()
+        return
     cut_screen()
     for video in VIDEOS:
         (HERE / f"{video}.timeline.json").write_text(
