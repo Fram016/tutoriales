@@ -314,3 +314,14 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
 - **[N7] Redes sin numeración.** En RED no se muestran etiquetas “Paso N”.
 - **[N8] Llamado a la acción con destino.** El cierre de RED y PRO dice dónde ver o hacer la acción (“en el enlace del perfil”, “en nuestro canal de YouTube”).
 - **[N9] Encuadre vertical estable.** En 9:16 la composición es una sola: no alterna entre pantalla llena y franjas.
+
+## Parte 5: Ajustes de la tercera prueba (texto del usuario)
+
+> “esta mucho mejor y si me agrada las mejoras aplicalas, sumale que no haga tanto zoom un poco menos de zoom y cuando sean cosas de formularios quizas pantalla completa sin zoom con recuadro remarcado o que me recomiendas?”
+
+### Reglas derivadas (recomendación aceptada para aplicar)
+
+- **[C1 revisada] Menos zoom.** Detalle: 1,4–1,8× (antes 1,8–2,5×). Contexto (pantalla completa) hasta 1,0 s, igual que antes.
+- **[N10] Plano de formulario.** Cuando la acción ocurre dentro de un formulario (form, diálogo o tarjeta con varios campos), el encuadre muestra el formulario completo, ajustado a su tamaño (en general 1,1–1,5×, nunca por encima de 1,8×), y no se mueve campo por campo. Si el formulario no entra legible, se divide en el menor número de encuadres posible, de arriba hacia abajo.
+- **[N11] Recuadro del campo activo.** El campo activo se marca con un recuadro del color primario de la marca y un leve oscurecimiento del resto del cuadro (spotlight, opacidad ≤ 25 %). El recuadro se desplaza de campo en campo con una animación de 250–400 ms. Ese desplazamiento cuenta como cambio visual para C8.
+- **[N12] Formularios en vertical.** En 9:16 el formulario se encuadra entero a lo ancho; ningún campo ni etiqueta queda cortado en los bordes (V2).
