@@ -1,0 +1,82 @@
+# Brief: proyectos/nexo-crm-contacto-v4/brief.md. Historia "conociste a Sofía en una feria" (N4); CTA "enlace de nuestro perfil" (N8, propuesto).
+title: "Tu primer contacto en Nexo CRM"
+product: "Nexo CRM"
+app_url: http://127.0.0.1:8766/
+viewport: [1920, 1080]
+language: es-EC
+device: desktop                      # L2: "haz clic"
+brand:                               # N5: palette from demo-apps/nexo-crm/index.html; accent = primary
+  dir: brand
+  primary: "#7c3aed"                 # --brand, primary buttons
+  background: "#1f1235"              # sidebar (aside)
+  surface: "#1f1235"                 # caption band (N3)
+  on_surface: "#ffffff"
+  text: "#ffffff"
+  font: "Segoe UI"
+glossary:                            # L3
+  contacto: [cliente, registro]
+music: {prompt: "Calm mood, soft warm pads, gentle piano, slow tempo"}
+
+steps:                               # E2: one action with a visible result per step; titles are not rendered (N2)
+  - id: login                        # TUT5: first video of the series
+    title: "Inicia sesión"
+    narration: "Escribe tu correo y tu contraseña, y haz clic en Ingresar. Se abre el inicio."
+    actions:
+      - type: {into: "#login-email", text: "env:NEXO_CRM_CONTACTO_V4_USER"}
+      - type: {into: "#login-password", text: "env:NEXO_CRM_CONTACTO_V4_PASSWORD"}
+      - click: "#btn-login"
+      - wait: "#nav-contactos"
+  - id: contactos                    # obvious navigation: RED omits it (RED3)
+    title: "Abre Contactos"
+    narration: "Haz clic en Contactos. Está en el menú lateral, y aquí ves tu lista."
+    actions:
+      - click: "#nav-contactos"
+      - wait: "#btn-nuevo-contacto"
+  - id: nuevo
+    title: "Abre el formulario"
+    narration: "Haz clic en Nuevo contacto. Se abre el formulario."
+    actions:
+      - click: "#btn-nuevo-contacto"
+      - wait: "#c-nombre"
+  - id: datos                        # whole form = ONE step: one form shot + spotlight per field (N10, N11)
+    title: "Completa los datos"
+    narration: "Completa nombre, apellido, empresa, correo y teléfono. La etapa queda en Prospecto, porque recién la conoces. En Origen elige Feria, y anótalo en Notas."
+    actions:
+      - type: {into: "#c-nombre", text: "Sofía"}
+      - type: {into: "#c-apellido", text: "Vera"}
+      - type: {into: "#c-empresa", text: "Café Montaña"}          # optional: RED omits it
+      - type: {into: "#c-email", text: "sofia@cafemontana.ec"}
+      - type: {into: "#c-telefono", text: "099 245 7788"}         # optional: RED omits it
+      - select: {in: "#c-etapa", option: "Prospecto"}              # optional (default value): RED omits it
+      - select: {in: "#c-origen", option: "Feria"}                 # N4
+      - type: {into: "#c-notas", text: "Conocida en la feria de Quito"}   # N4, 29 chars (C6)
+  - id: guardar
+    title: "Guarda el contacto"
+    narration: "Haz clic en Guardar contacto. Sale el aviso verde y tu contacto queda primero, resaltado."
+    actions:
+      - click: "#btn-guardar"
+      - wait: "#toast"
+      - result: "#toast"                         # R2/N6
+      - highlight: "#rows tr:first-child"        # R1, R3
+
+videos:
+  - id: tutorial
+    type: TUT
+    format: "16:9"
+    steps: all
+    opening: {narration: "Aprendes a registrar contactos."}          # the card shows `title` (N2: different idea)
+    requirements: {narration: "Necesitas tu correo y contraseña de Nexo CRM.", text: "Requisito: tu cuenta de Nexo CRM"}
+    closing: {narration: "Siguiente: buscar contactos.", text: "Siguiente video: buscar un contacto"}
+    music: {prompt: "Calm mood, soft warm pads, gentle piano, slow tempo"}
+  - id: redes
+    type: RED
+    format: "9:16"
+    steps: [nuevo, datos, guardar]   # no login, no navigation; no "Paso N" chip (N7)
+    omit: ["#c-empresa", "#c-telefono", "#c-etapa"]
+    opening: {narration: "¿Conociste a alguien?", text: "¿Lo conociste en una feria? Regístralo así"}
+    closing: {narration: "Mira nuestro perfil.", text: "Tutorial completo en el enlace de nuestro perfil"}
+    narration:
+      nuevo: "Haz clic en Nuevo contacto. Se abre el formulario."
+      datos: "Completa nombre, apellido y correo. Elige origen Feria y anota en Notas dónde la conociste."
+      guardar: "Haz clic en Guardar contacto. Sale el aviso y queda primero."
+    music: {prompt: "Energetic bright mood, punchy drums, bright synth plucks, fast tempo"}

@@ -11,12 +11,12 @@ Apply the user's third-round request (reglas/reglas-video.md §Parte 5: C1 revis
 
 ## Tasks
 
-- [ ] T1 S1,S3 — recorder form_box, edit keeps R2 window real-time, music retry — worker WB3
-- [ ] T2 S1,S2,S3 — compose: zoom ranges, form framing + spotlight, screen-change cut to result, render benchmark/defaults — worker WA3
-- [ ] T3 S1,S2,S3 — qa/lint: C1 new range, N10-N12 checks, V2 neighbors, R2 band fix — worker WC3
-- [ ] T4 S1,S2,S3 — skills/README/_demo: zoom/form rules, long-command rule, Lyria prompt rules — worker WD3
-- [ ] T5 — Integration: unit tests + smoke PASS — parent
-- [ ] T6 S4 — Fresh agent v4 — worker
+- [x] T1 S1,S3 — recorder form_box, edit keeps R2 window real-time, music retry — worker WB3
+- [x] T2 S1,S2,S3 — compose: zoom ranges, form framing + spotlight, screen-change cut to result, render benchmark/defaults — worker WA3
+- [x] T3 S1,S2,S3 — qa/lint: C1 new range, N10-N12 checks, V2 neighbors, R2 band fix — worker WC3
+- [x] T4 S1,S2,S3 — skills/README/_demo: zoom/form rules, long-command rule, Lyria prompt rules — worker WD3
+- [x] T5 — Integration: 286 tests + smoke PASS 3.2 min — parent — commits 14e4f85, 1aa143e, 7fd5769, 0da5781
+- [ ] T6 S4 — Fresh run v4 done: 17.9 min wall (pipeline 12.3), render 152 s; QA partial (TUT C4+C10 after Guardar, TUT C1 recorder form_box on nav click, RED N12 form wider than 9:16 at base); waiting user review — worker
 
 ## Log
 
