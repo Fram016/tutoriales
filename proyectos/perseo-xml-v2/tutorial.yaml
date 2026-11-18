@@ -91,7 +91,7 @@ steps:
     title: "Abre Consultas"
     part: 2
     context: sri
-    narration: "Haz clic en Facturación Electrónica, Producción y Consultas."
+    narration: "Haz clic en Facturación Electrónica, Producción y Consultas. Se abre la página de consultas de comprobantes."
     actions:
       - click: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
       - wait: "xpath=//a[normalize-space()='Producción']"
@@ -113,7 +113,7 @@ steps:
     title: "Completa la consulta"
     part: 2
     context: sri
-    narration: "Completa la fecha de emisión, el establecimiento y el punto de emisión."
+    narration: "Completa la fecha de emisión, el establecimiento y el punto de emisión. Así filtras tus facturas."
     actions:
       - type: {into: '[id="frmPrincipal:calendarFechaDesde_input"]', text: "13/11/2026", clear: true}
       - press: "Tab"                 # closes the calendar overlay
@@ -132,7 +132,7 @@ steps:
     title: "Descarga los XML emitidos"
     part: 2
     context: extension
-    narration: "Abre Perseo XML. En Comprobantes emitidos, haz clic en XML Desde el RIDE. El resumen muestra los descargados y los que tienen error."
+    narration: "Abre Perseo XML. En Comprobantes emitidos, haz clic en XML Desde el RIDE. Mientras trabaja, el botón dice En proceso. Al terminar, el resumen muestra los descargados y los que tienen error."
     actions:
       - open: popup
       - click: {in: popup, sel: "#boton4"}
@@ -162,7 +162,7 @@ steps:
     title: "Elige el periodo"
     part: 3
     context: sri
-    narration: "En Periodo emisión, elige el año, el mes y el día de tus facturas."
+    narration: "En Periodo emisión, elige el año, el mes y el día de tus facturas recibidas."
     actions:
       - select: {in: '[id="frmPrincipal:ano"]', option: "2026"}
       - select: {in: '[id="frmPrincipal:mes"]', option: "Noviembre"}
@@ -183,7 +183,7 @@ steps:
     part: 3
     context: extension
     hold_ms: 1500
-    narration: "Abre Perseo XML. En Comprobantes recibidos, haz clic en XML Para importar. El resumen muestra los descargados y los que tienen error."
+    narration: "Abre Perseo XML. En Comprobantes recibidos, haz clic en XML Para importar. Mientras trabaja, el botón dice En proceso. Al terminar, el resumen muestra los descargados y los que tienen error."
     actions:
       - open: popup
       - click: {in: popup, sel: "#boton1"}

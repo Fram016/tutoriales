@@ -1555,3 +1555,20 @@ class ParallelRenderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpotAfterClickTest(unittest.TestCase):
+    """N13 "Hay resaltados sobre zonas vacías" (Perseo XML v2 ≈0:26): the menu item was lit before the click that
+    opens the menu. A spotlight never starts before the click that precedes its own event."""
+
+    def test_no_spotlight_before_the_previous_click(self):
+        shot = {"form": True, "arrive": 10.0, "moves": [(10.0, 10.0)],
+                "targets": [{"box": {"x": 0, "y": 0, "w": 40, "h": 40}, "events": [{"type": "click", "t": 11.0, "selector": "#menu"}]},
+                            {"box": {"x": 0, "y": 300, "w": 400, "h": 60}, "events": [{"type": "click", "t": 16.0, "selector": "#item"}]}]}
+        timeline = {"steps": [{"id": "a", "events": shot["targets"][0]["events"] + shot["targets"][1]["events"]}]}
+        camera = [{"t0": 9.0, "t1": 20.0, "kind": "form", "scale": 1.3, "x": 0, "y": 0}]
+        stage = compose.Stage("16:9", 0)
+        spots = compose.plan_spotlights([shot], camera, stage, {"highlight": "#7c3aed", "background": "#000"}, timeline)
+        item = [s for s in spots if s["selector"] == "#item"]
+        self.assertTrue(item)
+        self.assertGreaterEqual(item[0]["t0"], 11.0 + compose.SPOT_AFTER_CLICK - 1e-6)

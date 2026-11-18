@@ -123,6 +123,7 @@ RADIUS = 18
 PAD_X, PAD_Y, CHIP_PAD_Y, MARGIN, BAND_PAD = 32, 14, 10, 24, 40
 # N17: context badge right of the chip (smaller text than the captions, same family and radius).
 BADGE_FONT, BADGE_PAD_X, BADGE_PAD_Y, BADGE_GAP = 32, 20, 8, 12
+SPOT_AFTER_CLICK = 0.4   # N13: a lit target waits for the click that reveals it (menus, dialogs)
 NEUTRAL = "#404040"     # N17: the page (SRI) context is neutral gray, the brand color is kept for the product
 CONTEXT_LABELS = {"sri": "En el SRI", "page": "En el SRI"}    # extension: "En <product>"
 # N16: part separator card, at most 1.5 s; without edit's times it opens the part's first step.
@@ -1682,6 +1683,9 @@ def plan_spotlights(shots: list[dict], camera: list[dict], stage: Stage, pal: di
     """N11: one `spotlight` item per field of every form shot, from when it lands on the field until it
     leaves it (`move`: the 250-400 ms move into it). `group` is the form shot, `box` the field in source px."""
     step_of = {id(e): s["id"] for s in timeline["steps"] for e in s["events"]}
+    # N13: a target may only exist after the click before it ("En el SRI, abre el menú": the menu item is lit
+    # over an empty area while the menu is still closed). Never light a target before the previous click.
+    clicks = sorted(e["t"] for s in timeline["steps"] for e in s["events"] if e["type"] == "click")
     out = []
     for group, shot in enumerate(s for s in shots if s.get("form")):
         arrive = shot["arrive"]
@@ -1690,10 +1694,11 @@ def plan_spotlights(shots: list[dict], camera: list[dict], stage: Stage, pal: di
         ends = [m[0] for m in shot["moves"]] + [leave]
         kept = []
         for k, target in enumerate(shot["targets"]):
-            t0, t1 = max(starts[k], arrive), min(ends[k], leave)
+            ev = target["events"][0]
+            before = [c for c in clicks if c < ev["t"] - 1e-3]
+            t0, t1 = max(starts[k], arrive, (before[-1] + SPOT_AFTER_CLICK) if before else 0.0), min(ends[k], leave)
             if t1 - t0 <= 1e-6:
                 continue
-            ev = target["events"][0]
             item = {"kind": "spotlight", "t0": round(t0, 3), "t1": round(t1, 3), "group": group,
                     "rect": rnd(stage.map(target["box"], frame_at(camera, t0))), "box": dict(target["box"]),
                     "selector": ev.get("selector", ""), "event": ev["type"], "step": step_of.get(id(ev)),
