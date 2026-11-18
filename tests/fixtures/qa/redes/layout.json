@@ -1,0 +1,21 @@
+{
+  "output": [1080, 1920], "viewport": [0, 0, 1080, 1920], "cursor_px": 48, "font_px": 48,
+  "camera": [
+    {"t0": 0.0, "t1": 1.5, "scale": 1.78, "kind": "context"},
+    {"t0": 1.5, "t1": 14.0, "scale": 1.78, "kind": "context"},
+    {"t0": 14.0, "t1": 16.0, "scale": 1.78, "kind": "context"}
+  ],
+  "items": [
+    {"kind": "title", "t0": 0.0, "t1": 1.5, "rect": [90, 700, 900, 300], "text": "¿Lo conociste en una feria?"},
+    {"kind": "chip", "t0": 1.5, "t1": 8.5, "rect": [90, 1180, 200, 70], "text": "Paso 1", "step": "nuevo", "opacity": 1.0},
+    {"kind": "caption", "t0": 1.5, "t1": 8.5, "rect": [60, 1260, 960, 200], "text": "Abre Nuevo contacto",
+     "lines": ["Abre Nuevo contacto"], "step": "nuevo"},
+    {"kind": "active", "t0": 2.5, "t1": 2.9, "rect": [300, 500, 500, 120], "step": "nuevo"},
+    {"kind": "cursor", "t0": 2.5, "t1": 2.9, "rect": [500, 540, 48, 48], "step": "nuevo"},
+    {"kind": "chip", "t0": 8.5, "t1": 14.0, "rect": [90, 1180, 200, 70], "text": "Paso 2", "step": "guardar", "opacity": 1.0},
+    {"kind": "caption", "t0": 8.5, "t1": 14.0, "rect": [60, 1260, 960, 200], "text": "Guarda y aparece en la lista",
+     "lines": ["Guarda y aparece en la lista"], "step": "guardar"},
+    {"kind": "result", "t0": 10.0, "t1": 11.5, "rect": [200, 400, 700, 140], "step": "guardar"},
+    {"kind": "card", "t0": 14.0, "t1": 16.0, "rect": [0, 0, 1080, 1920], "text": "Mira el tutorial completo"}
+  ]
+}

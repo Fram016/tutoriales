@@ -3,8 +3,13 @@
 Usage: python tools/smoke.py
 
 Serves demo-app/ on http://127.0.0.1:8765 (in-process; reuses a server already listening
-there if it serves DemoCRM), runs pipeline _demo --offline --quality draft and then qa.
-Needs ego-lite running for the capture stage. Prints PASS/FAIL and exits 0/1.
+there if it serves DemoCRM), runs pipeline _demo --offline --quality draft (lint first) and
+then qa on every video of proyectos/_demo/tutorial.yaml: out/_demo-<video>.mp4, one QA report
+per video in qa/<video>.json. Needs ego-lite running for the capture stage.
+
+Offline the voice is a silent placeholder, but the music pad keeps the mix measurable, so
+A1 (loudness/true peak), A2 (silences, voice gaps from the timeline) and C4 still apply.
+Prints PASS/FAIL and exits 0/1.
 """
 from __future__ import annotations
 
@@ -70,6 +75,8 @@ def smoke() -> bool:
         pipeline(SLUG, STAGES, offline=True, quality="draft")
         print()
         passed = qa(SLUG)
+        for out in sorted((ROOT / "proyectos" / SLUG / "out").glob(f"{SLUG}-*.mp4")):
+            print(f"[smoke] video: {out.relative_to(ROOT)}")
     finally:
         if server:
             server.shutdown()

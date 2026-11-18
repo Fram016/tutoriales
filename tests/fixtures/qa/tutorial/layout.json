@@ -1,0 +1,27 @@
+{
+  "output": [1920, 1080], "viewport": [0, 0, 1920, 1080], "cursor_px": 48, "font_px": 44,
+  "camera": [
+    {"t0": 0.0, "t1": 1.0, "scale": 1.0, "kind": "context"},
+    {"t0": 1.0, "t1": 1.4, "scale": 1.0, "kind": "context"},
+    {"t0": 1.4, "t1": 1.9, "scale": 1.5, "kind": "move"},
+    {"t0": 1.9, "t1": 5.0, "scale": 2.0, "kind": "detail"},
+    {"t0": 5.0, "t1": 6.0, "scale": 1.0, "kind": "context"}
+  ],
+  "items": [
+    {"kind": "title", "t0": 0.0, "t1": 1.0, "rect": [360, 400, 1200, 160], "text": "Cómo crear un contacto en Nexo CRM"},
+    {"kind": "card", "t0": 0.0, "t1": 1.0, "rect": [0, 0, 1920, 1080], "text": "Aprende a crear un contacto"},
+    {"kind": "chip", "t0": 1.0, "t1": 3.0, "rect": [460, 830, 200, 60], "text": "Paso 1", "step": "nuevo", "opacity": 1.0, "contrast": 7.2},
+    {"kind": "caption", "t0": 1.0, "t1": 3.0, "rect": [460, 900, 1000, 120], "text": "Haz clic en Nuevo contacto para abrir el formulario",
+     "lines": ["Haz clic en Nuevo contacto", "para abrir el formulario"], "step": "nuevo"},
+    {"kind": "active", "t0": 1.5, "t1": 1.9, "rect": [800, 300, 300, 80], "step": "nuevo"},
+    {"kind": "cursor", "t0": 1.5, "t1": 1.9, "rect": [900, 320, 48, 48], "step": "nuevo"},
+    {"kind": "chip", "t0": 3.0, "t1": 5.0, "rect": [460, 830, 200, 60], "text": "Paso 2", "step": "guardar", "opacity": 1.0, "contrast": 7.2},
+    {"kind": "caption", "t0": 3.0, "t1": 5.0, "rect": [460, 900, 1000, 120], "text": "Guarda y el contacto aparece primero en la lista",
+     "lines": ["Guarda y el contacto aparece", "primero en la lista"], "step": "guardar"},
+    {"kind": "active", "t0": 3.3, "t1": 3.6, "rect": [1500, 700, 200, 60], "step": "guardar"},
+    {"kind": "cursor", "t0": 3.3, "t1": 3.7, "rect": [1550, 710, 48, 48], "step": "guardar"},
+    {"kind": "result", "t0": 3.8, "t1": 4.8, "rect": [700, 100, 500, 80], "step": "guardar"},
+    {"kind": "highlight", "t0": 4.0, "t1": 4.9, "rect": [300, 400, 1300, 60], "step": "guardar"},
+    {"kind": "card", "t0": 5.0, "t1": 6.0, "rect": [0, 0, 1920, 1080], "text": "Siguiente: una oportunidad"}
+  ]
+}

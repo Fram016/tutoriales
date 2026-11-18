@@ -1,0 +1,24 @@
+{
+  "video": "tutorial", "type": "TUT", "format": "16:9", "source": [1920, 1080], "output": [1920, 1080],
+  "total": 6.0, "product": "Nexo CRM", "title": "Cómo crear un contacto en Nexo CRM",
+  "opening": {"start": 0, "duration": 1.0, "text": "Aprende a crear un contacto",
+              "narration": "Aquí aprendes a crear un contacto.", "voice_start": 0.1, "voice_duration": 0.8},
+  "requirements": null,
+  "closing": {"start": 5.0, "duration": 1.0, "text": "Siguiente: una oportunidad",
+              "narration": "Siguiente video: registrar una oportunidad.", "voice_start": 5.05, "voice_duration": 0.9},
+  "screen_start": 3.0, "screen_end": 9.0,
+  "steps": [
+    {"id": "nuevo", "number": 1, "chapter": null, "title": "", "narration": "Haz clic en Nuevo contacto para abrir el formulario.",
+     "start": 1.0, "duration": 2.0, "voice_start": 1.1, "voice_duration": 1.8,
+     "events": [{"type": "click", "t": 1.5, "t_end": 1.6, "selector": "#btn-nuevo",
+                 "box": {"x": 800, "y": 300, "w": 300, "h": 80}, "point": {"x": 950, "y": 340}, "chars": 0, "secret": false}]},
+    {"id": "guardar", "number": 2, "chapter": null, "title": "", "narration": "Guarda y el contacto aparece primero en la lista.",
+     "start": 3.0, "duration": 2.0, "voice_start": 3.1, "voice_duration": 1.8,
+     "events": [{"type": "click", "t": 3.3, "t_end": 3.4, "selector": "#btn-guardar",
+                 "box": {"x": 1500, "y": 700, "w": 200, "h": 60}, "point": {"x": 1600, "y": 730}, "chars": 0, "secret": false},
+                {"type": "result", "t": 3.8, "t_end": 4.8, "selector": "#toast",
+                 "box": {"x": 700, "y": 100, "w": 500, "h": 80}, "point": {"x": 950, "y": 140}, "chars": 0, "secret": false},
+                {"type": "highlight", "t": 4.0, "t_end": 4.9, "selector": "tr.new",
+                 "box": {"x": 300, "y": 400, "w": 1300, "h": 60}, "point": {"x": 950, "y": 430}, "chars": 0, "secret": false}]}
+  ]
+}
