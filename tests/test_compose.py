@@ -1572,3 +1572,14 @@ class SpotAfterClickTest(unittest.TestCase):
         item = [s for s in spots if s["selector"] == "#item"]
         self.assertTrue(item)
         self.assertGreaterEqual(item[0]["t0"], 11.0 + compose.SPOT_AFTER_CLICK - 1e-6)
+
+    def test_clicked_target_is_not_lit_after_its_click(self):
+        # Perseo XML v2 ≈0:34: after the click on "Consultas" the page changed but its box stayed on screen.
+        shot = {"form": True, "arrive": 10.0, "moves": [],
+                "targets": [{"box": {"x": 0, "y": 300, "w": 400, "h": 60},
+                             "events": [{"type": "click", "t": 12.0, "selector": "#consultas"}]}]}
+        timeline = {"steps": [{"id": "a", "events": shot["targets"][0]["events"]}]}
+        camera = [{"t0": 9.0, "t1": 20.0, "kind": "form", "scale": 1.3, "x": 0, "y": 0}]
+        spots = compose.plan_spotlights([shot], camera, compose.Stage("16:9", 0),
+                                        {"highlight": "#7c3aed", "background": "#000"}, timeline)
+        self.assertLessEqual(spots[0]["t1"], 12.0 + compose.SPOT_AFTER_CLICK + 1e-6)

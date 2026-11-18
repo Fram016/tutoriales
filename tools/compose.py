@@ -1697,6 +1697,9 @@ def plan_spotlights(shots: list[dict], camera: list[dict], stage: Stage, pal: di
             ev = target["events"][0]
             before = [c for c in clicks if c < ev["t"] - 1e-3]
             t0, t1 = max(starts[k], arrive, (before[-1] + SPOT_AFTER_CLICK) if before else 0.0), min(ends[k], leave)
+            if ev["type"] == "click":
+                # A clicked target may vanish with the click (menu item -> new page): never outlive the click.
+                t1 = min(t1, ev["t"] + SPOT_AFTER_CLICK)
             if t1 - t0 <= 1e-6:
                 continue
             item = {"kind": "spotlight", "t0": round(t0, 3), "t1": round(t1, 3), "group": group,
