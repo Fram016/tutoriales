@@ -1,0 +1,194 @@
+{
+  "video": "tutorial",
+  "type": "TUT",
+  "format": "16:9",
+  "source": [
+    1920,
+    1080
+  ],
+  "output": [
+    1920,
+    1080
+  ],
+  "total": 26.66,
+  "product": "Nexo CRM",
+  "title": "Cómo crear un contacto en Nexo CRM",
+  "opening": {
+    "start": 0,
+    "duration": 3.0,
+    "text": "Aprende a crear un contacto en Nexo CRM",
+    "narration": "En este video aprendes a crear un contacto en Nexo CRM.",
+    "voice_start": 0.2,
+    "voice_duration": 2.6
+  },
+  "requirements": null,
+  "closing": {
+    "start": 24.16,
+    "duration": 2.5,
+    "text": "Siguiente: registra una oportunidad en Nexo CRM",
+    "narration": "En el siguiente video aprendes a registrar una oportunidad.",
+    "voice_start": 24.16,
+    "voice_duration": 2.2
+  },
+  "screen_start": 3.0,
+  "screen_end": 24.16,
+  "steps": [
+    {
+      "id": "nuevo",
+      "number": 3,
+      "chapter": null,
+      "title": "Abre el formulario",
+      "narration": "Haz clic en Nuevo contacto para abrir el formulario.",
+      "start": 3.0,
+      "duration": 4.52,
+      "voice_start": 3.25,
+      "voice_duration": 3.92,
+      "events": [
+        {
+          "type": "click",
+          "t": 4.175,
+          "selector": "#btn-nuevo-contacto",
+          "box": {
+            "x": 1721.1,
+            "y": 96,
+            "w": 166.9,
+            "h": 43
+          },
+          "point": {
+            "x": 1805,
+            "y": 118
+          }
+        },
+        {
+          "type": "focus",
+          "t": 4.987,
+          "selector": "#c-nombre",
+          "box": {
+            "x": 301,
+            "y": 203,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 501,
+            "y": 226
+          }
+        }
+      ]
+    },
+    {
+      "id": "datos",
+      "number": 4,
+      "chapter": null,
+      "title": "Completa los datos",
+      "narration": "Escribe el nombre, el apellido y el correo con el que vas a contactar a la persona.",
+      "start": 7.52,
+      "duration": 7.8,
+      "voice_start": 7.77,
+      "voice_duration": 7.2,
+      "events": [
+        {
+          "type": "type",
+          "t": 7.815,
+          "t_end": 8.72,
+          "chars": 5,
+          "selector": "#c-nombre",
+          "box": {
+            "x": 301,
+            "y": 203,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 501,
+            "y": 226
+          }
+        },
+        {
+          "type": "type",
+          "t": 9.082,
+          "t_end": 10.366,
+          "chars": 7,
+          "selector": "#c-apellido",
+          "box": {
+            "x": 723,
+            "y": 203,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 923,
+            "y": 226
+          }
+        },
+        {
+          "type": "type",
+          "t": 10.772,
+          "t_end": 14.736,
+          "chars": 29,
+          "selector": "#c-email",
+          "box": {
+            "x": 301,
+            "y": 375,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 501,
+            "y": 398
+          }
+        }
+      ]
+    },
+    {
+      "id": "guardar",
+      "number": 5,
+      "chapter": null,
+      "title": "Guarda el contacto",
+      "narration": "Haz clic en Guardar contacto. Sale el aviso verde y el contacto nuevo aparece primero en la lista, resaltado.",
+      "start": 15.32,
+      "duration": 8.84,
+      "voice_start": 15.57,
+      "voice_duration": 8.24,
+      "events": [
+        {
+          "type": "click",
+          "t": 16.223,
+          "selector": "#btn-guardar",
+          "box": {
+            "x": 960.75,
+            "y": 664,
+            "w": 162.25,
+            "h": 45
+          },
+          "point": {
+            "x": 1042,
+            "y": 687
+          }
+        },
+        {
+          "type": "result",
+          "t": 17.251,
+          "selector": "#toast",
+          "box": {
+            "x": 1594,
+            "y": 999,
+            "w": 294,
+            "h": 49
+          }
+        },
+        {
+          "type": "highlight",
+          "t": 18.68,
+          "selector": "tr.new",
+          "box": {
+            "x": 273,
+            "y": 267,
+            "w": 1613,
+            "h": 52
+          }
+        }
+      ]
+    }
+  ]
+}

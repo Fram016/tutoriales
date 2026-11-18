@@ -1,0 +1,194 @@
+{
+  "video": "redes",
+  "type": "RED",
+  "format": "9:16",
+  "source": [
+    1920,
+    1080
+  ],
+  "output": [
+    1080,
+    1920
+  ],
+  "total": 24.66,
+  "product": "Nexo CRM",
+  "title": "Cómo crear un contacto en Nexo CRM",
+  "opening": {
+    "start": 0,
+    "duration": 1.5,
+    "text": "¿Conociste a alguien en una feria?",
+    "narration": "¿Conociste a alguien en una feria?",
+    "voice_start": 0.2,
+    "voice_duration": 1.1
+  },
+  "requirements": null,
+  "closing": {
+    "start": 22.66,
+    "duration": 2.0,
+    "text": "Mira el tutorial completo",
+    "narration": "Mira el tutorial completo.",
+    "voice_start": 22.66,
+    "voice_duration": 1.7
+  },
+  "screen_start": 1.5,
+  "screen_end": 22.66,
+  "steps": [
+    {
+      "id": "nuevo",
+      "number": 3,
+      "chapter": null,
+      "title": "Abre el formulario",
+      "narration": "Abre Nuevo contacto.",
+      "start": 1.5,
+      "duration": 4.52,
+      "voice_start": 1.75,
+      "voice_duration": 3.92,
+      "events": [
+        {
+          "type": "click",
+          "t": 2.675,
+          "selector": "#btn-nuevo-contacto",
+          "box": {
+            "x": 1721.1,
+            "y": 96,
+            "w": 166.9,
+            "h": 43
+          },
+          "point": {
+            "x": 1805,
+            "y": 118
+          }
+        },
+        {
+          "type": "focus",
+          "t": 3.487,
+          "selector": "#c-nombre",
+          "box": {
+            "x": 301,
+            "y": 203,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 501,
+            "y": 226
+          }
+        }
+      ]
+    },
+    {
+      "id": "datos",
+      "number": 4,
+      "chapter": null,
+      "title": "Completa los datos",
+      "narration": "Escribe nombre, apellido y correo.",
+      "start": 6.02,
+      "duration": 7.8,
+      "voice_start": 6.27,
+      "voice_duration": 7.2,
+      "events": [
+        {
+          "type": "type",
+          "t": 6.315,
+          "t_end": 7.22,
+          "chars": 5,
+          "selector": "#c-nombre",
+          "box": {
+            "x": 301,
+            "y": 203,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 501,
+            "y": 226
+          }
+        },
+        {
+          "type": "type",
+          "t": 7.582,
+          "t_end": 8.866,
+          "chars": 7,
+          "selector": "#c-apellido",
+          "box": {
+            "x": 723,
+            "y": 203,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 923,
+            "y": 226
+          }
+        },
+        {
+          "type": "type",
+          "t": 9.272,
+          "t_end": 13.236,
+          "chars": 29,
+          "selector": "#c-email",
+          "box": {
+            "x": 301,
+            "y": 375,
+            "w": 400,
+            "h": 45
+          },
+          "point": {
+            "x": 501,
+            "y": 398
+          }
+        }
+      ]
+    },
+    {
+      "id": "guardar",
+      "number": 5,
+      "chapter": null,
+      "title": "Guarda el contacto",
+      "narration": "Guarda y tu contacto aparece primero en la lista de Nexo CRM.",
+      "start": 13.82,
+      "duration": 8.84,
+      "voice_start": 14.07,
+      "voice_duration": 8.24,
+      "events": [
+        {
+          "type": "click",
+          "t": 14.723,
+          "selector": "#btn-guardar",
+          "box": {
+            "x": 960.75,
+            "y": 664,
+            "w": 162.25,
+            "h": 45
+          },
+          "point": {
+            "x": 1042,
+            "y": 687
+          }
+        },
+        {
+          "type": "result",
+          "t": 15.751,
+          "selector": "#toast",
+          "box": {
+            "x": 1594,
+            "y": 999,
+            "w": 294,
+            "h": 49
+          }
+        },
+        {
+          "type": "highlight",
+          "t": 17.18,
+          "selector": "tr.new",
+          "box": {
+            "x": 273,
+            "y": 267,
+            "w": 1613,
+            "h": 52
+          }
+        }
+      ]
+    }
+  ]
+}

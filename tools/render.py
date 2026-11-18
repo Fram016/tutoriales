@@ -1,27 +1,32 @@
 """Stage: render. Renders the HyperFrames projects from compose.py to the final MP4s.
 
-Usage: python tools/render.py <slug> [--quality draft|looks|delivery] [--variant full|short]
+Usage: python tools/render.py <slug> [--quality draft|looks|delivery] [--video ID]
+       python tools/render.py --project DIR [--out FILE.mp4] [--quality ...] [--snap 1.5,4,9.2]
 
-Writes proyectos/<slug>/out/<slug>-16x9.mp4 (full) and <slug>-9x16.mp4 (short), then
-verifies each with ffprobe: resolution, duration ≈ timeline total (±0.3 s) and an audio track.
+Writes proyectos/<slug>/out/<slug>-<video>.mp4 for every hf-<video>/, then verifies each with
+ffprobe: resolution (16:9 -> 1920x1080, 9:16 -> 1080x1920), duration ≈ timeline total (±0.3 s)
+and an audio track. Renders with --page-motion-blur off (C2: no smeared or doubled frames) and
+PNG frame extraction (crisp UI text).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from common import ROOT, PipelineError, load_tutorial, main_guard, project_dir, read_json, run, which
-from compose import LAYOUTS, hyperframes
+from compose import FORMATS, hyperframes
 
-OUTPUTS = {"full": "16x9", "short": "9x16"}
+# Back-compat for readers keyed by format.
+OUTPUTS = {"16:9": "16x9", "9:16": "9x16"}
 DURATION_TOLERANCE = 0.3
 
 
-def hf_dir(pdir: Path, variant: str) -> Path:
-    path = pdir / f"hf-{variant}"
-    if not (path / "index.html").exists():
-        raise PipelineError(f"No existe {path.name}/index.html. Corré antes compose.py.")
+def hf_dir(pdir: Path, video: str) -> Path:
+    path = pdir / f"hf-{video}"
+    if not (path / "index.html").exists() or not (path / "layout.json").exists():
+        raise PipelineError(f"No existe {path.name}/index.html con layout.json. Corré antes compose.py.")
     return path
 
 
@@ -30,6 +35,11 @@ def probe(path: Path) -> dict:
                "stream=codec_type,codec_name,width,height:format=duration", "-of", "json", str(path)],
               quiet=True).stdout
     return json.loads(out)
+
+
+def expected_size(layout: dict) -> list[int]:
+    fmt = layout.get("format")
+    return list(FORMATS[fmt]["size"]) if fmt in FORMATS else list(layout["output"])
 
 
 def verify(path: Path, size: list[int], total: float) -> dict:
@@ -51,35 +61,41 @@ def verify(path: Path, size: list[int], total: float) -> dict:
             "video": video["codec_name"], "audio": audio["codec_name"]}
 
 
-def render_variant(slug: str, pdir: Path, variant: str, quality: str) -> dict:
-    src = hf_dir(pdir, variant)
-    timeline = read_json(pdir / "edit" / variant / "timeline.json")
-    out = pdir / "out" / f"{slug}-{OUTPUTS[variant]}.mp4"
+def render_project(src: Path, out: Path, quality: str) -> dict:
+    """Renders one hf-* project to `out` and checks it against its layout.json."""
+    layout = read_json(src / "layout.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[render] {variant}: renderizando ({quality})...")
-    hyperframes("render", src, "-o", out, "--quality", quality, "--video-frame-format", "png", "--quiet")
+    print(f"[render] {src.name}: renderizando ({quality})...")
+    hyperframes("render", src, "-o", out, "--quality", quality, "--video-frame-format", "png",
+                "--page-motion-blur", "off", "--quiet")
     if not out.exists():
         raise PipelineError(f"HyperFrames terminó sin escribir {out}")
-    result = verify(out, list(LAYOUTS[variant]["size"]), timeline["total"])
-    print(f"[render] {variant}: {result['width']}x{result['height']}, {result['duration']:.2f} s, "
-          f"{result['video']} + {result['audio']} → {out.relative_to(ROOT)}")
+    result = verify(out, expected_size(layout), layout["total"])
+    print(f"[render] {src.name}: {result['width']}x{result['height']}, {result['duration']:.2f} s, "
+          f"{result['video']} + {result['audio']} -> {out}")
     return result
 
 
-def render(slug: str, quality: str = "looks", variant: str | None = None) -> dict:
+def videos(pdir: Path) -> list[str]:
+    return sorted(p.parent.name[3:] for p in pdir.glob("hf-*/layout.json"))
+
+
+def render(slug: str, quality: str = "looks", video: str | None = None) -> dict:
     load_tutorial(slug)
     pdir = project_dir(slug)
-    names = [variant] if variant else [v for v in OUTPUTS if (pdir / f"hf-{v}").exists()]
+    names = [video] if video else videos(pdir)
     if not names:
-        raise PipelineError("No hay proyectos hf-*/. Corré antes compose.py.")
-    return {v: render_variant(slug, pdir, v, quality) for v in names}
+        raise PipelineError("No hay proyectos hf-*/ con layout.json. Corré antes compose.py.")
+    return {v: render_project(hf_dir(pdir, v), pdir / "out" / f"{slug}-{v}.mp4", quality) for v in names}
 
 
-def snapshots(slug: str, variant: str, times: list[float]) -> list[Path]:
-    """PNG stills of hf-<variant> at the given seconds (for QA). Returns their paths in time order."""
-    src = hf_dir(project_dir(slug), variant)
-    out = src / ".hyperframes" / "artifacts" / "snapshots" / "qa"
-    out.mkdir(parents=True, exist_ok=True)
+def snapshot_project(src: Path, times: list[float]) -> list[Path]:
+    """PNG stills at the given seconds in a new numbered folder (earlier rounds are kept)."""
+    base = src / ".hyperframes" / "artifacts" / "snapshots"
+    base.mkdir(parents=True, exist_ok=True)
+    taken = [int(m.group(1)) for p in base.glob("qa-*") if (m := re.fullmatch(r"qa-(\d+)", p.name))]
+    out = base / f"qa-{max(taken, default=0) + 1:02d}"
+    out.mkdir()
     at = ",".join(f"{t:g}" for t in times)
     hyperframes("snapshot", src, "--at", at, "--no-end", "--keep", "-o", out)
     paths = [out / f"at-{round(t, 3):g}s.png" for t in times]
@@ -89,13 +105,30 @@ def snapshots(slug: str, variant: str, times: list[float]) -> list[Path]:
     return paths
 
 
+def snapshots(slug: str, video: str, times: list[float]) -> list[Path]:
+    """PNG stills of hf-<video> at the given seconds (for QA). Returns their paths in time order."""
+    return snapshot_project(hf_dir(project_dir(slug), video), times)
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("slug")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("slug", nargs="?")
     ap.add_argument("--quality", choices=["draft", "looks", "delivery"], default="looks")
-    ap.add_argument("--variant", choices=list(OUTPUTS))
+    ap.add_argument("--video", help="id del video (por defecto: todos los hf-*/)")
+    ap.add_argument("--project", type=Path, help="render a single hf-* folder (e.g. a compose --fixture)")
+    ap.add_argument("--out", type=Path, help="output mp4 for --project (default: <project>.mp4)")
+    ap.add_argument("--snap", help="with --project: comma-separated seconds to snapshot instead of rendering")
     args = ap.parse_args()
-    render(args.slug, args.quality, args.variant)
+    if args.project:
+        if args.snap:
+            for path in snapshot_project(args.project, [float(t) for t in args.snap.split(",")]):
+                print(path)
+        else:
+            render_project(args.project, args.out or args.project.with_suffix(".mp4"), args.quality)
+    elif args.slug:
+        render(args.slug, args.quality, args.video)
+    else:
+        ap.error("falta el slug (o --project)")
 
 
 if __name__ == "__main__":
