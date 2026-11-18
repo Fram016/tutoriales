@@ -510,7 +510,19 @@ function matchTargets(sel) {
     for (let i = 0; i < snap.snapshotLength; i++) if (snap.snapshotItem(i).nodeType === 1) els.push(snap.snapshotItem(i));
     return { els, byArea: false };
   }
-  return { els: [...document.querySelectorAll(sel)], byArea: false };
+  const plain = [...document.querySelectorAll(sel)];
+  if (plain.length) return { els: plain, byArea: false };
+  // Browser pages (chrome://settings) keep their controls in nested open shadow roots: search them too.
+  const els = [];
+  const walk = (root) => {
+    for (const host of root.querySelectorAll("*")) {
+      if (!host.shadowRoot) continue;
+      els.push(...host.shadowRoot.querySelectorAll(sel));
+      walk(host.shadowRoot);
+    }
+  };
+  walk(document);
+  return { els, byArea: false };
 }
 
 // In the page: {box, style, shown, inView, interactive} of an element.
