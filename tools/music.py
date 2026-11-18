@@ -8,7 +8,9 @@ style follows the video type (reglas-video.md, Tabla de decisión: TUT soft, RED
 PRO marked, NOV soft) unless videos[].music.prompt or the global music.prompt says otherwise;
 videos[].music.none: true leaves the video without music. Reuses an existing track unless
 --force, because every Lyria call is billed. A track shorter than the video is extended
-with crossfaded repeats, so the mix never restarts it audibly.
+with crossfaded repeats, so the mix never restarts it audibly. When Lyria blocks a prompt for
+"recitation" it is retried once with a neutral instrument-only prompt of the video type (no genre or
+artist names); any other error, or a second block, stops the stage.
 """
 from __future__ import annotations
 
@@ -21,12 +23,19 @@ from common import (PipelineError, env, ffmpeg, load_tutorial, main_guard, media
 DEFAULT_PROMPTS = {
     "TUT": ("Soft corporate ambient background for a software tutorial, warm synth pads, "
             "very light percussion, calm and focused, steady low energy"),
-    "RED": ("Rhythmic upbeat electronic pop for a short social media clip, punchy drums, "
-            "bright plucks, energetic and catchy, steady tempo"),
-    "PRO": ("Marked energetic corporate pop for a product promo, strong beat, confident synths, "
+    "RED": ("Rhythmic upbeat instrumental for a short social media clip, punchy drums, "
+            "bright plucks, energetic, steady 120 bpm tempo"),
+    "PRO": ("Marked energetic instrumental for a product promo, strong beat, confident synths, "
             "clear accents every bar, optimistic"),
     "NOV": ("Soft friendly background for a product update announcement, light pads and "
             "gentle plucks, positive and calm"),
+}
+# S1(e): the same moods described only by instruments, tempo and energy, for the recitation retry.
+NEUTRAL_PROMPTS = {
+    "TUT": "Calm instrumental background, warm synth pads, soft piano, very light percussion, slow steady tempo",
+    "RED": "Upbeat instrumental background, punchy drums, bright plucked synths, steady quick tempo, high energy",
+    "PRO": "Confident instrumental background, strong steady beat, bold synths, clear accents every bar",
+    "NOV": "Friendly instrumental background, light pads, gentle plucked notes, positive and calm",
 }
 CROSSFADE = 3.0
 TAIL = 5
@@ -54,6 +63,42 @@ def extend_track(path, need: float) -> float:
         length = media_duration(path)
     print(f"[music] {path.parent.name}: pista extendida a {length:.1f} s (cruce de {CROSSFADE:.0f} s)")
     return length
+
+
+def full_prompt(style: str, seconds: int) -> str:
+    return (f"{style}. Instrumental only, no vocals, no lyrics. "
+            f"Duration about {seconds} seconds, consistent energy, gentle ending.")
+
+
+def neutral_prompt(vtype: str, seconds: int) -> str:
+    return full_prompt(NEUTRAL_PROMPTS[vtype], seconds)
+
+
+def _audio(interaction, prompt: str) -> bytes:
+    if not interaction.output_audio or not interaction.output_audio.data:
+        if "recitation" in repr(interaction).lower():
+            raise PipelineError(f"Lyria bloqueó el prompt por recitation: {prompt[:60]}...")
+        raise PipelineError("Lyria no devolvió audio")
+    return base64.b64decode(interaction.output_audio.data)
+
+
+def generate(client, model: str, prompt: str, vtype: str, seconds: int, vid: str) -> bytes:
+    """One Lyria call; a "recitation" block gets exactly one retry with the neutral prompt (S1e)."""
+    try:
+        return _audio(client.interactions.create(model=model, input=prompt), prompt)
+    except Exception as err:   # noqa: BLE001 - the SDK raises its own error classes
+        if "recitation" not in str(err).lower():
+            raise
+    retry = neutral_prompt(vtype, seconds)
+    print(f"[music] {vid}: Lyria bloqueó el prompt por recitation; reintento una vez con uno neutro: "
+          f"{retry[:70]}...")
+    try:
+        return _audio(client.interactions.create(model=model, input=retry), retry)
+    except Exception as err:   # noqa: BLE001
+        if "recitation" in str(err).lower():
+            raise PipelineError(f"Lyria volvió a bloquear la música de '{vid}' por recitation con el prompt "
+                                "neutro: escribe un music.prompt solo con instrumentos y ánimo") from err
+        raise
 
 
 def music_video(tut: dict, pdir, video: dict, offline: bool, force: bool):
@@ -84,13 +129,9 @@ def music_video(tut: dict, pdir, video: dict, offline: bool, force: bool):
     client = genai.Client(api_key=require_env("GEMINI_API_KEY"), http_options={"api_version": "v1beta"})
     model = cfg.get("model", tut.get("music", {}).get("model", env("MUSIC_MODEL", "lyria-3.5")))
     style = cfg.get("prompt") or tut.get("music", {}).get("prompt") or DEFAULT_PROMPTS[video["type"]]
-    prompt = (f"{style}. Instrumental only, no vocals, no lyrics. "
-              f"Duration about {seconds} seconds, consistent energy, gentle ending.")
+    prompt = full_prompt(style, seconds)
     print(f"[music] {vid} {model}: {prompt[:90]}...")
-    interaction = client.interactions.create(model=model, input=prompt)
-    if not interaction.output_audio or not interaction.output_audio.data:
-        raise PipelineError("Lyria no devolvió audio")
-    out.write_bytes(base64.b64decode(interaction.output_audio.data))
+    out.write_bytes(generate(client, model, prompt, video["type"], seconds, vid))
     (audio_dir / "music.wav").unlink(missing_ok=True)
     extend_track(out, need)
     print(f"[music] {vid}: ok, {out.name}")

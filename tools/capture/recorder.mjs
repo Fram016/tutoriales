@@ -65,7 +65,22 @@ export function frameBox(control, labels, [vw, vh] = [1920, 1080]) {
   return { x: r(x0), y: r(y0), w: r(x1) - r(x0), h: r(y1) - r(y0) };
 }
 
-// Resolve a selector to a viewport box (+ the boxes of its visible labels). Supports raw CSS,
+// N10: form framing. A form container is the closest form, fieldset, dialog or [role=dialog]; without one,
+// the nearest ancestor holding >= 2 fields (a modal or card with several fields). `ancestors` goes from the
+// element's parent up to (not including) body: [{tag, role, fields, box}], box null when not rendered.
+const FORM_TAGS = new Set(["form", "fieldset", "dialog"]);
+
+export function formBox(ancestors, [vw, vh] = [1920, 1080]) {
+  const shown = (ancestors || []).filter((a) => a.box && a.box.w > 0 && a.box.h > 0 && a.tag !== "body" && a.tag !== "html");
+  const hit = shown.find((a) => FORM_TAGS.has(a.tag) || a.role === "dialog") || shown.find((a) => a.fields >= 2);
+  if (!hit) return null;
+  const r = Math.round, b = hit.box;
+  const x0 = r(Math.max(0, b.x)), y0 = r(Math.max(0, b.y));
+  const x1 = r(Math.min(vw, b.x + b.w)), y1 = r(Math.min(vh, b.y + b.h));
+  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+}
+
+// Resolve a selector to a viewport box (+ the boxes of its visible labels and its ancestors for formBox). Supports raw CSS,
 // text=..., xpath=... Scrolls the element into view smoothly first so the video shows the motion.
 async function locate(page, selector) {
   return await page.evaluate(async (sel) => {
@@ -112,8 +127,13 @@ async function locate(page, selector) {
       found = [...p.querySelectorAll("label,legend")].filter((l) => !l.contains(el));
     }
     const labels = found.map(rect).filter(Boolean);
+    const ancestors = [];
+    for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      ancestors.push({ tag: p.tagName.toLowerCase(), role: p.getAttribute("role"), box: rect(p),
+        fields: p.querySelectorAll("input:not([type=hidden]),select,textarea").length });
+    }
     const r = el.getBoundingClientRect();
-    return { box: { x: r.x, y: r.y, w: r.width, h: r.height }, labels };
+    return { box: { x: r.x, y: r.y, w: r.width, h: r.height }, labels, ancestors };
   }, selector);
 }
 
@@ -124,10 +144,15 @@ async function markAt(page, rec, events, type, selector) {
   await page.waitForSelector(selector, { state: "visible", timeout: 20000 });
   const found = await locate(page, selector);
   if (!found) throw new Error(`No encontré el elemento: ${selector}`);
-  events.push({ type, t: rec.now(), selector, box: found.box, point: center(found.box) });
+  const ev = { type, t: rec.now(), selector, box: found.box, point: center(found.box) };
+  if (type === "focus") {
+    const fb = formBox(found.ancestors, await page.evaluate(() => [innerWidth, innerHeight]));
+    if (fb) ev.form_box = fb;
+  }
+  events.push(ev);
 }
 
-// type/select/click also log frame_box = control + its visible label (C9).
+// type/select/click also log frame_box = control + its visible label (C9) and form_box = its form (N10).
 async function pointAt(page, rec, events, type, selector, label) {
   const found = await locate(page, selector);
   if (!found) throw new Error(`No encontré el elemento: ${selector}`);
@@ -138,6 +163,8 @@ async function pointAt(page, rec, events, type, selector, label) {
   if (type !== "hover") {
     const viewport = await page.evaluate(() => [innerWidth, innerHeight]);
     ev.frame_box = frameBox(box, found.labels, viewport);
+    const fb = formBox(found.ancestors, viewport);
+    if (fb) ev.form_box = fb;
   }
   events.push(ev);
   await sleep(250);

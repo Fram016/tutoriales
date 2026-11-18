@@ -9,8 +9,12 @@ Opening, requirements and closing are cards drawn by compose; screen.mp4 only co
 screen_start..screen_end. Each step is a piecewise warp of its capture span:
 - typing runs at 13.5 chars/s, and texts over 30 chars go 3x after the first 15 (C6);
 - blank frames (page loads: no ink but a spinner) are cut (C4); sparse screens are content;
-- result/highlight events hold 1.5 s in TUT (TUT4), and results never less than 0.8 s (R2); a toast
-  right after a screen change holds until compose's camera has landed on it plus R2's 0.8 s (N6);
+- result/highlight events hold 1.5 s in TUT (TUT4), and results never less than 0.8 s (R2); every toast
+  holds at 1.0x until compose's camera has landed on it (after a screen change, or after the pan from the
+  previous target) plus R2's 0.8 s and a margin, in every video type (N6, S1b);
+- a toast that follows a screen change is reached at once: the idle frames of the new screen before it are
+  cut, so screen_at is the toast's time and compose's cut to the toast framing never shows an empty
+  corner (C4, C10);
 - C7: the frame before the first pointer action of every new screen is held until compose has room
   for the establishing shot and the zoom (compose.establish_room);
 - idle spans speed up (never past 3x; RED starts faster, RED3), but the pointer target
@@ -38,7 +42,7 @@ from PIL import Image
 
 from common import (PipelineError, ffmpeg, is_secret_ref, load_tutorial, main_guard, project_dir,
                     read_json, videos, write_json)
-from compose import R2_CLEAN, establish_room
+from compose import HOLD, MOVE, R2_CLEAN, establish_room
 
 LEAD = 0.3         # voice starts this long after the step's first frame
 TAIL = 0.4         # breathing room after the voice ends
@@ -220,6 +224,11 @@ def build_pieces(a: float, b: float, events: list[dict], blanks, pc: dict, speed
             hold = hold_of(ev, pc)
             fixed.append([ev["t"], min(ev["t"] + hold, nxt, b), "hold", hold])
     cuts = [(max(c0, a), min(c1, b)) for c0, c1 in blanks if c1 > a and c0 < b]
+    for ev, nxt in zip(evs, evs[1:]):
+        if "screen_c" in ev and nxt["type"] == "result":
+            s = clamp(max(ev["t"], ev["screen_c"]))
+            if nxt["t"] > s:
+                cuts.append((s, nxt["t"]))
     marks = sorted({e["t"] for e in evs} | {t for span in cuts for t in span})
     pieces: list[dict] = []
 
@@ -270,15 +279,18 @@ def _freeze_before(pieces: list[dict], c: float, d: float) -> None:
 def leave_room(pieces: list[dict], events: list[dict], a: float, b: float, carry: float | None):
     """C7/N6, the contract with compose's camera (compose.establish_room): on every new screen
     - the frame before its first pointer action is held until the establishing shot and the zoom fit;
-    - a toast is held until the camera has surely landed on it, plus R2_CLEAN (sets ev["hold"]).
+    - a toast is held until the camera has surely landed on it, plus R2_CLEAN (sets ev["hold"]): on a new
+      screen by establish_room, else once the previous target's framing (compose.HOLD) and the pan are over.
     `carry`: output seconds the screen shown at `a` has been on before this step, or None when it already
     had its first action. Returns (same for the next step, whether a hold grew: rebuild the pieces)."""
     clamp = lambda t: min(max(t, a), b)  # noqa: E731
     screen = (a, carry) if carry is not None else None   # (capture start, output seconds before it)
     since = (a, carry or 0.0)
+    free = None   # warp offset where compose's camera may leave the previous target of this screen
     grew = False
     for ev in sorted(events, key=lambda e: e["t"]):
         t = clamp(ev["t"])
+        lands = 0.0
         if ev["type"] in POINTER_EVENTS and screen:
             s, before = screen
             deficit = establish_room(ev["type"]) - (before + warp(pieces, t) - warp(pieces, s))
@@ -288,13 +300,20 @@ def leave_room(pieces: list[dict], events: list[dict], a: float, b: float, carry
         if ev["type"] == "result":
             s, before = since
             elapsed = before + warp(pieces, t) - warp(pieces, s)
-            need = max(0.0, establish_room(None) - elapsed) + R2_CLEAN + R2_MARGIN
+            lands = max(0.0, establish_room(None) - elapsed)
+            if free is not None:
+                lands = max(lands, free + MOVE - warp(pieces, t))
+            need = lands + R2_CLEAN + R2_MARGIN
             if need > ev.get("hold", 0.0) + 1e-3:
                 ev["hold"] = need
                 grew = True
+        if ev["type"] in HOLD:
+            end = clamp(ev.get("t_end", ev["t"])) if ev["type"] == "type" else t
+            free = max(free or 0.0, warp(pieces, end) + lands + HOLD[ev["type"]])
         if "screen_c" in ev:
             s = clamp(max(t, ev["screen_c"]))
             screen = since = (s, 0.0)
+            free = None
     return screen, grew
 
 
@@ -514,7 +533,7 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             item = {"type": ev["type"], "t": _r(at), "t_end": _r(end), "selector": ev.get("selector"),
                     "box": ev.get("box"), "point": ev.get("point"), "chars": ev.get("chars", 0),
                     "secret": bool(ev.get("secret"))}
-            item.update({k: ev[k] for k in ("key", "dy", "frame_box") if k in ev})
+            item.update({k: ev[k] for k in ("key", "dy", "frame_box", "form_box") if k in ev})
             if "screen_c" in ev:
                 item["screen_at"] = _r(max(at, t + warp(pieces, min(max(ev["screen_c"], cap["t0"]), cap["t1"]))))
             out_events.append(item)

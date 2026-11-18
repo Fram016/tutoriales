@@ -12,6 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+import compose  # noqa: E402
 import edit  # noqa: E402
 
 TUT, RED = edit.pace("TUT"), edit.pace("RED")
@@ -432,6 +433,67 @@ class EventFieldsTest(unittest.TestCase):
         tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "datos": 1.0, "closing": 1.5})
         self.assertEqual(tl["steps"][0]["events"][0]["frame_box"], fb)
 
+    def test_form_box_reaches_the_timeline(self):
+        tut, video = video_of([("datos", "Completa el nombre.")])
+        form = {"x": 640, "y": 200, "w": 640, "h": 620}
+        actions = {"steps": [{"id": "datos", "t0": 0.0, "t1": 3.0, "events": [
+            {"type": "type", "t": 0.5, "t_end": 2.0, "chars": 10, "selector": "#c-name", "form_box": form,
+             **box(790, 446)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "datos": 1.0, "closing": 1.5})
+        self.assertEqual(tl["steps"][0]["events"][0]["form_box"], form)
+
+
+class ToastWindowTest(unittest.TestCase):
+    """S1(b), R2/N6: the toast plays at 1.0x for >= R2_CLEAN + margin after compose's camera lands on it."""
+
+    def plan(self, vtype):
+        # v3 RED: Guardar, then the toast 1.1 s later and the new row; the toast was clean only 0.60 s.
+        tut, video = video_of([("guardar", "Haz clic en Guardar.")], vtype)
+        actions = {"steps": [{"id": "guardar", "t0": 0.0, "t1": 3.6, "events": [
+            {"type": "click", "t": 0.7, "selector": "#btn-save", **box(1300, 900)},
+            {"type": "result", "t": 1.8, "selector": "#toast", **box(1500, 950)},
+            {"type": "highlight", "t": 2.6, "selector": "tr.new", **box(400, 200)}]}]}
+        return edit.plan_video(tut, video, actions, [], {"opening": 1.5, "guardar": 1.0, "closing": 1.5})
+
+    def test_toast_is_clean_after_the_camera_lands_in_every_type(self):
+        for vtype in ("RED", "TUT", "PRO", "NOV"):
+            tl = self.plan(vtype)
+            step, click, result = tl["steps"][0], event(tl, 0, "click"), event(tl, 0, "result")
+            # compose pans to a toast once the click's framing is done (HOLD) and the pan (MOVE) ends.
+            lands = max(result["t"], click["t"] + compose.HOLD["click"] + compose.MOVE)
+            with self.subTest(vtype=vtype):
+                self.assertGreaterEqual(result["t_end"] - lands, compose.R2_CLEAN + edit.R2_MARGIN - 1e-3)
+                for p in step["warp"]:   # the whole window at 1.0x: real time or a still of the toast
+                    if p["o1"] > result["t"] + 1e-6 and p["o0"] < result["t_end"] - 1e-6:
+                        self.assertIn(p["kind"], ("hold", "freeze"), p)
+                        if p["kind"] == "hold":
+                            self.assertAlmostEqual(p["o1"] - p["o0"], p["c1"] - p["c0"], delta=2e-3)
+
+    def test_toast_after_a_new_screen_is_reached_fast(self):
+        # S1(a), C4: Guardar closes the form; the list waits 2 s for the toast. Those frames are all cut: compose
+        # cuts to the toast framing at screen_at, so the new screen opens with the toast already on it (v3 TUT
+        # 18.42-18.72: 0.3 s of an empty corner).
+        for vtype in ("RED", "TUT"):
+            tut, video = video_of([("guardar", "Haz clic en Guardar.")], vtype)
+            actions = {"steps": [{"id": "guardar", "t0": 0.0, "t1": 4.5, "events": [
+                {"type": "click", "t": 0.9, "selector": "#btn-save", "screen_c": 0.8, **box(1300, 900)},
+                {"type": "result", "t": 3.0, "selector": "#toast", **box(1500, 950)}]}]}
+            tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "guardar": 1.0, "closing": 1.5})
+            step, click, result = tl["steps"][0], event(tl, 0, "click"), event(tl, 0, "result")
+            with self.subTest(vtype=vtype):
+                self.assertAlmostEqual(result["t"], click["screen_at"], delta=1e-3)
+                self.assertGreaterEqual(capture_at(step, click["screen_at"] + 1e-3), 3.0 - 1e-6)   # with the toast
+                self.assertGreaterEqual(result["t_end"] - result["t"], compose.R2_CLEAN + edit.R2_MARGIN - 1e-3)
+
+    def test_typing_after_a_new_screen_is_not_cut(self):
+        # Only the wait for a toast is cut: a new screen followed by a field keeps its frames (C7 room).
+        tut, video = video_of([("nuevo", "Haz clic en Nuevo contacto.")], "RED")
+        actions = {"steps": [{"id": "nuevo", "t0": 0.0, "t1": 4.5, "events": [
+            {"type": "click", "t": 0.9, "selector": "#btn-new", "screen_c": 0.8, **box(1377, 109)},
+            {"type": "type", "t": 3.0, "t_end": 3.5, "chars": 5, "selector": "#c-name", **box(790, 446)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "nuevo": 1.0, "closing": 1.5})
+        self.assertFalse([p for p in tl["steps"][0]["warp"] if p["kind"] == "cut"])
+
 
 class ClosingCardTest(unittest.TestCase):
     def test_closing_is_voice_plus_at_most_0_3_s(self):
@@ -494,6 +556,55 @@ class FrameBoxTest(unittest.TestCase):
         control = {"x": 10, "y": 30, "w": 200, "h": 40}
         label = {"x": 10, "y": -6, "w": 80, "h": 20}
         self.assertEqual(self.frame_box(control, [label]), {"x": 10, "y": 0, "w": 200, "h": 70})
+
+
+@unittest.skipUnless(shutil.which("node"), "node no está instalado")
+class FormBoxTest(unittest.TestCase):
+    """N10: the recorder logs the box of the field's form container (recorder.mjs formBox)."""
+
+    ROW = {"tag": "div", "role": None, "fields": 2, "box": {"x": 660, "y": 300, "w": 600, "h": 70}}
+    FORM = {"tag": "form", "role": None, "fields": 6, "box": {"x": 640.4, "y": 200.2, "w": 640, "h": 620}}
+    MAIN = {"tag": "main", "role": None, "fields": 7, "box": {"x": 0, "y": 60, "w": 1920, "h": 1020}}
+
+    def form_box(self, ancestors, viewport=(1920, 1080)):
+        import json
+        import subprocess
+        script = (f"const {{ formBox }} = await import({json.dumps(RECORDER.as_uri())});"
+                  f"console.log(JSON.stringify(formBox({json.dumps(ancestors)}, {json.dumps(list(viewport))})));")
+        out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True,
+                             check=True)
+        return json.loads(out.stdout)
+
+    def test_form_wins_over_a_closer_row_of_fields(self):
+        self.assertEqual(self.form_box([self.ROW, self.FORM, self.MAIN]), {"x": 640, "y": 200, "w": 640, "h": 620})
+
+    def test_dialog_and_fieldset_are_form_containers(self):
+        dialog = {"tag": "div", "role": "dialog", "fields": 1, "box": {"x": 700, "y": 300, "w": 520, "h": 400}}
+        fieldset = {"tag": "fieldset", "role": None, "fields": 1, "box": {"x": 720, "y": 340, "w": 480, "h": 200}}
+        self.assertEqual(self.form_box([dialog, self.MAIN]), dialog["box"])
+        self.assertEqual(self.form_box([fieldset, dialog]), fieldset["box"])
+
+    def test_without_one_the_nearest_ancestor_with_two_fields(self):
+        card = {"tag": "div", "role": None, "fields": 4, "box": {"x": 500, "y": 150, "w": 900, "h": 700}}
+        single = {"tag": "div", "role": None, "fields": 1, "box": {"x": 520, "y": 300, "w": 400, "h": 80}}
+        self.assertEqual(self.form_box([single, card, self.MAIN]), card["box"])
+
+    def test_unrendered_body_or_lonely_fields_give_none(self):
+        hidden = {"tag": "form", "role": None, "fields": 6, "box": None}             # display: contents
+        body = {"tag": "body", "role": None, "fields": 3, "box": {"x": 0, "y": 0, "w": 1920, "h": 1080}}
+        single = {"tag": "div", "role": None, "fields": 1, "box": {"x": 520, "y": 300, "w": 400, "h": 80}}
+        self.assertIsNone(self.form_box([single, hidden, body]))
+        self.assertIsNone(self.form_box([]))
+
+    def test_clamped_to_the_viewport(self):
+        tall = {"tag": "form", "role": None, "fields": 9, "box": {"x": -10, "y": 120, "w": 900, "h": 1400}}
+        self.assertEqual(self.form_box([tall]), {"x": 0, "y": 120, "w": 890, "h": 960})
+
+    def test_frame_box_is_unchanged(self):
+        # PRESERVE: the C9 helper next to it keeps its result.
+        self.assertEqual(FrameBoxTest.frame_box(self, {"x": 790, "y": 446, "w": 340, "h": 44},
+                                                [{"x": 790, "y": 420, "w": 60, "h": 18}]),
+                         {"x": 790, "y": 420, "w": 340, "h": 70})
 
 
 if __name__ == "__main__":
