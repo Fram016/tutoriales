@@ -685,6 +685,302 @@ class RoundThreeChecksTest(unittest.TestCase):
         self.assertEqual(status(self.checks("redes"), "R2.result_clear"), "FAIL")
 
 
+PANEL = {"x": 1484, "y": 54, "w": 420, "h": 640}   # compose surface_geometry of a 420x640 top-right popup
+
+
+class RoundFourChecksTest(unittest.TestCase):
+    """N13-N27 and surface coordinates in C9/C10 (reglas/reglas-video.md Parte 6)."""
+
+    ROUND_FOUR = ("N14.named", "N16.parts", "N17.context", "N18.download", "N19.sentence", "N20.scale",
+                  "N21.band", "N22.surface", "N24.logo")
+
+    def setUp(self):
+        self.tl = {v: fixture(v, "timeline.json") for v in ("tutorial", "redes")}
+        self.lay = {v: fixture(v, "layout.json") for v in ("tutorial", "redes")}
+        self.tut = copy.deepcopy(TUTORIAL)
+
+    def checks(self, video="tutorial"):
+        return qa.check_layout(self.lay[video], self.tl[video], self.tut)
+
+    def detail(self, checks, check_id):
+        return next(c["detail"] for c in checks if c["id"] == check_id)
+
+    def caption(self, step, text, t0=None, t1=None, sentence=0):
+        cap = item(self.lay["tutorial"], "caption", step)
+        cap.update(text=text, lines=[text], sentence=sentence)
+        if t0 is not None:
+            cap["t0"], cap["t1"] = t0, t1
+        return cap
+
+    def popup(self, x=-1000, y=-55, s=1.25, label="XML Desde el RIDE", layout_box=True):
+        """Paso 2 in the Perseo XML popup: events in popup px (`surface`), as the recorder logs them."""
+        tl, lay = self.tl["tutorial"], self.lay["tutorial"]
+        tl["surfaces"] = {"popup": {"size": [420, 640], "anchor": "top-right", "windows": [[3.2, 4.9]]}}
+        tl["steps"][1]["events"] = [
+            {"type": "open", "t": 3.2, "surface": "popup", "box": None, "point": None},
+            {"type": "click", "t": 3.5, "selector": "#boton4", "surface": "popup", "target_ok": True,
+             "target_text": label, "box": {"x": 208, "y": 285, "w": 197, "h": 54},
+             "point": {"x": 306, "y": 312}, "frame_box": {"x": 208, "y": 285, "w": 197, "h": 54}},
+            {"type": "result", "t": 3.8, "t_end": 4.8, "selector": "#texto_correctos", "surface": "popup",
+             "box": {"x": 2, "y": 414, "w": 197, "h": 58}, "point": {"x": 101, "y": 443}},
+            {"type": "close", "t": 4.9, "surface": "popup", "box": None, "point": None}]
+        lay["camera"][3] = {"t0": 1.9, "t1": 5.0, "scale": s, "kind": "detail", "x": x, "y": y}
+        item(lay, "result")["selector"] = "#texto_correctos"
+        if layout_box:
+            fr = {"x": x, "y": y, "s": s}
+            lay["items"].append({"kind": "surface", "name": "popup", "t0": 3.2, "t1": 4.9, "box": dict(PANEL),
+                                 "rect": qa.map_box(PANEL, fr)})
+        badge = next(i for i in lay["items"] if i["kind"] == "context" and i["step"] == "guardar")
+        badge.update(context="extension", text="En Perseo XML", color="#7c3aed")
+
+    def test_fixtures_pass_round_four_checks(self):
+        for video in ("tutorial", "redes"):
+            checks = self.checks(video)
+            for check_id in self.ROUND_FOUR:
+                self.assertEqual(status(checks, check_id), "PASS", (video, check_id, self.detail(checks, check_id)))
+            self.assertEqual(status(qa.check_timeline(self.tl[video]), "N13.target"), "PASS")
+
+    # C9 / C10 with surfaces (false FAIL of the Perseo XML take)
+    def test_C9_C10_popup_click_in_surface_coordinates_passes(self):
+        self.popup()
+        checks = self.checks()
+        for check_id in ("C9.in_frame", "C10.click", "N22.surface", "N18.download", "N17.context"):
+            self.assertEqual(status(checks, check_id), "PASS", (check_id, self.detail(checks, check_id)))
+        self.assertIn("2 clics", self.detail(checks, "C10.click"))   # nuevo + the popup button
+
+    def test_C9_C10_surface_panel_falls_back_to_compose_geometry(self):
+        self.popup(layout_box=False)
+        checks = self.checks()
+        self.assertEqual(status(checks, "C9.in_frame"), "PASS", self.detail(checks, "C9.in_frame"))
+        self.assertEqual(status(checks, "C10.click"), "PASS", self.detail(checks, "C10.click"))
+
+    def test_C10_click_outside_the_popup_still_fails(self):
+        self.popup()
+        self.tl["tutorial"]["steps"][1]["events"][1]["point"] = {"x": -900, "y": 312}  # left of the panel
+        self.assertEqual(status(self.checks(), "C10.click"), "FAIL")
+
+    # N13
+    def test_N13_hidden_target_fails_and_missing_flag_warns(self):
+        tl = self.tl["tutorial"]
+        tl["steps"][1]["events"][2]["target_ok"] = False   # highlight on an empty box
+        checks = qa.check_timeline(tl)
+        self.assertEqual(status(checks, "N13.target"), "FAIL")
+        self.assertIn("tr.new", self.detail(checks, "N13.target"))
+        tl["steps"][1]["events"][2].pop("target_ok")
+        self.assertEqual(status(qa.check_timeline(tl), "N13.target"), "WARN")
+
+    # N14
+    def test_N14_summary_named_over_the_page_table_fails(self):
+        self.popup()
+        self.caption("guardar", "El resumen muestra los descargados.")   # 3.0-5.0: over the popup summary
+        self.assertEqual(status(self.checks(), "N14.named"), "PASS")
+        self.caption("guardar", "El resumen muestra los descargados.", 3.0, 3.75)   # before the summary
+        checks = self.checks()
+        self.assertEqual(status(checks, "N14.named"), "FAIL")
+        self.assertIn("resumen", self.detail(checks, "N14.named"))
+
+    def test_N14_perseo_named_without_the_popup_fails_but_an_instruction_may_lead(self):
+        self.popup()
+        self.caption("nuevo", "Perseo XML muestra el resumen.", 1.0, 2.0)
+        self.assertEqual(status(self.checks(), "N14.named"), "FAIL")
+        self.caption("nuevo", "Abre Perseo XML.", 1.0, 3.0)   # the popup opens 0.2 s after it
+        self.assertEqual(status(self.checks(), "N14.named"), "PASS", self.detail(self.checks(), "N14.named"))
+
+    def test_N14_settings_never_shown_warns_and_followed_tab_is_checked(self):
+        self.caption("nuevo", "En la configuración, con Cambiar eliges la carpeta.")
+        self.assertEqual(status(self.checks(), "N14.named"), "WARN")
+        events = self.tl["tutorial"]["steps"][0]["events"]
+        events += [{"type": "goto", "t": 4.0, "tab": "follow"}, {"type": "goto", "t": 4.5, "tab": "main"}]
+        self.assertEqual(status(self.checks(), "N14.named"), "FAIL")
+        events[-2]["t"] = 2.0
+        self.assertEqual(status(self.checks(), "N14.named"), "PASS")
+
+    # N16
+    def parts(self):
+        self.tl["tutorial"]["parts"] = [{"n": 1, "title": "Crear", "start": 1.0}, {"n": 2, "title": "Guardar", "start": 3.0}]
+        for step, n in zip(self.tl["tutorial"]["steps"], (1, 2)):
+            step["part"] = n
+            item(self.lay["tutorial"], "chip", step["id"])["text"] = f"Parte {n} · Paso 1"
+            self.lay["tutorial"]["items"].append({"kind": "separator", "t0": float(step["start"]),
+                                                  "t1": float(step["start"]) + 0.5,
+                                                  "text": f"Parte {n}: {'Crear' if n == 1 else 'Guardar'}"})
+
+    def test_N16_parts_need_separators_and_part_chips(self):
+        self.parts()
+        checks = self.checks()
+        self.assertEqual(status(checks, "N16.parts"), "PASS", self.detail(checks, "N16.parts"))
+        self.assertEqual(status(checks, "N2.chip"), "PASS")
+        item(self.lay["tutorial"], "chip", "guardar")["text"] = "Paso 2"
+        checks = self.checks()
+        self.assertEqual(status(checks, "N16.parts"), "FAIL")
+        self.assertIn("Parte 2 · Paso 1", self.detail(checks, "N16.parts"))
+        item(self.lay["tutorial"], "chip", "guardar")["text"] = "Parte 2 · Paso 1"
+        self.lay["tutorial"]["items"] = [i for i in self.lay["tutorial"]["items"]
+                                         if not (i["kind"] == "separator" and "Parte 2" in i["text"])]
+        checks = self.checks()
+        self.assertEqual(status(checks, "N16.parts"), "FAIL")
+        self.assertIn("parte 2 sin separador", self.detail(checks, "N16.parts"))
+        # compose draws the separator as a card of the part (card "part-N"); C4 skips it like any card.
+        self.lay["tutorial"]["items"].append({"kind": "card", "card": "part-2", "t0": 3.0, "t1": 4.2,
+                                              "rect": [0, 0, 1920, 1080], "text": "Parte 2: Guardar"})
+        self.assertEqual(status(self.checks(), "N16.parts"), "PASS")
+        self.assertEqual(qa.c4_ranges(self.tl["tutorial"], self.lay["tutorial"]), [(1.5, 3.0), (4.8, 5.0)])
+
+    # N17
+    def test_N17_context_badge_and_brand_color_only_for_the_extension(self):
+        self.popup()
+        badge = next(i for i in self.lay["tutorial"]["items"] if i["kind"] == "context" and i["step"] == "guardar")
+        badge["context"] = "page"
+        self.assertEqual(status(self.checks(), "N17.context"), "FAIL")
+        badge.update(context="extension", color="#6b7280")
+        self.assertEqual(status(self.checks(), "N17.context"), "FAIL")
+        badge["color"] = "#7c3aed"
+        self.assertEqual(status(self.checks(), "N17.context"), "PASS")
+        sri = next(i for i in self.lay["tutorial"]["items"] if i["kind"] == "context" and i["step"] == "nuevo")
+        sri.update(context="sri", color="#6d28d9")   # brand hue on the SRI side
+        self.tl["tutorial"]["steps"][0]["context"] = "sri"
+        self.assertEqual(status(self.checks(), "N17.context"), "FAIL")
+        self.lay["tutorial"]["items"] = [i for i in self.lay["tutorial"]["items"] if i["kind"] != "context"]
+        self.assertEqual(status(self.checks(), "N17.context"), "WARN")   # the video has a surface
+
+    def test_N17_badge_switches_to_the_extension_while_the_popup_is_open(self):
+        self.popup()
+        self.lay["tutorial"]["items"] = [i for i in self.lay["tutorial"]["items"]
+                                         if not (i["kind"] == "context" and i["step"] == "guardar")]
+        page = {"kind": "badge", "t0": 3.0, "t1": 3.2, "step": "guardar", "context": "page", "color": "#404040"}
+        ext = {"kind": "badge", "t0": 3.2, "t1": 4.9, "step": "guardar", "context": "extension", "color": "#7c3aed"}
+        self.lay["tutorial"]["items"] += [page, ext]
+        checks = self.checks()
+        self.assertEqual(status(checks, "N17.context"), "PASS", self.detail(checks, "N17.context"))
+        ext["context"] = "page"   # still «En el SRI» while the user works in the popup
+        checks = self.checks()
+        self.assertEqual(status(checks, "N17.context"), "FAIL")
+        self.assertIn("«extension»", self.detail(checks, "N17.context"))
+
+    def test_N17_video_without_contexts_needs_no_badge(self):
+        self.lay["tutorial"]["items"] = [i for i in self.lay["tutorial"]["items"] if i["kind"] != "context"]
+        self.assertEqual(status(self.checks(), "N17.context"), "PASS")
+
+    # N18
+    def test_N18_download_without_its_summary_fails(self):
+        self.popup()
+        self.tl["tutorial"]["steps"][1]["events"].pop(2)   # the popup summary (#texto_correctos)
+        checks = self.checks()
+        self.assertEqual(status(checks, "N18.download"), "FAIL")
+        self.assertIn("XML Desde el RIDE", self.detail(checks, "N18.download"))
+
+    def test_N18_folder_button_is_not_a_download_and_missing_text_warns(self):
+        self.popup(label="Carpeta de descargas")
+        self.tl["tutorial"]["steps"][1]["events"].pop(2)
+        self.assertEqual(status(self.checks(), "N18.download"), "PASS")
+        self.tl["tutorial"]["steps"][1]["events"][1].pop("target_text")
+        self.assertEqual(status(self.checks(), "N18.download"), "WARN")
+
+    # N19
+    def test_N19_caption_with_a_sentence_cut_between_blocks_fails(self):
+        self.caption("guardar", "Mientras trabaja, el botón dice En proceso. Al terminar,")
+        checks = self.checks()
+        self.assertEqual(status(checks, "N19.sentence"), "FAIL")
+        self.assertIn("más de una oración", self.detail(checks, "N19.sentence"))
+
+    def test_N19_clause_split_of_one_sentence_passes(self):
+        first = self.caption("guardar", "Guarda y el contacto aparece", 3.0, 4.0)
+        second = dict(first, text="primero en la lista.", lines=["primero en la lista."], t0=4.0, t1=5.0)
+        self.lay["tutorial"]["items"].append(second)
+        self.assertEqual(status(self.checks(), "N19.sentence"), "PASS")
+        second["sentence"] = 1
+        self.assertEqual(status(self.checks(), "N19.sentence"), "FAIL")
+        first.pop("sentence")
+        second["sentence"] = 0
+        self.assertEqual(status(self.checks(), "N19.sentence"), "WARN")
+
+    # N20
+    def test_N20_pillarbox_establishing_shot_fails(self):
+        self.lay["tutorial"]["camera"][1]["scale"] = 0.833   # SRI page with black bars (≈0:07)
+        checks = self.checks()
+        self.assertEqual(status(checks, "N20.scale"), "FAIL")
+        self.assertIn("franjas", self.detail(checks, "N20.scale"))
+
+    def test_N20_legible_floor_except_a_short_establishing_shot(self):
+        self.lay["tutorial"]["legible_scale"] = 1.2
+        self.assertEqual(status(self.checks(), "N20.scale"), "PASS")   # establishing 1.0x for 0.4 s
+        self.lay["tutorial"]["legible_scale"] = 1.7
+        checks = self.checks()
+        self.assertEqual(status(checks, "N20.scale"), "FAIL")      # the 1.6x detail is too small
+        self.assertIn("legible", self.detail(checks, "N20.scale"))
+        self.lay["tutorial"].pop("legible_scale")
+        with mock.patch.object(qa, "FRAMES", {"16:9": {"legible": 1.7}}):   # compose's floor for the format
+            self.assertEqual(status(self.checks(), "N20.scale"), "FAIL")
+        with mock.patch.object(qa, "FRAMES", {}):
+            self.assertEqual(status(self.checks(), "N20.scale"), "WARN")
+
+    def test_N20_zoom_jump_inside_a_step_fails_but_a_cut_passes(self):
+        cam = self.lay["tutorial"]["camera"]
+        cam[3:4] = [{"t0": 1.9, "t1": 3.5, "scale": 1.4, "kind": "detail"},
+                    {"t0": 3.5, "t1": 3.9, "scale": 1.8, "kind": "move", "from": {"x": 0, "y": 0, "s": 1.4}},
+                    {"t0": 3.9, "t1": 5.0, "scale": 1.8, "kind": "detail"}]
+        checks = self.checks()
+        self.assertEqual(status(checks, "N20.scale"), "FAIL")
+        self.assertIn("salto de zoom", self.detail(checks, "N20.scale"))
+        cam[4]["scale"] = cam[5]["scale"] = 1.7
+        self.assertEqual(status(self.checks(), "N20.scale"), "PASS")
+        del cam[4]   # a cut 1.4x -> 1.8x
+        cam[4]["scale"], cam[4]["t0"] = 1.8, 3.5
+        self.assertEqual(status(self.checks(), "N20.scale"), "PASS")
+
+    # N21
+    def test_N21_band_of_180_px_fails(self):
+        item(self.lay["tutorial"], "band")["rect"] = [0, 900, 1920, 180]
+        checks = self.checks()
+        self.assertEqual(status(checks, "N21.band"), "FAIL")
+        self.assertIn("180 px (máximo 135 px", self.detail(checks, "N21.band"))
+        self.lay["tutorial"]["band"] = [0, 945, 1920, 135]   # compose's band wins over the item
+        self.assertEqual(status(self.checks(), "N21.band"), "PASS")
+        item(self.lay["redes"], "band")["rect"] = [0, 1290, 1080, 246]
+        self.assertEqual(status(self.checks("redes"), "N21.band"), "FAIL")
+
+    # N22
+    def test_N22_popup_cut_at_the_right_edge_fails(self):
+        self.popup(x=-400)   # right edge at 1980 px (≈1:25)
+        checks = self.checks()
+        self.assertEqual(status(checks, "N22.surface"), "FAIL")
+        self.assertIn("cortada", self.detail(checks, "N22.surface"))
+
+    def test_N22_popup_pushed_out_by_a_later_camera_move_fails(self):
+        self.popup()
+        cam = self.lay["tutorial"]["camera"]
+        cam[3:4] = [dict(cam[3], t1=4.0),
+                    {"t0": 4.0, "t1": 4.4, "scale": 1.25, "kind": "move", "x": -400, "y": -55,
+                     "from": {"x": -1000, "y": -55, "s": 1.25}},
+                    {"t0": 4.4, "t1": 5.0, "scale": 1.25, "kind": "detail", "x": -400, "y": -55}]
+        self.assertEqual(status(self.checks(), "N22.surface"), "FAIL")
+
+    # N24
+    def test_N24_dark_logo_on_a_dark_card_fails(self):
+        logo = {"kind": "logo", "t0": 0.0, "t1": 1.0, "rect": [860, 200, 200, 80], "card": "opening", "contrast": 1.3}
+        self.lay["tutorial"]["items"].append(logo)
+        self.assertEqual(status(self.checks(), "N24.logo"), "FAIL")
+        logo["contrast"] = 12.0
+        self.assertEqual(status(self.checks(), "N24.logo"), "PASS")
+        logo.pop("contrast")
+        self.assertEqual(status(self.checks(), "N24.logo"), "WARN")
+        self.lay["tutorial"]["items"].remove(logo)
+        self.lay["tutorial"]["logo"] = {"variant": "original", "contrast": 1.4}   # compose's layout `logo`
+        self.assertEqual(status(self.checks(), "N24.logo"), "FAIL")
+        self.lay["tutorial"]["logo"] = {"variant": "light", "contrast": 15.3}
+        self.assertEqual(status(self.checks(), "N24.logo"), "PASS")
+
+    # N27
+    def test_N27_tutorial_without_closing_card_passes(self):
+        tl = self.tl["tutorial"]
+        tl["closing"], tl["total"] = None, 5.0
+        checks = qa.check_timeline(tl)
+        self.assertEqual(status(checks, "A2.closing_card"), "PASS", checks)
+        self.assertEqual(failing(checks), [])
+        self.tl["redes"]["closing"] = None
+        self.assertEqual(status(qa.check_timeline(self.tl["redes"]), "A2.closing_card"), "FAIL")
+
+
 class TimelineChecksTest(unittest.TestCase):
     def setUp(self):
         self.tl = {v: fixture(v, "timeline.json") for v in ("tutorial", "redes")}
@@ -811,6 +1107,51 @@ class MediaTest(unittest.TestCase):
         # The card itself still fails when a range covers it.
         checks = qa.check_empty_frames(card, [(0.003, 3.6)], (1920, 1080))
         self.assertEqual(status(checks, "C4.empty_frames"), "FAIL", checks)
+
+    def test_N26_page_blank_below_the_header_fails_C4(self):
+        # Busy header and caption band, white page in between: ≤ 70 % empty overall, blank under the header.
+        blank = self.make("blank.mp4", "-filter_complex",
+                          "color=c=white:s=1920x1080:d=1:r=30[bg];testsrc=s=1920x200:d=1:r=30[h];"
+                          "testsrc=s=1920x135:d=1:r=30[b];[bg][h]overlay=0:0[t];[t][b]overlay=0:945",
+                          "-pix_fmt", "yuv420p")
+        checks = qa.check_empty_frames(blank, [(0.0, 1.0)], (1920, 1080), [0, 0, 1920, 945])
+        self.assertEqual(status(checks, "C4.empty_frames"), "FAIL", checks)
+        self.assertIn("en blanco bajo la cabecera", next(c["detail"] for c in checks if c["id"] == "C4.empty_frames"))
+        busy = self.make("busy.mp4", "-f", "lavfi", "-i", "testsrc=s=1920x1080:d=2:r=30", "-pix_fmt", "yuv420p")
+        checks = qa.check_empty_frames(busy, [(0.0, 2.0)], (1920, 1080), [0, 0, 1920, 945])
+        self.assertEqual(status(checks, "C4.empty_frames"), "PASS", checks)
+        # The cursor over the page that has not loaded does not make it a page.
+        cursor = self.make("blank-cursor.mp4", "-filter_complex",
+                           "color=c=white:s=1920x1080:d=1:r=30[bg];testsrc=s=1920x200:d=1:r=30[h];"
+                           "testsrc=s=1920x135:d=1:r=30[b];[bg][h]overlay=0:0[t];[t][b]overlay=0:945,"
+                           "drawbox=x=936:y=500:w=48:h=48:color=black:t=fill", "-pix_fmt", "yuv420p")
+        checks = qa.check_empty_frames(cursor, [(0.0, 1.0)], (1920, 1080), [0, 0, 1920, 945])
+        self.assertEqual(status(checks, "C4.empty_frames"), "FAIL", checks)
+        self.assertIn("en blanco bajo la cabecera", next(c["detail"] for c in checks if c["id"] == "C4.empty_frames"))
+
+    def test_N26_sparse_real_page_is_not_blank_below_the_header(self):
+        # _demo smoke (round 4): DemoCRM "Clientes" at 7.0 s, a real page whose header, title and two-row table
+        # take the top third: 92 % of the area below the header is empty, but it has content there.
+        sparse = self.make("sparse.mp4", "-filter_complex",
+                           "color=c=0xf1f5f9:s=1920x1080:d=1:r=30[bg];testsrc=s=1920x128:d=1:r=30[h];"
+                           "testsrc=s=640x192:d=1:r=30[tb];testsrc=s=1920x135:d=1:r=30[b];"
+                           "[bg][h]overlay=0:0[t1];[t1][tb]overlay=640:192[t2];[t2][b]overlay=0:945",
+                           "-pix_fmt", "yuv420p")
+        checks = qa.check_empty_frames(sparse, [(0.0, 1.0)], (1920, 1080), [0, 0, 1920, 945])
+        self.assertEqual(status(checks, "C4.empty_frames"), "PASS", checks)
+
+    def test_N26_only_one_half_changing_abruptly_warns_for_review(self):
+        # Top half keeps the old page while the bottom half jumps to another one («Cr / usu», ≈0:27).
+        mixed = self.make("mixed.mp4", "-filter_complex",
+                          "testsrc=s=1920x540:d=2:r=30[top];color=c=red:s=1920x540:d=1:r=30[a];"
+                          "color=c=blue:s=1920x540:d=1:r=30[b];[a][b]concat=n=2:v=1[bottom];"
+                          "[top][bottom]vstack", "-pix_fmt", "yuv420p")
+        checks = qa.check_empty_frames(mixed, [(0.0, 2.0)], (1920, 1080))
+        self.assertEqual(status(checks, "N26.mixed"), "WARN", checks)
+        whole = self.make("whole.mp4", "-filter_complex",
+                          "color=c=red:s=1920x1080:d=1:r=30[a];color=c=blue:s=1920x1080:d=1:r=30[b];"
+                          "[a][b]concat=n=2:v=1", "-pix_fmt", "yuv420p")
+        self.assertEqual(status(qa.check_empty_frames(whole, [(0.0, 2.0)], (1920, 1080)), "N26.mixed"), "PASS")
 
     def test_C4_ignores_opening_and_closing(self):
         solid = self.make("solid.mp4", "-f", "lavfi", "-i", "color=c=white:s=1920x1080:d=2:r=30",

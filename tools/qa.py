@@ -17,11 +17,19 @@ For each video of tutorial.yaml (or only --video ID) it reads proyectos/<slug>/:
                            the action, N2/N7 chip text and no repeated text, N3 captions in the band,
                            N5 brand palette, N6 result window, N9 stable 9:16 composition,
                            N10 one form shot per form (no reframing field by field), N11 spotlight on
-                           the active field, N12/V2 every field of the form inside the frame
+                           the active field, N12/V2 every field of the form inside the frame;
+                           round four (Parte 6): N13 verified targets (target_ok), N14 what a caption
+                           names is on screen, N16 part separators and «Parte N · Paso M», N17 context
+                           badge per step, N18 summary after each download, N19 one sentence per
+                           caption, N20 no pillarbox / legible scale / no zoom jumps, N21 band ≤ 1/8,
+                           N22 surfaces inside the frame, N24 logo contrast, N27 closing optional (TUT).
+                           Surface events (`surface`) are moved onto their panel (layout `surface` box)
+                           before C9/C10 and the other geometric checks
   out/<slug>-<video>.mp4   (not with --pre) resolution by format, duration vs timeline total (±0.3 s),
                            audio track, A1 integrated loudness −14 ±1 LUFS and true peak < −1 dBTP,
                            A2 silences > 1.0 s, C4 near-empty frames every 0.25 s outside the
-                           opening, closing and result (R2) windows (N6)
+                           opening, closing and result (R2) windows (N6), and N26 frames blank below
+                           the header (C4) or with an abrupt change in only one half (WARN, review)
 Then snapshots (every video in parallel) at the opening, each establishing shot, mid-typing,
 0.2 s before each click, every result/highlight and the closing; their PNG paths are printed for
 the mandatory visual review. Writes qa/<video>.json {mode: pre|full, checks: [{id, rule, status
@@ -42,7 +50,7 @@ import numpy as np
 import yaml
 
 from common import PipelineError, main_guard, project_dir, read_json, run, which, write_json
-from compose import R2_CLEAN
+from compose import FORMATS as FRAMES, R2_CLEAN
 from edit import INSTRUCTION, instruction_share
 from lint import DESTINATION, language_issues, norm, similarity, wrap
 
@@ -81,6 +89,31 @@ TIME_RES = 1e-3   # timeline.json times are rounded to the millisecond
 FILLER = {"haz", "clic", "click", "toca", "pulsa", "presiona", "boton"}
 HEX = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b")
 BRAND_KEYS = ("primary", "accent", "background", "surface", "on_surface", "text")
+# Round four (Parte 6).
+TARGETED = ("click", "highlight")   # N13
+# N14: what a caption names (heuristic) and the evidence that shows it; an instruction may name it just
+# before it appears (N1: the instruction ends before its effect).
+MENTIONS = (("Perseo", re.compile(r"\bPerseo\b"), "surface"),
+            ("configuración", re.compile(r"\bconfiguraci[oó]n\b", re.I), "tab"),
+            ("Cambiar", re.compile(r"\bCambiar\b"), "tab"),
+            ("resumen", re.compile(r"\bresumen\b", re.I), "summary"),
+            ("lista", re.compile(r"\blista\b", re.I), "list"))
+NAMED_LEAD = 1.0
+PART_CHIP = re.compile(r"^Parte (\d+) · Paso (\d+)$")   # N16
+BADGES = ("context", "badge")                            # N17
+DOWNLOAD = re.compile(r"\bxml\b|descarg|download", re.I)  # N18
+NOT_DOWNLOAD = re.compile(r"carpeta|folder|configur", re.I)
+SENTENCE_END = re.compile(r"[.!?…][”»\"')]*$")           # N19
+INNER_SENTENCE = re.compile(r"[.!?…][”»\"')]*\s+\S")
+SCALE_JUMP, LEGIBLE_KEYS = 0.35, ("legible_scale", "min_scale", "scale_floor")   # N20
+BAND_SHARE = 1 / 8                                       # N21
+LOGO_CONTRAST = 3.0                                      # N24
+# N26: blank below the header (share of the viewport top skipped), and one half changing alone.
+HEADER_SHARE, BLANK_LIMIT, MIX_CHANGE, MIX_STILL = 0.15, 0.90, 20.0, 8.0
+# N26: a page that has not loaded has no content below its header: no tile row past HEADER_MAX of the viewport
+# holds ROW_INK content tiles or more (the cursor is ~2). The _demo "Clientes" list (round 4) is 92 % empty
+# below its header but its table reaches 36 % of the viewport; the SRI shell is a header and nothing else.
+HEADER_MAX, ROW_INK = 0.25, 5
 
 
 def check(check_id: str, rule: str, ok, detail: str) -> dict:
@@ -142,8 +175,10 @@ def block_span(block) -> tuple[float, float] | None:
 
 
 def cards(timeline: dict) -> list[tuple[float, float]]:
-    """Opening, requirements and closing: the intro/outro of C1/C4."""
-    return [s for s in (block_span(timeline.get(k)) for k in ("opening", "requirements", "closing")) if s]
+    """Opening, requirements, part separators (N16, when edit timed them) and closing: the cards of C1/C4."""
+    parts = [p for p in timeline.get("parts") or [] if p.get("start") is not None and p.get("duration")]
+    return [s for s in (block_span(b) for b in [timeline.get(k) for k in ("opening", "requirements", "closing")]
+                        + parts) if s]
 
 
 def segments(timeline: dict) -> list[tuple[str, float, float]]:
@@ -197,9 +232,32 @@ def check_timeline(timeline: dict) -> list[dict]:
                          f"ninguna pausa de voz > {MAX_GAP:g} s"))
     closing = timeline.get("closing") or {}
     dur = float(closing.get("duration") or 0)
-    rows.append(check("A2.closing_card", "A2", 0 < dur <= CLOSING_MAX + EPS,
-                      f"tarjeta de cierre {dur:.1f} s (máximo {CLOSING_MAX:g} s)"))
-    return rows + check_destination(timeline)
+    if not closing and vtype == "TUT":
+        rows.append(check("A2.closing_card", "A2/N27", True, "sin tarjeta de cierre: termina en el resultado (N27)"))
+    else:
+        rows.append(check("A2.closing_card", "A2", 0 < dur <= CLOSING_MAX + EPS,
+                          f"tarjeta de cierre {dur:.1f} s (máximo {CLOSING_MAX:g} s)"))
+    return rows + check_destination(timeline) + [check_targets(timeline)]
+
+
+def check_targets(timeline: dict) -> dict:
+    """N13: every clicked or highlighted element was visible in its box when recorded (target_ok)."""
+    bad, unknown, count = [], [], 0
+    for step, ev in timeline_events(timeline):
+        if ev.get("type") not in TARGETED:
+            continue
+        count += 1
+        name = f"{step['id']}: {ev.get('type')} en {ev.get('selector') or '?'} ({fmt_t(float(ev['t']))})"
+        if ev.get("target_ok") is False:
+            bad.append(f"{name} sin elemento visible en su caja (target_ok false)")
+        elif ev.get("target_ok") is None:
+            unknown.append(name)
+    if bad:
+        return problems("N13.target", "N13", bad, "")
+    if unknown:
+        return check("N13.target", "N13", "WARN", f"{len(unknown)} sin target_ok (graba de nuevo): "
+                     + "; ".join(unknown[:5]))
+    return check("N13.target", "N13", True, f"{count} clics y resaltados sobre elementos visibles")
 
 
 def check_destination(timeline: dict) -> list[dict]:
@@ -263,8 +321,49 @@ def last_word(line: str) -> str:
     return words[-1] if words else ""
 
 
+def panel_at(layout: dict, timeline: dict, name: str, t: float) -> dict | None:
+    """Source box of surface `name` at t: the layout `surface` item shown then (compose's geometry), else the
+    nearest window of it, else compose.surface_geometry from the timeline spec."""
+    shown = [it for it in layout.get("items", []) if it.get("kind") == "surface" and it.get("name") == name
+             and it.get("box")]
+    if shown:
+        best = min(shown, key=lambda it: 0.0 if float(it["t0"]) - EPS <= t <= float(it["t1"]) + EPS else
+                   min(abs(t - float(it["t0"])), abs(t - float(it["t1"]))))
+        return best["box"]
+    spec = (timeline.get("surfaces") or {}).get(name)
+    if spec and spec.get("size"):
+        from compose import surface_geometry
+        return surface_geometry(spec)["panel"]
+    return None
+
+
+def place_surfaces(timeline: dict, layout: dict) -> dict:
+    """The timeline with surface events (popup px, `surface` key) moved onto their panel in source px, as
+    compose draws them; C9/C10 and the other geometric checks then read them as page events."""
+    if timeline.get("surfaces_placed") or not any(ev.get("surface") for _, ev in timeline_events(timeline)):
+        return timeline
+    steps = []
+    for step in timeline.get("steps", []):
+        events = []
+        for ev in step.get("events", []):
+            panel = panel_at(layout, timeline, ev["surface"], float(ev["t"])) if ev.get("surface") else None
+            if panel is None:
+                events.append(ev)
+                continue
+            moved = dict(ev)
+            for key in ("box", "frame_box"):
+                if ev.get(key):
+                    moved[key] = {**ev[key], "x": ev[key]["x"] + panel["x"], "y": ev[key]["y"] + panel["y"]}
+            if ev.get("point"):
+                moved["point"] = {"x": ev["point"]["x"] + panel["x"], "y": ev["point"]["y"] + panel["y"]}
+            events.append(moved)
+        steps.append({**step, "events": events})
+    return {**timeline, "steps": steps, "surfaces_placed": True}
+
+
 def check_layout(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
     rows = []
+    timeline = place_surfaces(timeline, layout)
     fmt = timeline.get("format", "16:9")
     out_w, out_h = layout.get("output") or SIZES.get(fmt, (1920, 1080))
     items = layout.get("items", [])
@@ -431,7 +530,7 @@ def check_layout(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
         text = cap.get("text") or " ".join(cap.get("lines") or [])
         lang += [f"{rule} {msg}" for rule, msg in language_issues(text, device, glossary)]
     rows.append(problems("L.captions", "L1-L4", lang, f"{len(captions)} subtítulos sin voseo, modismos ni sinónimos"))
-    return rows + check_round_two(layout, timeline, tutorial)
+    return rows + check_round_two(layout, timeline, tutorial) + check_round_four(layout, timeline, tutorial)
 
 
 # ---------- round two: C7-C10, N1-N9 ----------
@@ -1052,6 +1151,339 @@ def check_round_two(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
     return rows
 
 
+# ---------- round four: N14-N24 (Parte 6) ----------
+
+def caption_text(cap: dict) -> str:
+    return str(cap.get("text") or " ".join(cap.get("lines") or [])).strip()
+
+
+def follow_spans(timeline: dict) -> list[tuple[float, float]]:
+    """Times on a tab adopted with `follow: tab` (recorder goto events tab follow → main)."""
+    spans, start = [], None
+    for _, ev in timeline_events(timeline):
+        if ev.get("tab") == "follow" and start is None:
+            start = float(ev["t"])
+        elif ev.get("tab") == "main" and start is not None:
+            spans.append((start, float(ev["t"])))
+            start = None
+    if start is not None:
+        spans.append((start, float(timeline.get("screen_end") or timeline.get("total") or start)))
+    return spans
+
+
+def windows(items) -> list[tuple[float, float]]:
+    return [(float(it["t0"]), float(it["t1"])) for it in items]
+
+
+def evidence(by_kind: dict, timeline: dict) -> dict[str, list[tuple[float, float]] | None]:
+    """N14: when each kind of named thing is on screen; None when the video gives no way to know."""
+    surfaces = by_kind.get("surface", [])
+    tabs = follow_spans(timeline)
+    marked = [(float(ev["t"]), max(float(ev.get("t_end") or 0), float(ev["t"]) + MIN_RESULT))
+              for _, ev in timeline_events(timeline) if ev.get("type") in ("highlight", "result")
+              and re.search(r"\bcambiar\b", str(ev.get("target_text") or ""), re.I)]
+    results = by_kind.get("result", [])
+    # The summary of an extension is its result inside the surface, not a result of the page (the table).
+    in_surface = {(step["id"], ev.get("selector")) for step, ev in timeline_events(timeline)
+                  if ev.get("type") == "result" and ev.get("surface")}
+    summaries = [r for r in results if (r.get("step"), r.get("selector")) in in_surface] if in_surface else results
+    shown = results + by_kind.get("highlight", [])
+    return {"surface": windows(surfaces) if surfaces or timeline.get("surfaces") else None,
+            "tab": tabs + marked if tabs or marked else None,
+            "summary": windows(summaries) if results else None,
+            "list": windows(shown) if shown else None}
+
+
+def check_named(captions, by_kind, timeline) -> dict:
+    """N14: while a caption names Perseo, the settings, Cambiar, the summary or the list, it is on screen (an
+    instruction may name it up to NAMED_LEAD s before it appears)."""
+    proof = evidence(by_kind, timeline)
+    found, unknown, named = [], [], 0
+    for cap in captions:
+        text = caption_text(cap)
+        t0, t1 = float(cap["t0"]), float(cap["t1"])
+        lead = NAMED_LEAD if INSTRUCTION.search(text) else 0.0
+        for word, pattern, kind in MENTIONS:
+            if not pattern.search(text):
+                continue
+            named += 1
+            spans = proof[kind]
+            if spans is None:
+                unknown.append(f"«{text}» nombra {word}")
+            elif not any(overlap(t0, t1 + lead, a, b) > EPS for a, b in spans):
+                found.append(f"«{text}» ({fmt_t(t0)}–{fmt_t(t1)}) nombra {word}, que no está en pantalla")
+    if found:
+        return problems("N14.named", "N14", found, "")
+    if unknown:
+        return check("N14.named", "N14", "WARN", "; ".join(unknown[:5]) + ": no puedo saber si se ve, revisa las capturas")
+    return check("N14.named", "N14", True, f"{named} menciones con lo nombrado en pantalla")
+
+
+def check_parts(chips, by_kind, timeline) -> dict:
+    """N16: with parts, a separator «Parte N» before each part and chips «Parte N · Paso M»."""
+    parts = timeline.get("parts") or []
+    if not parts:
+        return check("N16.parts", "N16", True, "sin partes")
+    steps = timeline.get("steps", [])
+    separators = separator_items(by_kind)
+    found = []
+    for part in parts:
+        n = part.get("n")
+        own = [s for s in steps if s.get("part") == n]
+        start = float(own[0]["start"]) if own else float(part.get("start") or 0)
+        sep = [it for it in separators if re.search(rf"\bParte {n}\b", str(it.get("text") or ""))]
+        if not sep:
+            found.append(f"parte {n} sin separador «Parte {n}: {part.get('title', '')}»")
+        elif min(float(it["t0"]) for it in sep) > start + EPS:
+            found.append(f"el separador de la parte {n} llega después de su primer paso ({fmt_t(start)})")
+        for m, step in enumerate(own, 1):
+            chip = next((c for c in chips if c.get("step") == step["id"]), None)
+            got = PART_CHIP.match(str(chip.get("text") or "").strip()) if chip else None
+            if chip and not (got and int(got.group(1)) == n and int(got.group(2)) in (m, step.get("number"))):
+                found.append(f"{step['id']}: etiqueta «{chip.get('text', '')}» (tiene que ser «Parte {n} · Paso {m}»)")
+    return problems("N16.parts", "N16", found, f"{len(parts)} partes con separador y etiqueta «Parte N · Paso M»")
+
+
+def separator_items(by_kind: dict) -> list[dict]:
+    """N16 separator cards: `separator` items or compose's `card` items of a part (card "part-N")."""
+    return by_kind.get("separator", []) + [it for it in by_kind.get("card", [])
+                                           if str(it.get("card") or "").startswith("part-")]
+
+
+def expected_contexts(timeline: dict, step: dict) -> list[tuple[float, float, str]]:
+    """N17: (t0, t1, context) of a step: its declared context, else extension while a surface is open and the
+    page the rest of the time."""
+    s0, s1 = float(step["start"]), float(step["start"]) + float(step["duration"])
+    if step.get("context"):
+        return [(s0, s1, str(step["context"]))]
+    opened = [(max(float(a), s0), min(float(b), s1)) for spec in (timeline.get("surfaces") or {}).values()
+              for a, b in spec.get("windows") or [] if float(a) < s1 and float(b) > s0]
+    return sorted([(a, b, "page") for a, b in subtract([(s0, s1)], opened)] +
+                  [(a, b, "extension") for a, b in opened if b > a])
+
+
+def same_hue(a, b) -> bool:
+    if neutral(a) or neutral(b):
+        return False
+    diff = abs(colorsys.rgb_to_hls(*a)[0] - colorsys.rgb_to_hls(*b)[0]) * 360 % 360
+    return min(diff, 360 - diff) <= HUE_TOL
+
+
+def check_context(by_kind, timeline, tutorial) -> dict:
+    """N17: when the video has contexts (surfaces or declared ones), a badge says where the user works over
+    every step; the brand color only for the extension, a neutral one for the page (SRI)."""
+    badges = [it for k in BADGES for it in by_kind.get(k, [])]
+    steps = timeline.get("steps", [])
+    if not badges:
+        if timeline.get("surfaces") or any(s.get("context") for s in steps):
+            return check("N17.context", "N17", "WARN", "layout.json sin indicador de contexto: revisa las capturas")
+        return check("N17.context", "N17", True, "sin contextos (ni superficies ni context en los pasos)")
+    primary = rgb((tutorial.get("brand") or {}).get("primary") or "")
+    found, unknown = [], []
+    same = lambda want, got: got == want or (want in ("page", "sri") and got in ("page", "sri"))  # noqa: E731
+    for step in steps:
+        own = [b for b in badges if b.get("step") == step["id"]]
+        if not own:
+            found.append(f"{step['id']}: sin indicador de contexto")
+            continue
+        for a, b, want in expected_contexts(timeline, step):
+            if b - a < MIN_CAPTION / 4:
+                continue
+            mid = (a + b) / 2
+            if not any(same(want, str(x.get("context") or "")) and float(x["t0"]) - EPS <= mid <= float(x["t1"]) + EPS
+                       for x in own):
+                found.append(f"{step['id']}: en {fmt_t(mid)} se trabaja en «{want}» y el indicador no lo dice")
+        for badge in own:
+            got = str(badge.get("context") or "")
+            color = rgb(str(badge.get("color") or badge.get("background") or ""))
+            if color is None or primary is None:
+                unknown.append(f"{step['id']}: sin color" if color is None else "tutorial.yaml sin brand.primary")
+            elif got == "extension" and not same_hue(color, primary):
+                found.append(f"{step['id']}: el indicador de la extensión no usa el color de la marca")
+            elif got != "extension" and same_hue(color, primary):
+                found.append(f"{step['id']}: el indicador «{got}» usa el color de la marca (solo para la extensión)")
+    if found:
+        return problems("N17.context", "N17", found, "")
+    if unknown:
+        return check("N17.context", "N17", "WARN", "; ".join(list(dict.fromkeys(unknown))[:5]))
+    return check("N17.context", "N17", True, f"{len(steps)} pasos con su indicador de contexto")
+
+
+def check_downloads(by_kind, timeline) -> dict:
+    """N18: after each download (a click on a download button of a surface) its summary is shown."""
+    found, unknown, count = [], [], 0
+    for step in timeline.get("steps", []):
+        events = sorted(step.get("events", []), key=lambda e: float(e["t"]))
+        for ev in events:
+            if ev.get("type") != "click" or not ev.get("surface"):
+                continue
+            label = str(ev.get("target_text") or "")
+            if not label:
+                unknown.append(f"{step['id']}: {ev.get('selector', '')} sin target_text")
+                continue
+            if not DOWNLOAD.search(label) or NOT_DOWNLOAD.search(label):
+                continue
+            count += 1
+            t = float(ev["t"])
+            shown = [r for r in by_kind.get("result", []) if r.get("step", step["id"]) == step["id"]
+                     and float(r["t0"]) >= t - EPS]
+            summary = [e for e in events if e.get("type") == "result" and e.get("surface") == ev["surface"]
+                       and float(e["t"]) > t]
+            if not summary or not shown:
+                found.append(f"{step['id']}: la descarga «{label}» ({fmt_t(t)}) no muestra el resumen de la extensión")
+    if found:
+        return problems("N18.download", "N18", found, "")
+    if unknown:
+        return check("N18.download", "N18", "WARN", "; ".join(unknown[:5]) + ": no puedo saber si descarga")
+    return check("N18.download", "N18", True, f"{count} descargas con su resumen" if count else "sin descargas")
+
+
+def check_sentences(captions) -> dict:
+    """N19: a caption block = one sentence; a long one may be split by clauses only when the blocks share its
+    `sentence` index, and never across steps."""
+    found, unknown = [], []
+    ordered = sorted(captions, key=lambda c: float(c["t0"]))
+    for i, cap in enumerate(ordered):
+        text = caption_text(cap)
+        if INNER_SENTENCE.search(text):
+            found.append(f"«{text}» tiene más de una oración")
+            continue
+        if SENTENCE_END.search(text):
+            continue
+        nxt = ordered[i + 1] if i + 1 < len(ordered) else None
+        if cap.get("sentence") is None:
+            unknown.append(f"«{text}»")
+        elif not (nxt and nxt.get("step") == cap.get("step") and nxt.get("sentence") == cap["sentence"]):
+            found.append(f"«{text}» corta la oración")
+    if found:
+        return problems("N19.sentence", "N19", found, "")
+    if unknown:
+        return check("N19.sentence", "N19", "WARN", "sin punto final ni índice de oración (sentence): "
+                     + "; ".join(unknown[:5]))
+    return check("N19.sentence", "N19", True, f"{len(captions)} subtítulos de una oración")
+
+
+def check_scale(camera, layout, timeline, vp, excluded) -> dict:
+    """N20: no pillarbox (the source always covers the viewport width), legible scale (the establishing shot
+    may go below it ≤ 1.0 s) and no zoom jump > 0.35 inside a step without a cut."""
+    src_w = float((timeline.get("source") or [1920, 1080])[0])
+    cover = vp[2] / src_w
+    floor = legible_floor(layout, timeline.get("format", "16:9"))
+    found = []
+    for seg in camera:
+        t0, t1 = float(seg["t0"]), float(seg["t1"])
+        shown = subtract([(t0, t1)], excluded)
+        if not shown:
+            continue
+        scales = [float(seg["scale"])] + ([float(seg["from"]["s"])] if seg.get("from") else [])
+        when = f"{fmt_t(t0)}–{fmt_t(t1)}"
+        if min(scales) < cover - 1e-6:
+            found.append(f"{when} a {min(scales):g}× deja franjas negras (mínimo {cover:g}×)")
+            continue
+        if floor is None or seg.get("kind") == "move" or min(scales) >= floor - 1e-6:
+            continue
+        span = sum(b - a for a, b in shown)
+        if not establishing(seg, base_scale(layout, timeline.get("format", "16:9"))) or span > ESTABLISH_MAX + EPS:
+            found.append(f"{when} a {min(scales):g}×, por debajo de la escala legible {floor:g}×")
+    for step in timeline.get("steps", []):
+        s0, s1 = float(step["start"]), float(step["start"]) + float(step["duration"])
+        for k, seg in enumerate(camera):
+            if not (seg.get("kind") == "move" or seg.get("push")) or float(seg["t0"]) < s0 - EPS or \
+                    float(seg["t1"]) > s1 + EPS or in_cards(float(seg["t0"]), excluded):
+                continue
+            prev = camera[k - 1] if k else None
+            if seg.get("kind") == "move" and prev and establishing(prev, base_scale(layout, timeline.get("format", "16:9"))):
+                continue   # leaving the establishing shot (C7)
+            start = float(seg["from"]["s"]) if seg.get("from") else float(prev["scale"]) if prev else None
+            if start is not None and abs(float(seg["scale"]) - start) > SCALE_JUMP + 1e-6:
+                found.append(f"{step['id']}: salto de zoom {start:g}× → {float(seg['scale']):g}× en "
+                             f"{fmt_t(float(seg['t0']))} (máximo {SCALE_JUMP:g} sin corte)")
+    if found:
+        return problems("N20.scale", "N20", found, "")
+    if floor is None:
+        return check("N20.scale", "N20", "WARN", f"sin franjas (≥ {cover:g}×) y sin saltos; layout.json sin "
+                     "legible_scale: revisa que la letra de la interfaz se lea")
+    return check("N20.scale", "N20", True, f"sin franjas (≥ {cover:g}×), legible (≥ {floor:g}×), sin saltos de zoom")
+
+
+def legible_floor(layout: dict, fmt: str) -> float | None:
+    """N20: the legible scale layout.json records, else compose's floor for the format (never below its base
+    scale); None when neither says it."""
+    floor = next((float(layout[k]) for k in LEGIBLE_KEYS if layout.get(k) is not None), None)
+    spec = FRAMES.get(fmt) or {}
+    if floor is None and "legible" in spec:
+        floor = max(float(spec["legible"] or 0), base_scale(layout, fmt))
+    return floor
+
+
+def check_band_height(layout, by_kind, out_h) -> dict:
+    """N21: the caption band takes at most 1/8 of the height (135 px at 1080)."""
+    rect = layout.get("band") or next((b["rect"] for b in by_kind.get("band", [])), None)
+    limit = out_h * BAND_SHARE
+    if not rect:
+        return check("N21.band", "N21", "WARN", "layout.json sin banda: no puedo medirla")
+    return check("N21.band", "N21", float(rect[3]) <= limit + 0.5,
+                 f"banda de {float(rect[3]):g} px (máximo {limit:g} px, 1/8 del alto)")
+
+
+def check_surfaces_inside(by_kind, camera, vp, excluded) -> dict:
+    """N22: an open surface panel is whole inside the viewport the whole time it is shown."""
+    surfaces = by_kind.get("surface", [])
+    found = []
+    for it in surfaces:
+        t0, t1 = float(it["t0"]), float(it["t1"])
+        cuts = sorted({t0, t1 - TIME_RES} | {float(s[k]) for s in camera for k in ("t0", "t1")
+                                            if t0 < float(s[k]) < t1})
+        moments = sorted(set(cuts) | {(a + b) / 2 for a, b in zip(cuts, cuts[1:])})
+        for t in moments:
+            if in_cards(t, excluded):
+                continue
+            fr = frame_at(camera, t)
+            rect = map_box(it["box"], fr) if fr and it.get("box") else it.get("rect")
+            if rect and not inside(rect, vp):
+                found.append(f"{it.get('name', 'superficie')} en {fmt_t(t)}: {fmt_rect(rect)} cortada por el "
+                             f"borde del encuadre {fmt_rect(vp)}")
+                break
+    return problems("N22.surface", "N22", found,
+                    f"{len(surfaces)} ventanas de la extensión completas" if surfaces else "sin superficies")
+
+
+def check_logo(by_kind, layout) -> dict:
+    """N24: the logo on the cards is legible (contrast ≥ 3:1 against its card): `logo` items or compose's
+    layout `logo` {variant, contrast}."""
+    logos = by_kind.get("logo", []) + ([{"t0": 0.0, **layout["logo"]}] if isinstance(layout.get("logo"), dict) else [])
+    if not logos:
+        return check("N24.logo", "N24", True, "sin logo")
+    low = [f"logo en {fmt_t(float(it['t0']))} con contraste {float(it['contrast']):.1f}:1"
+           for it in logos if it.get("contrast") is not None and float(it["contrast"]) < LOGO_CONTRAST]
+    if low:
+        return problems("N24.logo", "N24", low, "")
+    if any(it.get("contrast") is None for it in logos):
+        return check("N24.logo", "N24", "WARN", "compose no registró el contraste del logo: revisa las capturas")
+    return check("N24.logo", "N24", True, f"logo con contraste ≥ {LOGO_CONTRAST:g}:1")
+
+
+def check_round_four(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
+    fmt = timeline.get("format", "16:9")
+    out_w, out_h = layout.get("output") or SIZES.get(fmt, (1920, 1080))
+    vp = list(layout.get("viewport") or [0, 0, out_w, out_h])
+    by_kind = {}
+    for it in layout.get("items", []):
+        by_kind.setdefault(it.get("kind"), []).append(it)
+    camera = sorted(layout.get("camera") or [], key=lambda s: float(s["t0"]))
+    excluded = cards(timeline)
+    captions = by_kind.get("caption", [])
+    return [check_named(captions, by_kind, timeline),
+            check_parts(by_kind.get("chip", []), by_kind, timeline),
+            check_context(by_kind, timeline, tutorial),
+            check_downloads(by_kind, timeline),
+            check_sentences(captions),
+            check_scale(camera, layout, timeline, vp, excluded),
+            check_band_height(layout, by_kind, out_h),
+            check_surfaces_inside(by_kind, camera, vp, excluded),
+            check_logo(by_kind, layout)]
+
+
 def c4_ranges(timeline: dict, layout: dict | None) -> list[tuple[float, float]]:
     """Where C4 applies: outside the cards and the R2 result windows themselves (N6: R2 wins over C4).
     The zoom in/out around a result (`exempt`) is checked: a near-empty frame after a screen change and
@@ -1059,6 +1491,8 @@ def c4_ranges(timeline: dict, layout: dict | None) -> list[tuple[float, float]]:
     total = float(timeline.get("total") or 0)
     if layout:
         windows = [(float(r["t0"]), float(r["t1"])) for r in layout.get("items", []) if r.get("kind") == "result"]
+        windows += [(float(r["t0"]), float(r["t1"])) for r in layout.get("items", [])
+                    if r.get("kind") == "separator" or str(r.get("card") or "").startswith("part-")]   # N16 cards
     else:
         windows = [(float(ev["t"]), max(float(ev.get("t_end") or 0), float(ev["t"]) + MIN_RESULT))
                    for _, ev in result_events(timeline)]
@@ -1110,23 +1544,51 @@ def check_silence(path: Path) -> list[dict]:
     return [problems("A2.silence", "A2", [f"silencio {f}" for f in found], f"ningún silencio > {MAX_GAP:g} s")]
 
 
-def empty_ratio(frame: np.ndarray) -> float:
-    """Share of TILE×TILE tiles that are uniform AND the frame's background colour."""
+def empty_tiles(frame: np.ndarray) -> np.ndarray:
+    """Rows x columns of TILE×TILE tiles: True where the tile is uniform AND the frame's background colour."""
     h, w = frame.shape[0] // TILE, frame.shape[1] // TILE
     tiles = frame[:h * TILE, :w * TILE].reshape(h, TILE, w, TILE, 3).transpose(0, 2, 1, 3, 4)
     tiles = tiles.reshape(h, w, TILE * TILE, 3)
     flat = tiles.std(axis=2).max(axis=-1) < TILE_STD
     if not flat.any():
-        return 0.0
+        return flat
     mean = tiles.mean(axis=2)
     keys, counts = np.unique(np.round(mean[flat] / 8), axis=0, return_counts=True)
     background = keys[counts.argmax()] * 8
-    return float((flat & (np.abs(mean - background).max(axis=-1) < BG_DIST)).mean())
+    return flat & (np.abs(mean - background).max(axis=-1) < BG_DIST)
 
 
-def check_empty_frames(path: Path, ranges, size) -> list[dict]:
+def empty_ratio(frame: np.ndarray) -> float:
+    """Share of TILE×TILE tiles that are uniform AND the frame's background colour."""
+    return float(empty_tiles(frame).mean())
+
+
+def blank_below_header(frame: np.ndarray, vp) -> float:
+    """N26: empty share of the viewport below its header strip when nothing but the header has content (a page
+    that has not loaded); 0.0 for a page with content below HEADER_MAX, however sparse."""
+    x, y, w, h = vp
+    region = frame[y + int(h * HEADER_SHARE):y + h, x:x + w]
+    if region.shape[0] < TILE or region.shape[1] < TILE:
+        return 0.0
+    empty = empty_tiles(region)
+    below = max(0, int(h * HEADER_MAX) - int(h * HEADER_SHARE)) // TILE
+    if ((~empty[below:]).sum(axis=1) >= ROW_INK).any():
+        return 0.0
+    return float(empty.mean())
+
+
+def half_changes(prev: np.ndarray, frame: np.ndarray, vp) -> tuple[float, float]:
+    """N26: mean change of the top and bottom halves of the viewport between two samples."""
+    x, y, w, h = vp
+    a, b = prev[y:y + h, x:x + w], frame[y:y + h, x:x + w]
+    mid = h // 2
+    return float(np.abs(a[:mid] - b[:mid]).mean()), float(np.abs(a[mid:] - b[mid:]).mean())
+
+
+def check_empty_frames(path: Path, ranges, size, viewport=None) -> list[dict]:
     w, h = (int(size[0]) // SAMPLE_DIV, int(size[1]) // SAMPLE_DIV)
-    bad, sampled = [], 0
+    vp = [int(round(v / SAMPLE_DIV)) for v in (viewport or [0, 0, size[0], size[1]])]
+    bad, mixed, sampled = [], [], 0
     for a, b in ranges:
         if b - a <= 0:
             continue
@@ -1136,17 +1598,34 @@ def check_empty_frames(path: Path, ranges, size) -> list[dict]:
         if res.returncode != 0:
             raise PipelineError(f"ffmpeg no pudo leer {Path(path).name}: {res.stderr.decode(errors='replace')[-300:]}")
         frames = np.frombuffer(res.stdout, np.uint8)[: (len(res.stdout) // (w * h * 3)) * w * h * 3]
+        prev = None
         for i, frame in enumerate(frames.reshape(-1, h, w, 3).astype(np.float32)):
             # The fps filter rounds to the nearest frame: a sample in the last half interval may already show
             # what follows the range (the closing card), so none is taken there.
             if a + i / SAMPLE_FPS >= b - 1 / (2 * SAMPLE_FPS):
                 break
             sampled += 1
+            at = fmt_t(a + i / SAMPLE_FPS)
             ratio = empty_ratio(frame)
+            blank = blank_below_header(frame, vp)
             if ratio > EMPTY_LIMIT:
-                bad.append(f"{fmt_t(a + i / SAMPLE_FPS)} {ratio:.0%} vacío")
-    return [problems("C4.empty_frames", "C4", bad,
+                bad.append(f"{at} {ratio:.0%} vacío")
+            elif blank > BLANK_LIMIT:
+                bad.append(f"{at} en blanco bajo la cabecera ({blank:.0%}, N26)")
+            if prev is not None:
+                top, bottom = half_changes(prev, frame, vp)
+                if max(top, bottom) > MIX_CHANGE and min(top, bottom) < MIX_STILL:
+                    mixed.append(f"{at} cambia solo la mitad {'superior' if top > bottom else 'inferior'}")
+            prev = frame
+    rows = [problems("C4.empty_frames", "C4", bad,
                      f"{sampled} fotogramas con ≤ {EMPTY_LIMIT:.0%} vacío (fuera de apertura y cierre)")]
+    if mixed:
+        more = f" (+{len(mixed) - 5})" if len(mixed) > 5 else ""
+        rows.append(check("N26.mixed", "N26", "WARN", "posibles vistas mezcladas: " + "; ".join(mixed[:5]) + more
+                          + ": revisa esos fotogramas"))
+    else:
+        rows.append(check("N26.mixed", "N26", True, "ningún cambio brusco en solo una mitad del cuadro"))
+    return rows
 
 
 def check_media(path: Path, timeline: dict, layout: dict | None = None) -> list[dict]:
@@ -1166,7 +1645,7 @@ def check_media(path: Path, timeline: dict, layout: dict | None = None) -> list[
         rows += check_loudness(path) + check_silence(path)
     if video:
         ranges = [(a, min(b, duration)) for a, b in c4_ranges(timeline, layout) if a < duration]
-        rows += check_empty_frames(path, ranges, (video["width"], video["height"]))
+        rows += check_empty_frames(path, ranges, (video["width"], video["height"]), (layout or {}).get("viewport"))
     return rows
 
 

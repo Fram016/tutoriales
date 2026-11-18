@@ -339,6 +339,174 @@ class RoundTwoTest(BaseTest):
         self.assertRule(errors, "E2", "#login-email")
 
 
+# Perseo XML shape (reglas-video.md Parte 6): two flows over a popup surface and SRI tables.
+POPUP = {"popup": {"url": "chrome-extension://x/popup.html", "size": [420, 640]}}
+EMITIDOS = '[id="frmPrincipal:tablaCompEmitidos"]'
+RECIBIDOS = '[id="frmPrincipal:tablaCompRecibidos"]'
+
+
+def flows(data):
+    """Emitidos then recibidos: consultar (click + table) and descargar (popup) twice."""
+    data["surfaces"] = copy.deepcopy(POPUP)
+    data["steps"] = [
+        {"id": "consultar-emitidos", "narration": "Haz clic en Consultar.",
+         "actions": [{"click": "#btn-emitidos"}, {"highlight": EMITIDOS}]},
+        {"id": "descargar-emitidos", "narration": "En Perseo XML, haz clic en XML Desde el RIDE.",
+         "actions": [{"open": "popup"}, {"click": {"in": "popup", "sel": "#boton4"}},
+                     {"result": {"in": "popup", "sel": "#texto_correctos"}}, {"close": "popup"}]},
+        {"id": "consultar-recibidos", "narration": "Haz clic en Consultar.",
+         "actions": [{"click": "#btn-recibidos"}, {"highlight": RECIBIDOS}]},
+        {"id": "descargar-recibidos", "narration": "En Perseo XML, haz clic en XML Para importar.",
+         "actions": [{"open": "popup"}, {"click": {"in": "popup", "sel": "#boton1"}},
+                     {"result": {"in": "popup", "sel": "#texto_correctos"}}, {"close": "popup"}]},
+    ]
+    data["videos"] = [video(data, "tutorial")]
+
+
+def with_parts(data):
+    flows(data)
+    data["parts"] = [{"n": 1, "title": "Comprobantes emitidos"}, {"n": 2, "title": "Comprobantes recibidos"}]
+    for step, part in zip(data["steps"], (1, 1, 2, 2)):
+        step["part"] = part
+
+
+class RoundFourTest(BaseTest):
+    """N15, N16, N19, N25, N27 and the requirement wording (reglas-video.md Parte 6)."""
+
+    # N15
+    def test_N15_step_that_only_describes_what_happens_fails(self):
+        def mutate(d):
+            d["steps"].insert(2, {"id": "formulario", "narration": "Se abre el formulario.",
+                                  "actions": [{"wait": "#c-nombre"}, {"focus": "#c-nombre"}]})
+        errors, warnings = run_lint(mutate)
+        self.assertRule(errors, "N15", "steps.formulario: no tiene una acción del usuario")
+        self.assertRule(warnings, "N15", "steps.formulario.narration")
+
+    def test_N15_result_only_step_fails_unless_it_is_alone_in_its_part(self):
+        def mutate(d):
+            with_parts(d)
+            d["steps"].append({"id": "resumen", "narration": "Revisa el resumen de la descarga.", "part": 3,
+                               "actions": [{"wait": "#resumen"}, {"result": "#resumen"}]})
+        errors, _ = run_lint(mutate)
+        self.assertRule(errors, "N16", "partes que no están en parts: 3")
+        self.assertNoRule(errors, "N15")
+        def joined(d):
+            mutate(d)
+            d["steps"][-1]["part"] = 2
+        errors, _ = run_lint(joined)
+        self.assertRule(errors, "N15", "steps.resumen")
+
+    def test_N15_narration_of_what_happens_warns(self):
+        for text in ("Aparece la lista de comprobantes.", "El tipo Factura ya viene elegido."):
+            _, warnings = run_lint(lambda d: d["steps"][1].update(narration=text))
+            self.assertRule(warnings, "N15", "steps.nuevo.narration")
+        _, warnings = run_lint(lambda d: d["steps"][3].update(narration="Haz clic en Guardar. Aparece el aviso."))
+        self.assertNoRule(warnings, "N15")
+
+    def test_N15_open_surface_counts_as_a_user_action(self):
+        errors, _ = run_lint(flows)
+        self.assertNoRule(errors, "N15")
+
+    # N16
+    def test_N16_two_similar_flows_without_parts_warn(self):
+        errors, warnings = run_lint(flows)
+        self.assertRule(warnings, "N16", "consultar-emitidos, descargar-emitidos y consultar-recibidos, descargar-recibidos")
+        self.assertNoRule(errors, "N16")
+        errors, warnings = run_lint(with_parts)
+        self.assertNoRule(errors + warnings, "N16")
+
+    def test_N16_same_surface_button_twice_warns(self):
+        def mutate(d):
+            flows(d)
+            d["steps"][3]["actions"][1] = {"click": {"in": "popup", "sel": "#boton4"}}
+            d["steps"][2]["actions"] = [{"select": {"in": "#mes", "option": "Noviembre"}}, {"click": "#buscar"}]
+        _, warnings = run_lint(mutate)
+        self.assertRule(warnings, "N16", "descargar-emitidos y descargar-recibidos")
+
+    def test_N16_base_tutorial_has_one_flow(self):
+        errors, warnings = run_lint()
+        self.assertNoRule(errors + warnings, "N16")
+
+    def test_N16_declared_parts_cover_every_step_and_are_contiguous(self):
+        def missing(d):
+            with_parts(d)
+            d["steps"][1].pop("part")
+        errors, _ = run_lint(missing)
+        self.assertRule(errors, "N16", "pasos sin 'part' (descargar-emitidos)")
+        def split(d):
+            with_parts(d)
+            for step, part in zip(d["steps"], (1, 2, 1, 2)):
+                step["part"] = part
+        errors, _ = run_lint(split)
+        self.assertRule(errors, "N16", "seguidos")
+        errors, _ = run_lint(lambda d: (with_parts(d), d.update(parts=[{"n": 1}])))
+        self.assertRule(errors, "N16", "parts: tiene que ser una lista")
+
+    # N19
+    def test_N19_sentence_longer_than_two_caption_lines_fails(self):
+        long = ("Mientras trabaja, el botón dice En proceso y al terminar el resumen muestra cuántos "
+                "comprobantes se descargaron.")
+        errors, _ = run_lint(lambda d: d["steps"][3].update(narration=long))
+        self.assertRule(errors, "N19", "steps.guardar.narration")
+        self.assertRule(errors, "N19", "no entra en un subtítulo")
+        errors, _ = run_lint(lambda d: video(d, "redes")["narration"].update(guardar=long))
+        self.assertRule(errors, "N19", "videos.redes.narration.guardar")
+
+    def test_N19_two_instructions_in_one_sentence_fail(self):
+        for text, verbs in (("Abre Perseo XML y haz clic en Carpeta de descargas.", "abre, haz"),
+                            ("Para una consulta corta, elige el local y escribe el punto.", "elige, escribe"),
+                            ("Ahora vuelve a Consultas y haz clic en Recibidos.", "vuelve, haz")):
+            errors, _ = run_lint(lambda d: d["steps"][1].update(narration=text))
+            self.assertRule(errors, "N19", f"pide 2 acciones ({verbs})")
+
+    def test_N19_one_instruction_per_sentence_passes(self):
+        for text in ("Abre Perseo XML. Haz clic en Carpeta de descargas.",
+                     "Haz clic en Consultar. El resumen muestra los descargados y se abre la lista.",
+                     "En el menú, haz clic en Facturación, luego en Consultas."):
+            errors, _ = run_lint(lambda d: d["steps"][1].update(narration=text))
+            self.assertNoRule(errors, "N19")
+
+    # N25
+    def test_N25_table_shown_without_column_censor_warns(self):
+        def mutate(d):
+            with_parts(d)
+            d["censor"] = {"selectors": [f'{RECIBIDOS[:-2]}_data"] td:nth-child(2)']}
+        _, warnings = run_lint(mutate)
+        self.assertRule(warnings, "N25", "consultar-emitidos")
+        self.assertFalse([w for w in warnings if w.startswith("[N25]") and "consultar-recibidos" in w], warnings)
+        def uniform(d):
+            mutate(d)
+            d["censor"]["selectors"].append(f'{EMITIDOS[:-2]}_data"] td:nth-child(4)')
+        _, warnings = run_lint(uniform)
+        self.assertNoRule(warnings, "N25")
+        _, warnings = run_lint(with_parts)  # no censor: nothing to make uniform
+        self.assertNoRule(warnings, "N25")
+
+    # N27
+    def test_N27_tut_without_closing_passes_but_red_still_needs_one(self):
+        errors, warnings = run_lint(lambda d: video(d, "tutorial").pop("closing"))
+        self.assertEqual(errors, [])
+        self.assertEqual(warnings, [])
+        errors, _ = run_lint(lambda d: video(d, "redes").pop("closing"))
+        self.assertRule(errors, "E1", "videos.redes.closing: obligatorio")
+
+    def test_N27_tut_without_closing_still_states_the_objective(self):
+        def mutate(d):
+            video(d, "tutorial").pop("closing")
+            video(d, "tutorial")["opening"] = {"narration": "Bienvenido a Nexo CRM.", "text": "Contactos"}
+        errors, _ = run_lint(mutate)
+        self.assertRule(errors, "TUT1", "«En este video aprendes a…»")
+
+    # Requirement wording
+    def test_requirements_text_without_what_you_need_warns(self):
+        def mutate(text):
+            return lambda d: video(d, "tutorial").update(requirements={"narration": "Necesitas tu usuario.", "text": text})
+        _, warnings = run_lint(mutate("Requisito: Perseo XML instalada y sesión en SRI en línea"))
+        self.assertRule(warnings, "TUT1", "requirements.text: di qué necesitas")
+        _, warnings = run_lint(mutate("Necesitas la extensión Perseo XML instalada y tu sesión del SRI abierta"))
+        self.assertNoRule(warnings, "TUT1")
+
+
 class LintEntryPointTest(BaseTest):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

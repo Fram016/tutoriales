@@ -12,13 +12,13 @@
      "narration": "Abre Nuevo contacto. Escribe con calma los datos que te dieron en la feria y revisa el correo antes de seguir.",
      "start": 1.5, "duration": 7.0, "voice_start": 1.6, "voice_duration": 6.4,
      "events": [{"type": "click", "t": 2.5, "t_end": 2.6, "selector": "#btn-nuevo",
-                 "box": {"x": 800, "y": 300, "w": 300, "h": 80}, "point": {"x": 950, "y": 340}, "chars": 0, "secret": false}]},
+                 "box": {"x": 800, "y": 300, "w": 300, "h": 80}, "point": {"x": 950, "y": 340}, "chars": 0, "secret": false, "target_ok": true}]},
     {"id": "guardar", "number": 2, "chapter": null, "title": "",
      "narration": "Guarda. El contacto queda primero en la lista, listo para tu seguimiento de la feria.",
      "start": 8.5, "duration": 5.5, "voice_start": 8.6, "voice_duration": 4.9,
      "events": [{"type": "click", "t": 9.0, "t_end": 9.1, "selector": "#btn-guardar",
-                 "box": {"x": 1500, "y": 700, "w": 200, "h": 60}, "point": {"x": 1600, "y": 730}, "chars": 0, "secret": false},
+                 "box": {"x": 1500, "y": 700, "w": 200, "h": 60}, "point": {"x": 1600, "y": 730}, "chars": 0, "secret": false, "target_ok": true},
                 {"type": "result", "t": 10.0, "t_end": 11.5, "selector": "#toast",
-                 "box": {"x": 700, "y": 100, "w": 500, "h": 80}, "point": {"x": 950, "y": 140}, "chars": 0, "secret": false}]}
+                 "box": {"x": 700, "y": 100, "w": 500, "h": 80}, "point": {"x": 950, "y": 140}, "chars": 0, "secret": false, "target_ok": true}]}
   ]
 }

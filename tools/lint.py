@@ -8,6 +8,10 @@ Errors (exit 1, PipelineError) and warnings, each tagged with the rule ID it enf
   selectors, T3 title length, N2 opening text vs title (≥ 60 % shared words), N4 story of the
   opening carried by the steps (warning), N8 RED/PRO closing names a destination, and the
   per-type rules of Parte 3 (TUT/RED/PRO/NOV: format, login, step count, estimated duration).
+  Round four (Parte 6): N15 a step is a user action (narration of what happens warns), N16 parts
+  (two flows without parts warn; declared parts cover every step, contiguous), N19 one sentence
+  = ≤ 2 caption lines and one instruction, N25 every highlighted table censored by column, N27
+  closing optional in TUT, requirements say what you need («Necesitas…»).
 Voice estimate: 1.9 words/s + 0.5 s per clip (RED hook length: 2.6 words/s, no fixed part).
 """
 from __future__ import annotations
@@ -120,6 +124,25 @@ LISTO = re.compile(r"^\W*(?:listo|eso es todo|fin|gracias|terminamos)\W*$", re.I
 PASSWORD = re.compile(r"pass|contrase|clave", re.I)
 INTERACTIONS = {"click", "type", "select", "press", "scroll", "goto"}
 QUIET = {"wait", "pause", "hover", "focus"}
+
+# Round four (Parte 6).
+# N15: what the user does (pointer, typing, choosing, opening a surface); waits, focus, results are not.
+USER_ACTIONS = {"click", "type", "select", "press", "scroll", "hover", "open"}
+HAPPENS = re.compile(r"^\W*(?:se abre|aparece)\b|\bya viene\b", re.I)
+# N19: imperatives that ask for one action; they count at a sentence start or after a comma or connector
+# («Abre Perseo XML y haz clic…» = 2), never as a 3rd person («el resumen muestra», «se abre»).
+IMPERATIVES = set("""
+haz abre elige escoge escribe selecciona pulsa presiona toca completa ingresa entra guarda busca llena
+agrega añade pega copia marca vuelve cierra cambia consulta descarga revisa activa confirma acepta usa
+""".split())
+CONNECTORS = {"y", "e", "o", "luego", "después", "ahora", "primero", "entonces", "también", "finalmente"}
+SENTENCE = re.compile(r"[^.!?…]+[.!?…]*")
+# Requirements say what is needed (Parte 6: «Necesitas la extensión Perseo XML instalada…»).
+NEED = re.compile(r"\bnecesitas\b|\bnecesita\b|\bdebes\b|\btienes que\b|\brequieres\b|\bhace falta\b|"
+                  r"\bten\b|\bteniendo\b", re.I)
+# N25: tables shown with a highlight, and the column censor selectors.
+TABLE = re.compile(r"\btable\b|\btbody\b|tabla|_data\b", re.I)
+CELL = re.compile(r"\btd\b|\bth\b|nth-child|nth-of-type", re.I)
 
 
 def norm(text: str) -> str:
@@ -301,6 +324,141 @@ def is_interaction(step: dict) -> bool:
     return any(action_kind(a)[0] in INTERACTIONS for a in step.get("actions") or [])
 
 
+def user_actions(step: dict) -> list[str]:
+    return [kind for kind, _ in map(action_kind, step.get("actions") or []) if kind in USER_ACTIONS]
+
+
+def sentences(text: str) -> list[str]:
+    return [s.strip() for s in SENTENCE.findall(text or "") if WORD.search(s)]
+
+
+def instructions(sentence: str) -> list[str]:
+    """N19: imperative verbs of one sentence that each ask for an action."""
+    found, prev = [], None
+    for m in re.finditer(r"[^\W\d_]+|,", sentence):
+        token = m.group(0).lower()
+        if token == ",":
+            prev = ","
+            continue
+        if token in IMPERATIVES and (prev is None or prev == "," or prev in CONNECTORS):
+            found.append(token)
+        prev = token
+    return found
+
+
+def table_key(selector: str) -> str | None:
+    """N25: the id (or class) that names a table selector, None for a bare table/tbody."""
+    m = re.search(r"\[id=[\"']([^\"']+)[\"']\]|#([\w:-]+)|\.([\w-]+)", str(selector))
+    return next((g for g in m.groups() if g), None) if m else None
+
+
+def action_target(value) -> str:
+    if isinstance(value, dict):
+        value = value.get("sel") or value.get("in") or value.get("into")
+    return str(value or "")
+
+
+def repeated_flow(steps: list[dict]) -> tuple[list, list] | None:
+    """N16: two windows of ≥ 2 steps with the same kinds of user actions (and not all the same), or the
+    same surface button clicked in two steps: (first ids, second ids)."""
+    signs = [tuple(user_actions(s)) for s in steps]
+    ids = [s.get("id") for s in steps]
+    for size in range(len(steps) // 2, 1, -1):
+        for i in range(len(steps) - size + 1):
+            window = signs[i:i + size]
+            if len(set(window)) < 2 or not all(window):
+                continue
+            for j in range(i + size, len(steps) - size + 1):
+                if signs[j:j + size] == window:
+                    return ids[i:i + size], ids[j:j + size]
+    seen = {}
+    for step in steps:
+        for action in step.get("actions") or []:
+            kind, value = action_kind(action)
+            if kind == "click" and isinstance(value, dict) and value.get("in"):
+                key = (value["in"], value.get("sel"))
+                if key in seen and seen[key] != step.get("id"):
+                    return [seen[key]], [step.get("id")]
+                seen.setdefault(key, step.get("id"))
+    return None
+
+
+def lint_round_four(data: dict, steps: list[dict]) -> tuple[list[str], list[str]]:
+    """N15, N16, N19 (step narration) and N25 for the whole tutorial.yaml."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    parts = data.get("parts")
+    numbers = []
+    if parts is not None:
+        if not isinstance(parts, list) or not all(isinstance(p, dict) and isinstance(p.get("n"), int) and
+                                                  str(p.get("title") or "").strip() for p in parts):
+            errors.append("[N16] parts: tiene que ser una lista [{n: número, title: título}]")
+        else:
+            numbers = [p["n"] for p in parts]
+    per_part: dict = {}
+    for step in steps:
+        per_part.setdefault(step.get("part"), []).append(step.get("id"))
+
+    for step in steps:
+        sid = step.get("id")
+        alone = step.get("part") is not None and len(per_part.get(step.get("part"), [])) == 1
+        if not user_actions(step) and not alone:
+            errors.append(f"[N15] steps.{sid}: no tiene una acción del usuario (clic, escribir, elegir, abrir); "
+                          "lo que pasa va en la narración del paso anterior o siguiente")
+        narration = str(step.get("narration") or "")
+        if HAPPENS.search(narration):
+            warnings.append(f"[N15] steps.{sid}.narration: describe lo que pasa («{narration[:40]}»); "
+                            "un paso empieza por lo que hace el usuario")
+
+    # N16: parts.
+    if parts is None:
+        flow = repeated_flow(steps)
+        if flow:
+            warnings.append(f"[N16] steps: dos flujos casi iguales ({', '.join(map(str, flow[0]))} y "
+                            f"{', '.join(map(str, flow[1]))}); divídelos en partes (parts + part en cada paso)")
+    elif numbers:
+        missing = [str(s.get("id")) for s in steps if s.get("part") is None]
+        if missing:
+            errors.append(f"[N16] steps: pasos sin 'part' ({', '.join(missing)}); con parts, cada paso tiene su parte")
+        unknown = sorted({str(s["part"]) for s in steps if s.get("part") is not None and s["part"] not in numbers})
+        if unknown:
+            errors.append(f"[N16] steps: partes que no están en parts: {', '.join(unknown)}")
+        order = [s.get("part") for s in steps if s.get("part") is not None]
+        runs = [p for i, p in enumerate(order) if i == 0 or order[i - 1] != p]
+        if len(runs) != len(set(runs)):
+            errors.append("[N16] steps: los pasos de cada parte tienen que ir seguidos (una parte no se retoma)")
+
+    # N25: every table shown is censored by column, the same in all of them.
+    censor = data.get("censor")
+    if isinstance(censor, dict):
+        cells = [str(s) for s in censor.get("selectors") or [] if CELL.search(str(s))]
+        for step in steps:
+            for action in step.get("actions") or []:
+                kind, value = action_kind(action)
+                target = action_target(value)
+                if kind != "highlight" or not TABLE.search(target):
+                    continue
+                key = table_key(target)
+                if not any(key is None or key in cell for cell in cells):
+                    warnings.append(f"[N25] steps.{step.get('id')}: la tabla {target} se muestra sin columnas "
+                                    "censuradas (censor.selectors con td:nth-child); difumina igual en todas")
+    return errors, warnings
+
+
+def narration_issues(where: str, text: str) -> list[str]:
+    """N19: each sentence fits one caption block (≤ 2 lines of 42) and asks for one action."""
+    errors = []
+    for sentence in sentences(text):
+        if len(sentence) > 2 * CAPTION_CHARS or len(wrap(sentence, None)) > 2:
+            errors.append(f"[N19] {where}: «{sentence}» no entra en un subtítulo (≤ 2 líneas de {CAPTION_CHARS}); "
+                          "escríbela más corta")
+        verbs = instructions(sentence)
+        if len(verbs) > 1:
+            errors.append(f"[N19] {where}: «{sentence}» pide {len(verbs)} acciones ({', '.join(verbs)}); "
+                          "una oración = una instrucción")
+    return errors
+
+
 def block_text(block) -> tuple[str, str]:
     if isinstance(block, dict):
         return str(block.get("narration") or ""), str(block.get("text") or "")
@@ -350,9 +508,13 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
     ids = [s.get("id") for s in steps]
     if None in ids or len(set(ids)) != len(ids):
         errors.append("[E2] steps: cada paso necesita un 'id' único")
+    more_errors, more_warnings = lint_round_four(data, steps)
+    errors += more_errors
+    warnings += more_warnings
     for step in steps:
         sid = step.get("id")
         lang(f"steps.{sid}.narration", str(step.get("narration") or ""))
+        errors += narration_issues(f"steps.{sid}.narration", str(step.get("narration") or ""))
         lang(f"steps.{sid}.title", str(step.get("title") or ""))
         for action in step.get("actions") or []:
             kind, value = action_kind(action)
@@ -384,6 +546,7 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
             if sid not in [s.get("id") for s in chosen]:
                 warnings.append(f"[E2] {where}.narration.{sid}: ese paso no está en el video")
             lang(f"{where}.narration.{sid}", str(text or ""))
+            errors += narration_issues(f"{where}.narration.{sid}", str(text or ""))
 
         # E1: opening and closing.
         blocks = {}
@@ -395,6 +558,8 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
         for name in ("opening", "closing"):
             narration, text = blocks[name]
             both = f"{narration} {text}".strip()
+            if not both and name == "closing" and vtype == "TUT":
+                continue   # N27: the TUT may end on its final result
             if not both:
                 errors.append(f"[E1] {where}.{name}: obligatorio (narración y texto)")
                 continue
@@ -413,6 +578,8 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
         if vtype in ("RED", "PRO") and close_all and not DESTINATION.search(close_all):
             errors.append(f"[N8] {where}.closing: di dónde verlo o hacerlo "
                           "(«en el enlace del perfil», «en nuestro canal de YouTube»)")
+        if vtype == "TUT" and open_all and not close_all and not LEARN.search(open_all):
+            errors.append(f"[TUT1] {where}.opening: tiene que decir el objetivo («En este video aprendes a…»)")
         if open_all and close_all:
             if vtype == "TUT":
                 if not LEARN.search(open_all):
@@ -440,6 +607,9 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
                 warnings.append(f"[TUT1] {where}.requirements: solo para TUT")
             if seconds(blocks["requirements"][0]) > 5:
                 warnings.append(f"[TUT1] {where}.requirements: ~{seconds(blocks['requirements'][0]):.1f} s (máximo 5 s)")
+            if blocks["requirements"][1] and not NEED.search(blocks["requirements"][1]):
+                warnings.append(f"[TUT1] {where}.requirements.text: di qué necesitas, con un verbo («Necesitas la "
+                                "extensión Perseo XML instalada y tu sesión del SRI abierta»)")
 
         # N4: the story the opening promises («una feria») is carried by the steps' narration or data.
         if vtype in ("TUT", "RED"):
@@ -508,7 +678,7 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
             warnings.append(f"[NOV3] {where}.steps: {len(chosen)} pasos; un solo cambio por video")
 
         estimate = max(hook_s if vtype == "RED" else open_s, 1.0 if vtype == "RED" else CARD_FLOOR)
-        estimate += max(close_s, CARD_FLOOR)
+        estimate += max(close_s, CARD_FLOOR) if close_all else 0.0
         estimate += seconds(blocks["requirements"][0])
         for step in chosen:
             estimate += max(seconds(overrides.get(step.get("id")) or step.get("narration")), STEP_FLOOR)

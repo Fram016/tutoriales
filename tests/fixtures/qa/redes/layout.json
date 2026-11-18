@@ -1,5 +1,5 @@
 {
-  "output": [1080, 1920], "viewport": [0, 0, 1080, 1360], "cursor_px": 48, "font_px": 48, "base_scale": 1.78,
+  "output": [1080, 1920], "viewport": [0, 0, 1080, 1360], "cursor_px": 48, "font_px": 48, "base_scale": 1.78, "legible_scale": 1.78,
   "camera": [
     {"t0": 0.0, "t1": 1.5, "scale": 1.78, "kind": "context", "x": -1168, "y": 0},
     {"t0": 1.5, "t1": 1.9, "scale": 1.78, "kind": "context", "x": -1168, "y": 0, "reason": "establishing"},
@@ -16,13 +16,17 @@
   ],
   "items": [
     {"kind": "title", "t0": 0.0, "t1": 1.5, "rect": [90, 700, 900, 300], "text": "¿Lo conociste en una feria?"},
-    {"kind": "band", "t0": 1.5, "t1": 14.0, "rect": [0, 1360, 1080, 560], "color": "#2e1065"},
-    {"kind": "caption", "t0": 1.5, "t1": 8.5, "rect": [60, 1380, 960, 140], "text": "Abre Nuevo contacto",
-     "lines": ["Abre Nuevo contacto"], "step": "nuevo"},
+    {"kind": "band", "t0": 1.5, "t1": 14.0, "rect": [0, 1360, 1080, 176], "color": "#2e1065"},
+    {"kind": "caption", "t0": 1.5, "t1": 8.5, "rect": [60, 1380, 960, 140], "text": "Abre Nuevo contacto.",
+     "lines": ["Abre Nuevo contacto."], "step": "nuevo", "sentence": 0},
+    {"kind": "context", "t0": 1.5, "t1": 8.5, "rect": [60, 300, 380, 60], "text": "En Nexo CRM", "step": "nuevo",
+     "context": "page", "color": "#6b7280"},
+    {"kind": "context", "t0": 8.5, "t1": 14.0, "rect": [60, 300, 380, 60], "text": "En Nexo CRM", "step": "guardar",
+     "context": "page", "color": "#6b7280"},
     {"kind": "active", "t0": 2.5, "t1": 2.9, "rect": [300, 500, 500, 120], "step": "nuevo"},
     {"kind": "cursor", "t0": 2.5, "t1": 2.9, "rect": [500, 540, 48, 48], "step": "nuevo"},
-    {"kind": "caption", "t0": 8.5, "t1": 14.0, "rect": [60, 1380, 960, 140], "text": "Guarda y aparece en la lista",
-     "lines": ["Guarda y aparece en la lista"], "step": "guardar"},
+    {"kind": "caption", "t0": 8.5, "t1": 14.0, "rect": [60, 1380, 960, 140], "text": "Guarda y aparece en la lista.",
+     "lines": ["Guarda y aparece en la lista."], "step": "guardar", "sentence": 0},
     {"kind": "result", "t0": 10.0, "t1": 11.5, "rect": [200, 400, 700, 140], "step": "guardar"},
     {"kind": "card", "t0": 14.0, "t1": 16.0, "rect": [0, 0, 1080, 1920], "text": "Mira el tutorial completo en el enlace del perfil"}
   ]

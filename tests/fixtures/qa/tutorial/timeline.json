@@ -12,14 +12,14 @@
      "narration": "Haz clic en Nuevo contacto. Se abre el formulario con los campos del contacto nuevo.",
      "start": 1.0, "duration": 2.0, "voice_start": 1.1, "voice_duration": 1.8,
      "events": [{"type": "click", "t": 1.5, "t_end": 1.6, "selector": "#btn-nuevo",
-                 "box": {"x": 800, "y": 300, "w": 300, "h": 80}, "point": {"x": 950, "y": 340}, "chars": 0, "secret": false}]},
+                 "box": {"x": 800, "y": 300, "w": 300, "h": 80}, "point": {"x": 950, "y": 340}, "chars": 0, "secret": false, "target_ok": true}]},
     {"id": "guardar", "number": 2, "chapter": null, "title": "", "narration": "Guarda. El contacto aparece primero en la lista.",
      "start": 3.0, "duration": 2.0, "voice_start": 3.1, "voice_duration": 1.8,
      "events": [{"type": "click", "t": 3.3, "t_end": 3.4, "selector": "#btn-guardar",
-                 "box": {"x": 1500, "y": 700, "w": 200, "h": 60}, "point": {"x": 1600, "y": 730}, "chars": 0, "secret": false},
+                 "box": {"x": 1500, "y": 700, "w": 200, "h": 60}, "point": {"x": 1600, "y": 730}, "chars": 0, "secret": false, "target_ok": true},
                 {"type": "result", "t": 3.8, "t_end": 4.8, "selector": "#toast",
-                 "box": {"x": 700, "y": 100, "w": 500, "h": 80}, "point": {"x": 950, "y": 140}, "chars": 0, "secret": false},
+                 "box": {"x": 700, "y": 100, "w": 500, "h": 80}, "point": {"x": 950, "y": 140}, "chars": 0, "secret": false, "target_ok": true},
                 {"type": "highlight", "t": 4.0, "t_end": 4.9, "selector": "tr.new",
-                 "box": {"x": 300, "y": 400, "w": 1300, "h": 60}, "point": {"x": 950, "y": 430}, "chars": 0, "secret": false}]}
+                 "box": {"x": 300, "y": 400, "w": 1300, "h": 60}, "point": {"x": 950, "y": 430}, "chars": 0, "secret": false, "target_ok": true}]}
   ]
 }
