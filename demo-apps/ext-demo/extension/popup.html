@@ -1,0 +1,34 @@
+<!doctype html>
+<!-- Same shape as the Perseo XML popup (odd/tasks/perseo-xml.md L3, L6): two sections of download buttons,
+     a status line, and "Carpeta de descargas" at the bottom. -->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Demo XML</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon48.png" alt="" />
+      <div>
+        <h1>Demo XML</h1>
+        <p>Descarga de comprobantes</p>
+      </div>
+    </header>
+    <section>
+      <h2>Comprobantes recibidos</h2>
+      <button id="boton1" data-action="descargarRecibidos">XML (para importar)</button>
+      <button id="boton2" data-action="descargarRecibidosPDF">PDF (RIDE recibidos)</button>
+    </section>
+    <section>
+      <h2>Comprobantes emitidos</h2>
+      <button id="boton3" data-action="descargarEmitidos">PDF (RIDE emitidos)</button>
+      <button id="boton4" data-action="descargarEmitidosXML">XML (desde el RIDE)</button>
+    </section>
+    <p id="estado" role="status">Listo para descargar</p>
+    <footer>
+      <button id="configure-folder" class="link">Carpeta de descargas</button>
+    </footer>
+    <script src="popup.js"></script>
+  </body>
+</html>

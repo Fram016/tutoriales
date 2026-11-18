@@ -864,6 +864,122 @@ class RoundThreeTest(unittest.TestCase):
             self.assertIn(f'"--s": {compose.num(seg["scale"])}}}, {compose.num(at)});', self.htmls[video])
 
 
+POPUP_SPEC = {"size": [420, 640], "dpr": 2, "anchor": "top-right", "file": "surface-popup.mp4", "windows": [[4.0, 10.0]]}
+PANEL = {"x": 1484, "y": 54, "w": 420, "h": 640}
+AREA = {"x": 1484, "y": 8, "w": 420, "h": 686}     # toolbar strip + panel
+
+
+def surface_timeline(fmt="16:9", vtype="TUT"):
+    """Perseo XML S5: the popup opens from the toolbar icon, a button is clicked inside it, the popup shows its
+    progress, closes, then the page is clicked. Surface boxes are in popup CSS px (recorder)."""
+    tl = copy.deepcopy(fixture("tutorial"))
+    tl.update({"type": vtype, "format": fmt, "output": [1920, 1080] if fmt == "16:9" else [1080, 1920],
+               "screen_start": 3.0, "screen_end": 12.0, "total": 14.5,
+               "surfaces": {"popup": copy.deepcopy(POPUP_SPEC)}})
+    tl["closing"].update({"start": 12.0, "voice_start": 12.1})
+    boton = {"x": 40, "y": 300, "w": 340, "h": 44}
+    tl["steps"] = [
+        {"id": "abrir", "number": 1, "chapter": None, "narration": "Haz clic en el icono y luego en Descargar.",
+         "start": 3.0, "duration": 6.0, "voice_start": 3.2, "voice_duration": 2.5, "events": [
+             {"type": "open", "t": 4.0, "t_end": 4.0, "surface": "popup"},
+             {"type": "click", "t": 5.5, "t_end": 5.5, "surface": "popup", "selector": "#boton4", "box": boton,
+              "point": {"x": 210, "y": 322}, "frame_box": boton, "form_box": {"x": 0, "y": 0, "w": 420, "h": 640}},
+             {"type": "result", "t": 7.0, "t_end": 8.5, "surface": "popup", "selector": "#estado",
+              "box": {"x": 40, "y": 360, "w": 340, "h": 30}, "point": {"x": 210, "y": 375}}]},
+        {"id": "cerrar", "number": 2, "chapter": None, "narration": "Cierra el panel y haz clic en Consultar.",
+         "start": 9.0, "duration": 3.0, "voice_start": 9.1, "voice_duration": 1.8, "events": [
+             {"type": "close", "t": 10.0, "t_end": 10.0, "surface": "popup"},
+             {"type": "click", "t": 11.0, "t_end": 11.0, "selector": "#consultar",
+              "box": {"x": 200, "y": 500, "w": 150, "h": 42}, "point": {"x": 275, "y": 521}}]}]
+    return tl
+
+
+class SurfaceComposeTest(unittest.TestCase):
+    """perseo-xml S5 "se debe ver la interfaz de la extension": the popup is a floating panel under a toolbar
+    strip, shown only while open; its events are mapped into source px so camera, cursor and spotlight follow."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tl = surface_timeline()
+        cls.layout = compose.plan(cls.tl, BRAND)
+        cls.html = compose.build(cls.tl, BRAND)[0]
+
+    def items(self, kind, layout=None):
+        return [i for i in (layout or self.layout)["items"] if i["kind"] == kind]
+
+    def test_geometry_anchored_under_the_toolbar(self):
+        geo = compose.surface_geometry({"size": [420, 640], "anchor": "top-right"})
+        self.assertEqual(geo["panel"], PANEL)
+        self.assertEqual(geo["toolbar"], {"x": 1848, "y": 8, "w": 56, "h": 40})
+        self.assertEqual(geo["icon"], {"x": 1862, "y": 14, "w": 28, "h": 28})
+        self.assertEqual(geo["area"], AREA)
+        left = compose.surface_geometry({"size": [420, 640], "anchor": "top-left"})
+        self.assertEqual((left["panel"]["x"], left["toolbar"]["x"]), (16, 16))
+
+    def test_panel_only_while_open(self):
+        panels = self.items("surface")
+        self.assertEqual(len(panels), 1)
+        self.assertEqual((panels[0]["t0"], panels[0]["t1"], panels[0]["name"]), (4.0, 10.0, "popup"))
+        self.assertEqual(panels[0]["box"], PANEL)
+        self.assertIn('tl.set("#surface-popup", {opacity: 1}, 4);', self.html)
+        self.assertIn('tl.set("#surface-popup", {opacity: 0}, 10);', self.html)
+        self.assertIn('src="assets/surface-popup.mp4"', self.html)
+        bar = self.items("toolbar")
+        self.assertEqual(len(bar), 1)
+        self.assertLess(bar[0]["t0"], 4.0 - 0.8)             # the icon is there before the cursor travels to it
+        self.assertGreaterEqual(bar[0]["t1"], 10.0)
+
+    def test_surface_click_is_mapped_into_the_panel(self):
+        active = next(i for i in self.items("active") if i["selector"] == "#boton4")
+        fr = compose.frame_at(self.layout["camera"], 5.5)
+        self.assertEqual(active["full_rect"], compose.rnd(compose.Stage.map(
+            {"x": 1524, "y": 354, "w": 340, "h": 44}, fr)))
+        panel = compose.Stage.map(PANEL, fr)
+        cursor = next(i for i in self.items("cursor") if i["t0"] == 5.5)
+        self.assertTrue(inside(cursor["rect"][:2] + [1, 1], panel), (cursor, panel))
+        self.assertTrue(inside(active["rect"], panel))
+
+    def test_camera_frames_the_whole_panel_as_a_form(self):
+        seg = next(s for s in self.layout["camera"] if s["t0"] <= 5.5 < s["t1"])
+        self.assertEqual(seg["kind"], "form")
+        self.assertEqual(seg["form_box"], AREA)
+        fr = {"x": seg["x"], "y": seg["y"], "s": seg["scale"]}
+        self.assertTrue(inside(compose.Stage.map(AREA, fr), self.layout["viewport"]))
+        self.assertGreaterEqual(seg["scale"], 1.0)
+        self.assertLessEqual(seg["scale"], 1.5)
+
+    def test_open_clicks_the_toolbar_icon(self):
+        cursor = next(i for i in self.items("cursor") if i["t0"] == 4.0)
+        fr = compose.frame_at(self.layout["camera"], 4.0)
+        self.assertEqual(cursor["rect"][:2], [round(1876 * fr["s"] + fr["x"], 1), round(28 * fr["s"] + fr["y"], 1)])
+        self.assertIn(4.0, [i["t"] for i in self.items("active") if i["selector"] == "popup:icon"])
+
+    def test_spotlight_and_result_on_surface_targets(self):
+        spot = next(i for i in self.items("spotlight") if i["selector"] == "#boton4")
+        self.assertEqual(spot["box"], {"x": 1524, "y": 354, "w": 340, "h": 44})
+        result = self.items("result")[0]
+        fr = compose.frame_at(self.layout["camera"], result["t0"])
+        self.assertTrue(inside(result["full_rect"], compose.Stage.map(PANEL, fr)))
+
+    def test_events_after_close_stay_on_the_page(self):
+        active = next(i for i in self.items("active") if i["selector"] == "#consultar")
+        fr = compose.frame_at(self.layout["camera"], 11.0)
+        self.assertEqual(active["full_rect"], compose.rnd(compose.Stage.map({"x": 200, "y": 500, "w": 150, "h": 42}, fr)))
+
+    def test_vertical_keeps_the_panel_inside_the_ui(self):
+        lay = compose.plan(surface_timeline("9:16", "RED"), BRAND)
+        fr = compose.frame_at(lay["camera"], 5.5)
+        self.assertTrue(inside(compose.Stage.map(PANEL, fr), lay["viewport"]), fr)
+
+    def test_without_surfaces_nothing_is_drawn(self):
+        # PRESERVE: a timeline without surfaces keeps its layout and has no panel markup.
+        tl = fixture("tutorial")
+        self.assertEqual(compose.plan(copy.deepcopy(tl), BRAND), compose.plan(tl, BRAND))
+        html = compose.build(tl, BRAND)[0]
+        self.assertNotIn("surface-", html)
+        self.assertFalse([i for i in compose.plan(tl, BRAND)["items"] if i["kind"] in ("surface", "toolbar")])
+
+
 class ParallelRenderTest(unittest.TestCase):
     def test_workers_are_split_across_videos(self):
         # S1(f): 2 Chrome workers per video measured fastest (6+6 on 12 threads oversubscribed: 276-296 s).

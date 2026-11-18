@@ -515,6 +515,83 @@ class ClosingCardTest(unittest.TestCase):
         self.assertGreaterEqual(card["duration"], 2.6)
 
 
+def surface_actions():
+    """perseo-xml S5: the popup is open from 1.0 to 5.0 s of capture; a button is clicked inside it."""
+    return {"steps": [
+        {"id": "abrir", "t0": 0.0, "t1": 4.0, "events": [
+            {"type": "open", "t": 1.0, "surface": "popup"},
+            {"type": "click", "t": 2.0, "surface": "popup", "selector": "#boton4", **box(40, 300)}]},
+        {"id": "cerrar", "t0": 4.0, "t1": 6.0, "events": [
+            {"type": "close", "t": 5.0, "surface": "popup"}]}],
+        "surfaces": {"popup": {"size": [420, 640], "dpr": 2, "anchor": "top-right", "dir": "surfaces/popup",
+                               "windows": [{"t0": 1.0, "t1": 5.0}]}}}
+
+
+class SurfaceTest(unittest.TestCase):
+    """Surface frames go through the same time-warp; the timeline carries their visibility windows."""
+
+    def plan(self, steps=("abrir", "cerrar"), vtype="TUT"):
+        tut, video = video_of([(s, "Haz clic en el icono.") for s in steps], vtype)
+        tut["surfaces"] = {"popup": {"icon": "brand/icon48.png"}}
+        return edit.plan_video(tut, video, surface_actions(), [], {"opening": 1.5, **{s: 1.0 for s in steps},
+                                                                  "closing": 1.5})
+
+    def test_windows_follow_the_open_and_close_events(self):
+        tl = self.plan()
+        opened, closed = event(tl, 0, "open"), event(tl, 1, "close")
+        spec = tl["surfaces"]["popup"]
+        self.assertEqual(spec["windows"], [[opened["t"], closed["t"]]])
+        self.assertEqual((spec["size"], spec["dpr"], spec["anchor"], spec["icon"], spec["file"]),
+                         ([420, 640], 2, "top-right", "brand/icon48.png", "surface-popup.mp4"))
+
+    def test_surface_events_keep_their_surface(self):
+        tl = self.plan()
+        self.assertEqual(event(tl, 0, "click")["surface"], "popup")
+        self.assertEqual(event(tl, 0, "open")["surface"], "popup")
+
+    def test_open_is_a_pointer_action(self):
+        # The cursor travels to the toolbar icon: C3 lead before the open, and it is the step's main action (N1).
+        tl = self.plan()
+        step, opened = tl["steps"][0], event(tl, 0, "open")
+        self.assertGreaterEqual(opened["t"] - step["start"], edit.PRE_CLICK - 1e-6)
+        self.assertEqual(step["action_t"], opened["t"])
+
+    def test_subset_video_shows_the_popup_from_its_first_step(self):
+        tl = self.plan(steps=("cerrar",), vtype="RED")
+        self.assertEqual(tl["surfaces"]["popup"]["windows"], [[tl["steps"][0]["start"], event(tl, 0, "close")["t"]]])
+
+    def test_windows_through_freezes_and_cuts(self):
+        steps = [{"warp": [{"kind": "idle", "c0": 0.0, "c1": 1.0, "o0": 3.0, "o1": 3.5},
+                           {"kind": "freeze", "c0": 1.0, "c1": 1.0, "o0": 3.5, "o1": 4.1},    # before the open
+                           {"kind": "idle", "c0": 1.0, "c1": 3.0, "o0": 4.1, "o1": 5.1},
+                           {"kind": "cut", "c0": 3.0, "c1": 3.5, "o0": 5.1, "o1": 5.1},
+                           {"kind": "idle", "c0": 3.5, "c1": 5.5, "o0": 5.1, "o1": 6.1},
+                           {"kind": "freeze", "c0": 5.5, "c1": 5.5, "o0": 6.1, "o1": 7.0}]}]
+        self.assertEqual(edit.surface_windows(steps, [(1.0, 5.0)]), [[4.1, 5.85]])
+        self.assertEqual(edit.surface_windows(steps, [(1.0, 6.0)]), [[4.1, 7.0]])
+        self.assertEqual(edit.surface_windows(steps, [(0.5, 2.0), (3.6, 4.0)]), [[3.25, 4.6], [5.15, 5.35]])
+
+    def test_surface_frames_use_the_same_warp(self):
+        tl = self.plan()
+        fr = [{"file": f"w0_f{i:06d}.jpg", "t": round(1.0 + i * 0.1, 3)} for i in range(41)]
+        entries, end = edit.frame_entries(fr, [False] * len(fr), tl)
+        self.assertAlmostEqual(end, tl["screen_end"] - tl["screen_start"])
+        times = [t for _, t in entries]
+        self.assertEqual(times, sorted(times))
+        opened = event(tl, 0, "open")["t"] - tl["screen_start"]
+        shown = [name for name, t in entries if t <= opened + 1e-6]
+        self.assertEqual(shown[-1], "w0_f000000.jpg")
+
+    def test_no_surfaces_no_key(self):
+        # PRESERVE: captures without surfaces keep the timeline as before.
+        tut, video = video_of([("nuevo", "Haz clic aquí.")])
+        actions = {"steps": [{"id": "nuevo", "t0": 0.0, "t1": 3.0, "events": [
+            {"type": "click", "t": 1.0, "selector": "#btn", **box(100, 100)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "nuevo": 1.0, "closing": 1.5})
+        self.assertNotIn("surfaces", tl)
+        self.assertNotIn("surface", tl["steps"][0]["events"][0])
+
+
 RECORDER = Path(__file__).resolve().parents[1] / "tools" / "capture" / "recorder.mjs"
 
 

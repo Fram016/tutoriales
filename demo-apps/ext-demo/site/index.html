@@ -1,0 +1,71 @@
+<!doctype html>
+<!-- Local stand-in for SRI en línea (odd/tasks/perseo-xml.md T3): a fake taxpayer header, the RUC field of the
+     query and a "Consultar" that fills the results with a partial update (like JSF), so censor and the
+     extension popup can be tested without a real login. Serve demo-apps/ext-demo/ on http://127.0.0.1:8767/. -->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Comprobantes electrónicos (demo)</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: "Segoe UI", Arial, sans-serif; color: #1f2933; background: #f3f5f8; }
+      #cabecera {
+        display: flex; justify-content: space-between; align-items: center;
+        height: 64px; padding: 0 32px; color: #ffffff; background: #0b3c5d;
+      }
+      #cabecera h1 { font-size: 22px; }
+      #contribuyente { font-size: 18px; font-weight: 600; }
+      main { max-width: 1280px; margin: 32px auto; }
+      .card { padding: 28px 32px; background: #ffffff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
+      h2 { font-size: 24px; margin-bottom: 20px; }
+      form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 24px; align-items: end; }
+      label { display: block; font-size: 15px; color: #52606d; margin-bottom: 6px; }
+      input, select { width: 100%; height: 44px; padding: 0 12px; font-size: 17px; border: 1px solid #cbd2d9; border-radius: 6px; }
+      #consultar { height: 44px; font: 600 17px "Segoe UI", Arial, sans-serif; color: #ffffff; background: #0b3c5d; border: 0; border-radius: 6px; }
+      table { width: 100%; margin-top: 28px; border-collapse: collapse; font-size: 16px; }
+      th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid #e4e7eb; }
+      th { color: #52606d; font-weight: 600; }
+      #demo-toast {
+        position: fixed; right: 32px; bottom: 32px; padding: 16px 22px; font-size: 18px; font-weight: 600;
+        color: #ffffff; background: #1f7a3a; border-radius: 8px; opacity: 0; transition: opacity 0.2s;
+      }
+      #demo-toast.visible { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <header id="cabecera">
+      <h1>SRI en línea (demo)</h1>
+      <div id="contribuyente">1708334097001 / NOMBRE DE PRUEBA</div>
+    </header>
+    <main>
+      <div class="card">
+        <h2>Comprobantes electrónicos emitidos</h2>
+        <form id="consulta" onsubmit="return false">
+          <div><label for="ruc">RUC</label><input id="ruc" value="1708334097001" readonly /></div>
+          <div><label for="desde">Fecha de emisión</label><input id="desde" type="date" value="2026-11-01" /></div>
+          <div>
+            <label for="tipo">Tipo de comprobante</label>
+            <select id="tipo"><option>Factura</option><option>Nota de crédito</option></select>
+          </div>
+          <div><button id="consultar" type="button">Consultar</button></div>
+        </form>
+        <table id="resultados">
+          <thead><tr><th>Nro.</th><th>RUC emisor</th><th>Razón social</th><th>Fecha</th><th>Total</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </main>
+    <script>
+      // Partial update like JSF: the rows (with the taxpayer again) arrive after the click, replacing the body.
+      document.getElementById("consultar").addEventListener("click", () => {
+        setTimeout(() => {
+          document.querySelector("#resultados tbody").innerHTML = [
+            ["001-001-000000101", "1708334097001", "NOMBRE DE PRUEBA", "2026-11-03", "112,00"],
+            ["001-001-000000102", "1708334097001", "NOMBRE DE PRUEBA", "2026-11-07", "48,50"],
+            ["001-001-000000103", "1708334097001", "Nombre de Prueba", "2026-11-12", "230,10"],
+          ].map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("");
+        }, 400);
+      });
+    </script>
+  </body>
+</html>

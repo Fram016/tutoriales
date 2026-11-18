@@ -18,6 +18,11 @@ fit), N11 (brand outline + soft dim on the active field, 250-400 ms moves), N12 
 the whole width), N2/N7 (chip "Paso N" only in TUT; no paraphrase in the opening), N3/N9 (captions in a
 fixed band outside the UI, one stable layout), N5 (brand palette only), N6/R2 (toast framed and clean),
 O1-O3, R1-R3, T1-T3, E1, V1-V4.
+
+Surfaces (perseo-xml S5, timeline `surfaces`): an extension popup is drawn as the browser shows it, a white
+card under a toolbar strip with the extension icon, anchored top-right of the screen and only while open.
+Its events are moved into source px first (with_surfaces): `open` becomes a click on the icon, and the
+panel plus the strip is the form box of its actions, so camera (N10), cursor and spotlight (N11) follow.
 """
 from __future__ import annotations
 
@@ -108,6 +113,14 @@ STOPWORDS = {"el", "la", "los", "las", "un", "una", "unos", "unas", "lo", "al", 
              "que", "pero", "si", "como"}
 PARAPHRASE = 0.6        # N2: word overlap from which opening.text repeats the title
 INF = float("inf")
+
+# Surfaces (S5), in source px (common.SURFACE_EDGE/SURFACE_TOP leave room for them).
+SURFACE_EDGE = 16       # from the side of the screen
+TOOLBAR_Y, TOOLBAR_W, TOOLBAR_H = 8, 56, 40
+ICON_PX = 28
+PANEL_GAP = 6           # between the strip and the panel
+TOOLBAR_LEAD = 1.2      # the strip is there before the cursor travels to the icon (it leaves 0.8 s before)
+TOOLBAR_TAIL = 0.3
 
 
 def hf_env(extra: dict | None = None) -> dict:
@@ -361,6 +374,86 @@ def label_box(ev: dict) -> dict:
         top = max(0.0, box["y"] - LABEL_PX)
         return {"x": box["x"], "y": top, "w": box["w"], "h": box["y"] + box["h"] - top}
     return box
+
+
+# --- surfaces (perseo-xml S5) ------------------------------------------------------------------
+
+def surface_geometry(spec: dict) -> dict:
+    """Source boxes of a surface: toolbar strip, extension icon, panel (1 surface CSS px = 1 source px, like
+    the real popup) and `area` = strip + panel (the form box of its actions)."""
+    w, h = spec["size"]
+    right = spec.get("anchor", "top-right") == "top-right"
+    tx = SRC_W - SURFACE_EDGE - TOOLBAR_W if right else SURFACE_EDGE
+    toolbar = {"x": tx, "y": TOOLBAR_Y, "w": TOOLBAR_W, "h": TOOLBAR_H}
+    icon = {"x": tx + (TOOLBAR_W - ICON_PX) // 2, "y": TOOLBAR_Y + (TOOLBAR_H - ICON_PX) // 2, "w": ICON_PX, "h": ICON_PX}
+    panel = {"x": SRC_W - SURFACE_EDGE - w if right else SURFACE_EDGE, "y": TOOLBAR_Y + TOOLBAR_H + PANEL_GAP,
+             "w": w, "h": h}
+    return {"toolbar": toolbar, "icon": icon, "panel": panel, "area": union(toolbar, panel)}
+
+
+def _clip(box: dict, to: dict) -> dict:
+    x0, y0 = max(box["x"], to["x"]), max(box["y"], to["y"])
+    x1 = min(box["x"] + box["w"], to["x"] + to["w"])
+    y1 = min(box["y"] + box["h"], to["y"] + to["h"])
+    return {"x": x0, "y": y0, "w": max(0, x1 - x0), "h": max(0, y1 - y0)}
+
+
+def with_surfaces(timeline: dict) -> dict:
+    """The timeline with surface events in source px: boxes and points moved onto the panel (clipped to it),
+    `open` as a click on the toolbar icon, and the strip + panel as the form box of every action there."""
+    specs = timeline.get("surfaces") or {}
+    if not specs or timeline.get("surfaces_placed"):
+        return timeline
+    geo = {name: surface_geometry(spec) for name, spec in specs.items()}
+    steps = []
+    for step in timeline["steps"]:
+        events = []
+        for ev in step["events"]:
+            g = geo.get(ev.get("surface"))
+            if g is None or ev["type"] == "close":
+                events.append(ev)
+                continue
+            if ev["type"] == "open":
+                icon = g["icon"]
+                events.append({**ev, "type": "click", "opens": True, "selector": f"{ev['surface']}:icon",
+                               "box": dict(icon), "point": dict(zip("xy", center(icon))), "frame_box": dict(icon),
+                               "form_box": dict(g["area"])})
+                continue
+            panel = g["panel"]
+            moved = dict(ev)
+            for key in ("box", "frame_box"):
+                if ev.get(key):
+                    moved[key] = _clip({**ev[key], "x": ev[key]["x"] + panel["x"], "y": ev[key]["y"] + panel["y"]}, panel)
+            if ev.get("point"):
+                moved["point"] = {"x": ev["point"]["x"] + panel["x"], "y": ev["point"]["y"] + panel["y"]}
+            moved.pop("form_box", None)
+            if ev["type"] in FORM_EVENTS:
+                moved["form_box"] = dict(g["area"])
+            events.append(moved)
+        steps.append({**step, "events": events})
+    return {**timeline, "steps": steps, "surfaces_placed": True}
+
+
+def plan_surfaces(timeline: dict, camera: list[dict], stage: "Stage") -> list[dict]:
+    """`surface` items (the panel, only while open) and `toolbar` items (the strip, from before the icon click
+    until just after closing), with their source box and output rect when they appear."""
+    ss, se = timeline["screen_start"], timeline["screen_end"]
+    out = []
+    for name, spec in (timeline.get("surfaces") or {}).items():
+        g = surface_geometry(spec)
+        bars: list[list[float]] = []
+        for t0, t1 in spec.get("windows") or []:
+            out.append({"kind": "surface", "name": name, "t0": round(t0, 3), "t1": round(t1, 3), "box": dict(g["panel"]),
+                        "rect": rnd(stage.map(g["panel"], frame_at(camera, t0)))})
+            a, b = max(ss, t0 - TOOLBAR_LEAD), min(se, t1 + TOOLBAR_TAIL)
+            if bars and a <= bars[-1][1]:
+                bars[-1][1] = max(bars[-1][1], b)
+            else:
+                bars.append([a, b])
+        for a, b in bars:
+            out.append({"kind": "toolbar", "name": name, "t0": round(a, 3), "t1": round(b, 3), "box": dict(g["toolbar"]),
+                        "rect": rnd(stage.map(g["toolbar"], frame_at(camera, a)))})
+    return out
 
 
 class Stage:
@@ -985,6 +1078,7 @@ def card_lines(text: str, product: str | None, width: float, font: float, max_li
 
 def plan(timeline: dict, brand: dict) -> dict:
     """Everything compose decides, in output pixels: the layout.json of the video (L5)."""
+    timeline = with_surfaces(timeline)
     kind = timeline.get("type", "TUT")
     fmt = timeline.get("format", "16:9")
     product = timeline.get("product")
@@ -1034,6 +1128,7 @@ def plan(timeline: dict, brand: dict) -> dict:
                 items.append({"kind": "active", "t0": round(t0, 3), "t1": round(t1, 3), **base, "rect_start": start})
 
     items.extend(plan_spotlights(shots, camera, stage, pal, timeline))
+    items.extend(plan_surfaces(timeline, camera, stage))
 
     # Cursor (C5): samples at each pointer event; hidden while a toast is on screen (R2, N6).
     hidden: list[tuple[float, float]] = []
@@ -1167,8 +1262,10 @@ def cam_vars(fr: dict) -> str:
     return f'"--cx": {num(fr["x"])}, "--cy": {num(fr["y"])}, "--s": {num(fr["s"])}'
 
 
-def build(timeline: dict, brand: dict, logo_src: str | None = None) -> tuple[str, dict]:
-    """(index.html, layout) for one video."""
+def build(timeline: dict, brand: dict, logo_src: str | None = None,
+          icon_srcs: dict[str, str] | None = None) -> tuple[str, dict]:
+    """(index.html, layout) for one video. `icon_srcs`: surface name -> src of its toolbar icon."""
+    timeline = with_surfaces(timeline)
     layout = plan(timeline, brand)
     pal = layout["palette"]
     b = resolve_brand(brand)
@@ -1279,6 +1376,30 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None) -> tuple[str
         else:
             script.append(f'tl.to("#{sid}", {{opacity: 0, duration: 0.2, ease: "power1.in"}}, {num(last["t1"])});')
 
+    # Surfaces (S5): the panel plays the surface track (same clock as the screen) and shows only while open;
+    # the strip holds the extension icon, pressed while its panel is open.
+    surface_markup = []
+    for name, spec in (timeline.get("surfaces") or {}).items():
+        g = surface_geometry(spec)
+        sid = f"surface-{name}"
+        ic, bar = g["icon"], g["toolbar"]
+        src = (icon_srcs or {}).get(name)
+        icon = (f'<img class="toolbar-icon" src="{esc(src)}" alt="" ' if src else '<div class="toolbar-icon toolbar-glyph" ') + \
+            f'style="{box_style([ic["x"] - bar["x"], ic["y"] - bar["y"], ic["w"], ic["h"]])}"' + (" />" if src else "></div>")
+        surface_markup.append(
+            f'          <div class="toolbar" id="{sid}-bar" style="{box_style([bar["x"], bar["y"], bar["w"], bar["h"]])}">'
+            f'<div class="toolbar-press" id="{sid}-press"></div>{icon}</div>\n'
+            f'          <div class="surface" id="{sid}" style="{box_style([g["panel"][k] for k in "xywh"])}">'
+            f'<video id="{sid}-video" class="clip" src="assets/{esc(spec["file"])}" muted playsinline '
+            f'data-start="{num(ss)}" data-duration="{num(se - ss)}"></video></div>')
+        for item in (i for i in items if i["kind"] == "surface" and i["name"] == name):
+            for target in (f"#{sid}", f"#{sid}-press"):
+                script.append(f'tl.set("{target}", {{opacity: 1}}, {num(item["t0"])});')
+                script.append(f'tl.set("{target}", {{opacity: 0}}, {num(item["t1"])});')
+        for item in (i for i in items if i["kind"] == "toolbar" and i["name"] == name):
+            script.append(f'tl.to("#{sid}-bar", {{opacity: 1, duration: 0.2, ease: "power1.out"}}, {num(item["t0"])});')
+            script.append(f'tl.to("#{sid}-bar", {{opacity: 0, duration: 0.2, ease: "power1.in"}}, {num(item["t1"])});')
+
     # Chip + captions: absolute rects in the band; they appear at 100 % opacity at once (O1).
     overlays = []
     for i, item in enumerate(i for i in items if i["kind"] == "chip"):
@@ -1326,6 +1447,7 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None) -> tuple[str
         "CHIP_PAD_Y": CHIP_PAD_Y, "RADIUS": RADIUS, "CURSOR_PX": CURSOR_PX, "CURSOR_W": CURSOR_W,
         "TOTAL": num(total), "SCREEN_START": num(ss), "SCREEN": num(se - ss),
         "HIGHLIGHTS": "\n".join(hl_markup), "SPOTLIGHTS": "\n".join(spot_markup), "OVERLAYS": "\n".join(overlays), "CARDS": "\n".join(cards),
+        "SURFACES": "\n".join(surface_markup),
         "TIMELINE": "\n".join("      " + line for line in script),
     }
     return fill(TEMPLATE.read_text(encoding="utf-8"), values), layout
@@ -1338,8 +1460,9 @@ def stage_top(layout: dict) -> float:
 # --- project ----------------------------------------------------------------------------------
 
 def compose_video(timeline: dict, screen: Path, mix: Path, brand: dict, out: Path, logo: Path | None = None,
-                  checked: bool = True) -> dict:
-    """Writes the HyperFrames project of one video into `out` (index.html, assets/, layout.json)."""
+                  checked: bool = True, icons: dict[str, Path] | None = None) -> dict:
+    """Writes the HyperFrames project of one video into `out` (index.html, assets/, layout.json). Surface tracks
+    (timeline `surfaces`) are read next to `screen`; `icons`: surface name -> its toolbar icon file."""
     if not GSAP.exists():
         raise PipelineError("Falta node_modules/gsap. Corré: npm install")
     assets = out / "assets"
@@ -1351,7 +1474,17 @@ def compose_video(timeline: dict, screen: Path, mix: Path, brand: dict, out: Pat
     if logo:
         logo_src = f"assets/{logo.name}"
         shutil.copyfile(logo, assets / logo.name)
-    page, layout = build(timeline, brand, logo_src)
+    icon_srcs = {}
+    for name, spec in (timeline.get("surfaces") or {}).items():
+        track = screen.parent / spec["file"]
+        if not track.exists():
+            raise PipelineError(f"Falta {track.name} junto a {screen.name}. Corré antes edit.py.")
+        shutil.copyfile(track, assets / spec["file"])
+        icon = (icons or {}).get(name)
+        if icon:
+            icon_srcs[name] = f"assets/surface-{name}-icon{icon.suffix}"
+            shutil.copyfile(icon, out / icon_srcs[name])
+    page, layout = build(timeline, brand, logo_src, icon_srcs)
     (out / "index.html").write_text(page, encoding="utf-8")
     write_json(out / "layout.json", layout)
     video = timeline.get("video") or out.name
@@ -1417,7 +1550,15 @@ def compose(slug: str, video: str | None = None) -> dict:
         timeline = read_json(timeline_path)
         timeline.setdefault("product", tut.get("product"))
         timeline.setdefault("title", tut.get("title"))
-        results[video] = compose_video(timeline, screen, mix, brand, pdir / f"hf-{video}", brand["logo"])
+        icons = {}
+        for name, spec in (timeline.get("surfaces") or {}).items():
+            if spec.get("icon"):
+                path = pdir / spec["icon"]
+                if not path.exists():
+                    raise PipelineError(f"surfaces.{name}.icon: no existe {path}")
+                icons[name] = path
+        results[video] = compose_video(timeline, screen, mix, brand, pdir / f"hf-{video}", brand["logo"],
+                                       icons=icons)
     return results
 
 

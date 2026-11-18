@@ -100,7 +100,12 @@ def load_access(slug: str) -> None:
 
 
 ACTION_KINDS = {"goto", "click", "hover", "press", "scroll", "wait", "pause", "type", "select",
-                "focus", "result", "highlight"}
+                "focus", "result", "highlight", "open", "close", "follow", "back"}
+# Actions that may run inside an open surface: {in: SURFACE, sel: SELECTOR} ({in, px} for scroll).
+SURFACE_ACTIONS = {"click", "hover", "scroll", "wait", "focus", "result", "highlight"}
+ANCHORS = ("top-right", "top-left")
+# The surface hangs under a toolbar strip: 16 px from the sides, 64 px of strip and gaps (compose).
+SURFACE_EDGE, SURFACE_TOP = 16, 64
 VIDEO_TYPES = ("TUT", "RED", "PRO", "NOV")
 FORMATS = ("16:9", "9:16")
 DEFAULT_FORMAT = {"TUT": "16:9", "RED": "9:16", "PRO": "16:9", "NOV": "16:9"}
@@ -125,10 +130,27 @@ def _validate_card(where: str, card, text_optional: bool = False) -> None:
             _fail(where, f"falta '{key}' (E1)")
 
 
-def _validate_steps(steps) -> list[str]:
+def _validate_surface_action(where: str, kind: str, arg, surfaces, opened: set) -> None:
+    """{in: SURFACE, sel: SELECTOR} (scroll: {in, px}) on a declared surface that is open."""
+    key, shape = ("px", "{in: SUPERFICIE, px: PÍXELES}") if kind == "scroll" else ("sel", "{in: SUPERFICIE, sel: SELECTOR}")
+    value = arg.get(key)
+    good = isinstance(value, (int, float)) and not isinstance(value, bool) if key == "px" else \
+        isinstance(value, str) and value.strip()
+    if not isinstance(arg.get("in"), str) or not good:
+        _fail(where, f"'{kind}' en una superficie necesita {shape}")
+    name = arg["in"]
+    if name not in surfaces:
+        _fail(where, f"'{kind}' nombra una superficie que no existe en 'surfaces': {name}")
+    if name not in opened:
+        _fail(where, f"'{kind}' en '{name}' pero no está abierta (usa open: {name} antes)")
+
+
+def _validate_steps(steps, surfaces=()) -> list[str]:
     if not isinstance(steps, list) or not steps:
         raise PipelineError("tutorial.yaml: 'steps' tiene que ser una lista con al menos un paso")
     ids = []
+    opened: set[str] = set()   # surfaces open at this point of the take (open/close run in step order)
+    followed = False           # a tab adopted with follow: tab, until back: main
     for i, step in enumerate(steps):
         if not isinstance(step, dict) or not isinstance(step.get("id"), str) or not step["id"]:
             raise PipelineError("tutorial.yaml: cada paso necesita un 'id' único")
@@ -153,7 +175,83 @@ def _validate_steps(steps) -> list[str]:
                 _fail(f"paso {sid}", "'type' necesita {into: SELECTOR, text: TEXTO}")
             if kind == "select" and not (isinstance(arg, dict) and arg.get("in") and "option" in arg):
                 _fail(f"paso {sid}", "'select' necesita {in: SELECTOR, option: VALOR}")
+            where = f"paso {sid}"
+            if kind in SURFACE_ACTIONS and isinstance(arg, dict):
+                _validate_surface_action(where, kind, arg, surfaces, opened)
+            elif kind in ("open", "close"):
+                if arg not in surfaces:
+                    _fail(where, f"'{kind}' nombra una superficie que no existe en 'surfaces': {arg}")
+                if kind == "open" and arg in opened:
+                    _fail(where, f"'open: {arg}' pero ya está abierta")
+                if kind == "close" and arg not in opened:
+                    _fail(where, f"'close: {arg}' pero no está abierta")
+                (opened.add if kind == "open" else opened.discard)(arg)
+            elif kind == "follow":
+                if arg != "tab":
+                    _fail(where, "'follow' solo admite 'tab'")
+                if followed:
+                    _fail(where, "'follow: tab' con otra pestaña ya seguida (usa back: main antes)")
+                followed = True
+            elif kind == "back":
+                if arg != "main":
+                    _fail(where, "'back' solo admite 'main'")
+                if not followed:
+                    _fail(where, "'back: main' sin una pestaña seguida antes (follow: tab)")
+                followed = False
     return ids
+
+
+def _validate_censor(censor) -> None:
+    """S3: censor {selectors: [CSS], text: [regex]}; the patterns (names, RUC) are never echoed."""
+    if not isinstance(censor, dict):
+        raise PipelineError("tutorial.yaml: 'censor' tiene que ser un mapa {selectors: [...], text: [...]}")
+    if set(censor) - {"selectors", "text"}:
+        raise PipelineError("tutorial.yaml: 'censor' solo admite selectors y text")
+    listed = lambda v: isinstance(v, list) and all(isinstance(s, str) and s.strip() for s in v)  # noqa: E731
+    if not listed(censor.get("selectors", [])):
+        raise PipelineError("tutorial.yaml: 'censor.selectors' tiene que ser una lista de selectores CSS")
+    if not listed(censor.get("text", [])):
+        raise PipelineError("tutorial.yaml: 'censor.text' tiene que ser una lista de expresiones regulares")
+    for i, pattern in enumerate(censor.get("text", [])):
+        if pattern.startswith("env:"):
+            continue   # resolved by capture (the real name stays in acceso.local.yaml)
+        try:
+            re.compile(pattern, re.I)
+        except re.error:
+            raise PipelineError(f"tutorial.yaml: 'censor.text[{i}]' no es una expresión regular válida") from None
+
+
+def _validate_surfaces(surfaces, viewport) -> list[str]:
+    """S5: extra pages recorded next to the main tab (an extension popup), composited by compose."""
+    if not isinstance(surfaces, dict):
+        raise PipelineError("tutorial.yaml: 'surfaces' tiene que ser un mapa {nombre: {url, size, ...}}")
+    vw, vh = viewport
+    max_w, max_h = vw - 2 * SURFACE_EDGE, vh - SURFACE_TOP
+    for name, spec in surfaces.items():
+        if name == "main":
+            raise PipelineError("tutorial.yaml: surfaces: 'main' está reservado para la pestaña principal")
+        if not isinstance(name, str) or not VIDEO_ID.match(name):
+            raise PipelineError(f"tutorial.yaml: surfaces: el nombre '{name}' tiene que ir en minúsculas "
+                                "(letras, números, - o _)")
+        where = f"surfaces.{name}"
+        if not isinstance(spec, dict) or not isinstance(spec.get("url"), str) or not spec["url"].strip():
+            _fail(where, "falta 'url' (p.ej. chrome-extension://<id>/popup.html)")
+        size = spec.get("size")
+        if not (isinstance(size, list) and len(size) == 2
+                and all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in size)):
+            _fail(where, "'size' tiene que ser [ancho, alto] en píxeles")
+        if size[0] > max_w or size[1] > max_h:
+            _fail(where, f"'size' no entra debajo de la barra (máximo {max_w}x{max_h})")
+        dpr = spec.get("dpr", 1)
+        if isinstance(dpr, bool) or not isinstance(dpr, (int, float)) or not 1 <= dpr <= 3:
+            _fail(where, "'dpr' tiene que ser un número entre 1 y 3")
+        if spec.get("anchor", "top-right") not in ANCHORS:
+            _fail(where, "'anchor' tiene que ser top-right o top-left")
+        if spec.get("target_tab") is not None and not isinstance(spec["target_tab"], str):
+            _fail(where, "'target_tab' tiene que ser un patrón de URL (texto)")
+        if spec.get("icon") is not None and not isinstance(spec["icon"], str):
+            _fail(where, "'icon' tiene que ser una ruta (texto)")
+    return list(surfaces)
 
 
 def _validate_videos(videos, step_ids: list[str]) -> None:
@@ -245,7 +343,12 @@ def validate_tutorial(data) -> None:
         raise PipelineError("tutorial.yaml: 'glossary' tiene que ser un mapa {término: [sinónimos prohibidos]}")
     if data.get("brand") is not None:
         _validate_brand(data["brand"])
-    step_ids = _validate_steps(data["steps"])
+    if data.get("censor") is not None:
+        _validate_censor(data["censor"])
+    surfaces = []
+    if data.get("surfaces") is not None:
+        surfaces = _validate_surfaces(data["surfaces"], data.get("viewport") or [1920, 1080])
+    step_ids = _validate_steps(data["steps"], surfaces)
     # Checked when present; a tutorial without it fails in videos(), where stages need it.
     if "videos" in data:
         _validate_videos(data["videos"], step_ids)

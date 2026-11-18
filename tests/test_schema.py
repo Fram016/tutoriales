@@ -34,7 +34,7 @@ BASE = {
 }
 
 
-class SchemaTest(unittest.TestCase):
+class YamlCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -52,6 +52,8 @@ class SchemaTest(unittest.TestCase):
             self.load(data)
         self.assertIn(fragment, str(ctx.exception))
 
+
+class SchemaTest(YamlCase):
     def test_valid_v2_loads(self):
         self.assertEqual(self.load(BASE)["title"], BASE["title"])
 
@@ -187,6 +189,140 @@ class SchemaTest(unittest.TestCase):
         data = copy.deepcopy(BASE)
         data["brand"] = ["#6d28d9"]
         self.assertRejects(data, "'brand' tiene que ser un mapa")
+
+
+POPUP = {"url": "chrome-extension://jakigokhcbfpebeiolidapdkeooiapeb/popup.html", "size": [420, 640], "dpr": 2,
+         "anchor": "top-right", "target_tab": "https://srienlinea.sri.gob.ec/*", "icon": "brand/icon48.png"}
+
+
+def with_popup(actions_by_step):
+    """BASE with surfaces.popup and the given actions per step id."""
+    data = copy.deepcopy(BASE)
+    data["surfaces"] = {"popup": dict(POPUP)}
+    for step in data["steps"]:
+        if step["id"] in actions_by_step:
+            step["actions"] = actions_by_step[step["id"]]
+    return data
+
+
+class CensorSchemaTest(YamlCase):
+    """perseo-xml S3: censor {selectors, text} is validated without echoing the patterns."""
+
+    def test_valid_censor_loads(self):
+        data = copy.deepcopy(BASE)
+        data["censor"] = {"selectors": ["#cabecera .ruc"], "text": [r"\b\d{13}\b", "NOMBRE DE PRUEBA", "env:CENSOR_NOMBRE"]}
+        self.assertEqual(self.load(data)["censor"]["selectors"], ["#cabecera .ruc"])
+
+    def test_censor_shape(self):
+        cases = [(["#a"], "'censor' tiene que ser un mapa {selectors: [...], text: [...]}"),
+                 ({"selectors": "#a"}, "'censor.selectors' tiene que ser una lista de selectores CSS"),
+                 ({"selectors": [""]}, "'censor.selectors' tiene que ser una lista de selectores CSS"),
+                 ({"text": r"\d{13}"}, "'censor.text' tiene que ser una lista de expresiones regulares"),
+                 ({"text": [13]}, "'censor.text' tiene que ser una lista de expresiones regulares"),
+                 ({"selectors": [], "text": [], "blur": 3}, "'censor' solo admite selectors y text")]
+        for censor, message in cases:
+            data = copy.deepcopy(BASE)
+            data["censor"] = censor
+            with self.subTest(censor=censor):
+                self.assertRejects(data, message)
+
+    def test_bad_regex_is_rejected_without_echoing_it(self):
+        data = copy.deepcopy(BASE)
+        data["censor"] = {"text": [r"\d{13}", "JUAN PEREZ("]}
+        with self.assertRaises(common.PipelineError) as ctx:
+            self.load(data)
+        self.assertIn("'censor.text[1]' no es una expresión regular válida", str(ctx.exception))
+        self.assertNotIn("JUAN", str(ctx.exception))
+
+
+class SurfaceSchemaTest(YamlCase):
+    """perseo-xml S5: surfaces + open/close, {in: surface} actions, follow: tab / back: main."""
+
+    FLOW = {"login": [{"click": "#a"}, {"open": "popup"}, {"click": {"in": "popup", "sel": "#boton4"}},
+                      {"hover": {"in": "popup", "sel": "#boton1"}}, {"scroll": {"in": "popup", "px": 200}},
+                      {"result": {"in": "popup", "sel": "#estado"}}],
+            "nuevo": [{"click": {"in": "popup", "sel": "#configure-folder"}}, {"follow": "tab"},
+                      {"focus": "#b"}, {"back": "main"}, {"close": "popup"}]}
+
+    def test_valid_surface_flow_loads(self):
+        tut = self.load(with_popup(self.FLOW))
+        self.assertEqual(tut["surfaces"]["popup"]["size"], [420, 640])
+        self.assertEqual(tut["steps"][1]["actions"][1], {"follow": "tab"})
+
+    def test_surface_definition(self):
+        cases = [({"url": None}, "surfaces.popup: falta 'url' (p.ej. chrome-extension://<id>/popup.html)"),
+                 ({"size": [420]}, "surfaces.popup: 'size' tiene que ser [ancho, alto] en píxeles"),
+                 ({"size": [420, "640"]}, "surfaces.popup: 'size' tiene que ser [ancho, alto] en píxeles"),
+                 ({"size": [420, 1100]}, "surfaces.popup: 'size' no entra debajo de la barra (máximo 1888x1016)"),
+                 ({"dpr": 0}, "surfaces.popup: 'dpr' tiene que ser un número entre 1 y 3"),
+                 ({"anchor": "bottom"}, "surfaces.popup: 'anchor' tiene que ser top-right o top-left"),
+                 ({"target_tab": 3}, "surfaces.popup: 'target_tab' tiene que ser un patrón de URL (texto)"),
+                 ({"icon": ["a"]}, "surfaces.popup: 'icon' tiene que ser una ruta (texto)")]
+        for change, message in cases:
+            data = with_popup({})
+            data["surfaces"]["popup"].update(change)
+            with self.subTest(change=change):
+                self.assertRejects(data, message)
+
+    def test_surface_names(self):
+        data = with_popup({})
+        data["surfaces"] = [POPUP]
+        self.assertRejects(data, "'surfaces' tiene que ser un mapa {nombre: {url, size, ...}}")
+        data = with_popup({})
+        data["surfaces"] = {"main": dict(POPUP)}
+        self.assertRejects(data, "surfaces: 'main' está reservado para la pestaña principal")
+        data = with_popup({})
+        data["surfaces"] = {"Pop Up": dict(POPUP)}
+        self.assertRejects(data, "surfaces: el nombre 'Pop Up' tiene que ir en minúsculas (letras, números, - o _)")
+
+    def test_open_and_close_order(self):
+        cases = [({"login": [{"open": "panel"}]}, "paso login: 'open' nombra una superficie que no existe en 'surfaces': panel"),
+                 ({"login": [{"open": "popup"}, {"open": "popup"}]}, "paso login: 'open: popup' pero ya está abierta"),
+                 ({"login": [{"close": "popup"}]}, "paso login: 'close: popup' pero no está abierta"),
+                 ({"login": [{"open": "popup"}, {"close": "popup"}], "nuevo": [{"close": "popup"}]},
+                  "paso nuevo: 'close: popup' pero no está abierta")]
+        for flow, message in cases:
+            with self.subTest(message=message):
+                self.assertRejects(with_popup(flow), message)
+
+    def test_actions_in_a_surface(self):
+        cases = [({"login": [{"click": {"in": "popup", "sel": "#boton4"}}]},
+                  "paso login: 'click' en 'popup' pero no está abierta (usa open: popup antes)"),
+                 ({"login": [{"open": "popup"}, {"hover": {"in": "panel", "sel": "#x"}}]},
+                  "paso login: 'hover' nombra una superficie que no existe en 'surfaces': panel"),
+                 ({"login": [{"open": "popup"}, {"click": {"in": "popup"}}]},
+                  "paso login: 'click' en una superficie necesita {in: SUPERFICIE, sel: SELECTOR}"),
+                 ({"login": [{"open": "popup"}, {"scroll": {"in": "popup", "sel": "#x"}}]},
+                  "paso login: 'scroll' en una superficie necesita {in: SUPERFICIE, px: PÍXELES}"),
+                 ({"login": [{"click": {"sel": "#a"}}]},
+                  "paso login: 'click' en una superficie necesita {in: SUPERFICIE, sel: SELECTOR}")]
+        for flow, message in cases:
+            with self.subTest(message=message):
+                self.assertRejects(with_popup(flow), message)
+
+    def test_follow_and_back(self):
+        cases = [({"login": [{"follow": "window"}]}, "paso login: 'follow' solo admite 'tab'"),
+                 ({"login": [{"follow": "tab"}, {"back": "popup"}]}, "paso login: 'back' solo admite 'main'"),
+                 ({"login": [{"back": "main"}]}, "paso login: 'back: main' sin una pestaña seguida antes (follow: tab)"),
+                 ({"login": [{"follow": "tab"}], "nuevo": [{"follow": "tab"}]},
+                  "paso nuevo: 'follow: tab' con otra pestaña ya seguida (usa back: main antes)")]
+        for flow, message in cases:
+            with self.subTest(message=message):
+                self.assertRejects(with_popup(flow), message)
+
+    def test_ext_demo_example_is_valid(self):
+        example = Path(__file__).resolve().parents[1] / "demo-apps" / "ext-demo" / "tutorial.example.yaml"
+        data = yaml.safe_load(example.read_text(encoding="utf-8"))
+        common.validate_tutorial(data)
+        self.assertEqual(data["surfaces"]["popup"]["target_tab"], "http://127.0.0.1:8767/*")
+
+    def test_plain_actions_are_unchanged(self):
+        # PRESERVE: string selectors, type and select keep their shapes and messages.
+        data = with_popup({"login": [{"click": "#a"}, {"scroll": 300}, {"type": {"into": "#n", "text": "x"}},
+                                     {"select": {"in": "#etapa", "option": "Cliente"}}]})
+        self.assertEqual(len(self.load(data)["steps"][0]["actions"]), 4)
+        self.assertRejects(with_popup({"login": [{"select": {"in": "#etapa"}}]}),
+                           "'select' necesita {in: SELECTOR, option: VALOR}")
 
 
 if __name__ == "__main__":

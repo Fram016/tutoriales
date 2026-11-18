@@ -1,0 +1,53 @@
+# Example of censor + surfaces + follow on the local stand-in (odd/tasks/perseo-xml.md T3).
+# Serve demo-apps/ext-demo/ on http://127.0.0.1:8767/ and load extension/ unpacked to use the real popup;
+# without the extension, surfaces.popup.url can point to http://127.0.0.1:8767/extension/popup.html
+# (preview mode: the buttons only update the popup's status line).
+title: "Cómo descargar comprobantes con Demo XML"
+product: "Demo XML"
+app_url: http://127.0.0.1:8767/site/
+viewport: [1920, 1080]
+language: es-EC
+device: desktop
+censor:
+  selectors: ["#contribuyente"]
+  text: ['\b\d{13}\b', "NOMBRE DE PRUEBA"]   # or env:CENSOR_NOMBRE kept in acceso.local.yaml
+surfaces:
+  popup:
+    url: "chrome-extension://<id>/popup.html"
+    size: [420, 640]
+    dpr: 2
+    anchor: top-right
+    target_tab: "http://127.0.0.1:8767/*"
+    icon: extension/icons/icon48.png       # relative to the project folder
+steps:
+  - id: consultar
+    narration: "Haz clic en Consultar para ver los comprobantes del mes."
+    actions:
+      - click: "#consultar"
+      - wait: "#resultados tbody tr"
+      - highlight: "#resultados tbody"
+  - id: abrir
+    narration: "Haz clic en el icono de Demo XML para abrir la extensión."
+    actions:
+      - open: popup
+      - focus: {in: popup, sel: "section:nth-of-type(2)"}
+  - id: descargar
+    narration: "Elige XML desde el RIDE y espera el aviso de descarga."
+    actions:
+      - click: {in: popup, sel: "#boton4"}
+      - result: {in: popup, sel: "#estado"}
+  - id: carpeta
+    narration: "Para cambiar la carpeta, haz clic en Carpeta de descargas."
+    actions:
+      - click: {in: popup, sel: "#configure-folder"}
+      - follow: tab
+      - pause: 1200
+      - back: main
+      - close: popup
+videos:
+  - id: tutorial
+    type: TUT
+    format: "16:9"
+    steps: all
+    opening: {narration: "Descarga tus comprobantes con Demo XML."}
+    closing: {narration: "Siguiente: importa los XML.", text: "Siguiente: importar los XML"}

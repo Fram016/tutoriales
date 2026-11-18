@@ -30,6 +30,11 @@ screen_start..screen_end. Each step is a piecewise warp of its capture span:
   possible (A2), keeping the LEAD when nothing needs to move.
 Every action event is remapped through the warp so zooms, cursor and captions land exactly; a click
 that changes the screen also gets `screen_at`, the output time of the new screen (compose cuts there).
+
+Surfaces (perseo-xml S5, an extension popup recorded next to the tab): their frames go through the same
+warp into edit/V/surface-<name>.mp4, and timeline `surfaces.<name>.windows` says when each is open (output
+times). Events inside a surface keep `surface` (boxes in surface CSS px); `open` is the click on the
+toolbar icon, so it is a pointer action (C3 lead, N1 main action).
 """
 from __future__ import annotations
 
@@ -57,7 +62,7 @@ CLICK_LAG = 0.15   # the recorder logs clicks/selects once they return: the page
 IDLE_LONG = 1.0    # idle spans longer than this always run at max speed (waits, pauses)
 MAX_SPEED = 3.0
 FPS = 30
-POINTER_EVENTS = ("click", "type", "select", "hover")
+POINTER_EVENTS = ("click", "type", "select", "hover", "open")
 # C4: a load is a frame with (almost) no ink off the page colour; a spinner is < 0.1 %, while a sparse
 # but real screen (a short list, a toast in a corner) keeps ~1 % of small text at 1/4 scale.
 BLANK_SIZE = (480, 270)
@@ -68,6 +73,7 @@ BLANK_DIST = 18
 CHANGE_SIZE = (64, 36)
 CHANGE_DIFF, CHANGE_SHARE, CHANGE_WINDOW = 24, 0.3, 1.5
 SCREEN_EVENTS = ("click", "select", "press", "goto")
+EVENT_KEYS = ("key", "dy", "frame_box", "form_box", "surface", "tab")   # carried to the timeline as they are
 SYNC_AFTER = 0.3   # N1: the instruction ends at most this long after its action
 ACTION_EVENTS = ("click", "select", "type", "hover", "press")   # a step's single action (N1)
 OMIT_BEFORE = 0.5  # omit: the pointer reaching an omitted field is cut too
@@ -153,7 +159,8 @@ def mark_screen_changes(actions: dict, frames: list[dict], flags: list[bool], fr
     found = 0
     for step in actions["steps"]:
         for ev in step["events"]:
-            if ev["type"] in SCREEN_EVENTS:
+            # A click inside a surface changes the surface, not the recorded tab.
+            if ev["type"] in SCREEN_EVENTS and not ev.get("surface"):
                 lag = CLICK_LAG if ev["type"] in ("click", "select") else 0.0
                 at = screen_change(frames, flags, frames_dir, ev["t"] - lag)
                 if at is not None:
@@ -290,10 +297,11 @@ def leave_room(pieces: list[dict], events: list[dict], a: float, b: float, carry
     grew = False
     for ev in sorted(events, key=lambda e: e["t"]):
         t = clamp(ev["t"])
+        kind = camera_kind(ev)
         lands = 0.0
         if ev["type"] in POINTER_EVENTS and screen:
             s, before = screen
-            deficit = establish_room(ev["type"]) - (before + warp(pieces, t) - warp(pieces, s))
+            deficit = establish_room(kind) - (before + warp(pieces, t) - warp(pieces, s))
             if deficit > 1e-9:
                 _freeze_before(pieces, t, deficit)
             screen = None
@@ -307,14 +315,19 @@ def leave_room(pieces: list[dict], events: list[dict], a: float, b: float, carry
             if need > ev.get("hold", 0.0) + 1e-3:
                 ev["hold"] = need
                 grew = True
-        if ev["type"] in HOLD:
+        if kind in HOLD:
             end = clamp(ev.get("t_end", ev["t"])) if ev["type"] == "type" else t
-            free = max(free or 0.0, warp(pieces, end) + lands + HOLD[ev["type"]])
+            free = max(free or 0.0, warp(pieces, end) + lands + HOLD[kind])
         if "screen_c" in ev:
             s = clamp(max(t, ev["screen_c"]))
             screen = since = (s, 0.0)
             free = None
     return screen, grew
+
+
+def camera_kind(ev: dict) -> str:
+    """The event as compose's camera sees it: opening a surface is a click on its toolbar icon."""
+    return "click" if ev["type"] == "open" else ev["type"]
 
 
 def instruction_share(narration: str) -> float:
@@ -333,9 +346,9 @@ def instruction_share(narration: str) -> float:
 
 
 def main_action(events: list[dict]) -> dict | None:
-    """N1: the action the narration asks for: the step's first click/select, or its single action."""
+    """N1: the action the narration asks for: the step's first click/select/open, or its single action."""
     ordered = sorted(events, key=lambda e: e["t"])
-    first = next((e for e in ordered if e["type"] in ("click", "select")), None)
+    first = next((e for e in ordered if e["type"] in ("click", "select", "open")), None)
     if first is None and len(ordered) == 1 and ordered[0]["type"] in ACTION_EVENTS:
         first = ordered[0]
     return first
@@ -533,7 +546,7 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             item = {"type": ev["type"], "t": _r(at), "t_end": _r(end), "selector": ev.get("selector"),
                     "box": ev.get("box"), "point": ev.get("point"), "chars": ev.get("chars", 0),
                     "secret": bool(ev.get("secret"))}
-            item.update({k: ev[k] for k in ("key", "dy", "frame_box", "form_box") if k in ev})
+            item.update({k: ev[k] for k in EVENT_KEYS if k in ev})
             if "screen_c" in ev:
                 item["screen_at"] = _r(max(at, t + warp(pieces, min(max(ev["screen_c"], cap["t0"]), cap["t1"]))))
             out_events.append(item)
@@ -583,19 +596,70 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
                             f"{GAP:.1f} s): alarga la narración o quita acciones")
     source = list(actions.get("viewport", tut.get("viewport", [1920, 1080])))
     output = [1920, 1080] if video["format"] == "16:9" else [1080, 1920]
-    return {
+    timeline = {
         "video": video["id"], "type": vtype, "format": video["format"], "source": source, "output": output,
         "total": _r(total), "product": tut.get("product", ""), "title": tut["title"],
         "opening": opening, "requirements": requirements, "closing": closing,
         "screen_start": _r(screen_start), "screen_end": _r(screen_end), "steps": steps,
         "warnings": warnings,
     }
+    surfaces = surface_specs(tut, actions, steps)
+    if surfaces:
+        timeline["surfaces"] = surfaces
+    return timeline
+
+
+# --- surfaces (perseo-xml S5) ------------------------------------------------------------------
+
+def surface_windows(steps: list[dict], windows) -> list[list[float]]:
+    """Output intervals during which a surface open over the capture `windows` [(c0, c1)] is on screen, through
+    the steps' warp. A freeze at c counts as before c (like warp): one at the opening is still closed, one
+    at the closing still open. Cut pieces show nothing."""
+    out: list[list[float]] = []
+
+    def add(o0: float, o1: float) -> None:
+        if o1 - o0 <= 1e-9:
+            return
+        if out and o0 - out[-1][1] <= 1e-3:
+            out[-1][1] = _r(o1)
+        else:
+            out.append([_r(o0), _r(o1)])
+
+    for step in steps:
+        for p in step["warp"]:
+            c0, c1, o0, o1 = p["c0"], p["c1"], p["o0"], p["o1"]
+            if o1 - o0 <= 1e-9:
+                continue
+            for w0, w1 in windows:
+                if c0 == c1:
+                    if w0 < c0 <= w1:
+                        add(o0, o1)
+                    continue
+                a, b = max(c0, w0), min(c1, w1)
+                if b > a:
+                    rate = (o1 - o0) / (c1 - c0)
+                    add(o0 + (a - c0) * rate, o0 + (b - c0) * rate)
+    return out
+
+
+def surface_specs(tut: dict, actions: dict, steps: list[dict]) -> dict:
+    """timeline `surfaces`: {name: {size, dpr, anchor, icon, file, windows}} for surfaces shown in this video."""
+    out = {}
+    for name, cap in (actions.get("surfaces") or {}).items():
+        windows = surface_windows(steps, [(w["t0"], w["t1"]) for w in cap.get("windows", [])])
+        if not windows:
+            continue
+        spec = (tut.get("surfaces") or {}).get(name) or {}
+        out[name] = {"size": list(cap["size"]), "dpr": cap.get("dpr", 1), "anchor": cap.get("anchor", "top-right"),
+                     "icon": spec.get("icon"), "file": f"surface-{name}.mp4", "windows": windows}
+    return out
 
 
 # --- video -----------------------------------------------------------------------------------
 
-def build_video(frames: list[dict], flags: list[bool], frames_dir, timeline: dict, out_path) -> None:
-    """Concat-demuxer list: each frame shown until the next entry's output time."""
+def frame_entries(frames: list[dict], flags: list[bool], timeline: dict) -> tuple[list[tuple[str, float]], float]:
+    """([(frame file, output time from screen_start)], screen length): the warp applied to a frames list
+    (the main capture or a surface: same clock). Blank frames are never shown."""
     times = [f["t"] for f in frames]
     good = [i for i, blank in enumerate(flags) if not blank] or list(range(len(frames)))
     good_times = [times[i] for i in good]
@@ -617,7 +681,13 @@ def build_video(frames: list[dict], flags: list[bool], frames_dir, timeline: dic
                 for i in range(lo, hi):
                     if not flags[i]:
                         entries.append((frames[i]["file"], o0 + (times[i] - c0) * (o1 - o0) / (c1 - c0)))
-    end = timeline["screen_end"] - base
+    return entries, timeline["screen_end"] - base
+
+
+def build_video(frames: list[dict], flags: list[bool], frames_dir, timeline: dict, out_path, even: bool = False) -> None:
+    """Concat-demuxer list: each frame shown until the next entry's output time. `even`: round the frame size
+    down to even pixels (surfaces have any size; yuv420p needs even ones)."""
+    entries, end = frame_entries(frames, flags, timeline)
     lines = []
     for (name, t), nxt in zip(entries, [e[1] for e in entries[1:]] + [end]):
         if nxt - t <= 0:
@@ -626,7 +696,8 @@ def build_video(frames: list[dict], flags: list[bool], frames_dir, timeline: dic
     lines.append(f"file '{(frames_dir / entries[-1][0]).as_posix()}'")
     listing = out_path.with_suffix(".txt")
     listing.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    ffmpeg("-f", "concat", "-safe", "0", "-i", str(listing), "-vf", f"fps={FPS},format=yuv420p",
+    size = "scale=trunc(iw/2)*2:trunc(ih/2)*2," if even else ""
+    ffmpeg("-f", "concat", "-safe", "0", "-i", str(listing), "-vf", f"{size}fps={FPS},format=yuv420p",
            "-t", f"{end:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", "16",
            "-movflags", "+faststart", str(out_path))
     listing.unlink()
@@ -653,6 +724,12 @@ def edit(slug: str, video: str | None = None) -> dict:
         out_dir = pdir / "edit" / v["id"]
         out_dir.mkdir(parents=True, exist_ok=True)
         build_video(frames, flags, frames_dir, timeline, out_dir / "screen.mp4")
+        for name, spec in (timeline.get("surfaces") or {}).items():
+            sdir = pdir / "capture" / "surfaces" / name
+            sframes = read_json(sdir / "frames.json")["frames"]
+            if not sframes:
+                raise PipelineError(f"La superficie '{name}' no tiene cuadros en la captura. Repite capture.py.")
+            build_video(sframes, [False] * len(sframes), sdir / "frames", timeline, out_dir / spec["file"], even=True)
         write_json(out_dir / "timeline.json", timeline)
         result[v["id"]] = timeline
         for w in timeline["warnings"]:

@@ -61,6 +61,29 @@
       }
       #screen { object-fit: fill; }
 
+      /* S5 (perseo-xml): an extension popup as the browser shows it, in source px inside the camera: a white
+         card with rounded corners and a soft shadow under a toolbar strip holding the extension icon (neutral
+         browser colors, not brand overlays). Hidden until the timeline opens it. */
+      .surface {
+        position: absolute;
+        opacity: 0;
+        overflow: hidden;
+        background: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.18);
+      }
+      .surface video { object-fit: fill; }
+      .toolbar {
+        position: absolute;
+        opacity: 0;
+        border-radius: 20px;
+        background: #f1f3f4;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+      }
+      .toolbar-press { position: absolute; inset: 4px; border-radius: 16px; background: rgba(60, 64, 67, 0.16); opacity: 0; }
+      .toolbar-icon { position: absolute; object-fit: contain; }
+      .toolbar-glyph { border-radius: 6px; background: #5f6368; }
+
       /* R3/N5: new element outlined in the brand accent (constant width on screen), with a pulsing glow. */
       .hl {
         position: absolute;
@@ -172,6 +195,7 @@
         <div id="cam" data-layout-allow-overflow>
           <video id="screen" class="clip" src="assets/screen.mp4" muted playsinline
                  data-start="{{SCREEN_START}}" data-duration="{{SCREEN}}"></video>
+{{SURFACES}}
 {{HIGHLIGHTS}}
 {{SPOTLIGHTS}}
           <div id="cursor-layer" class="clip" data-start="{{SCREEN_START}}" data-duration="{{SCREEN}}">

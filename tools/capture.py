@@ -2,9 +2,11 @@
 
 Usage: python tools/capture.py <slug>
 
-Writes proyectos/<slug>/capture/{frames/, frames.json, actions.json}.
+Writes proyectos/<slug>/capture/{frames/, frames.json, actions.json} and, for every surface of
+tutorial.yaml (an extension popup), capture/surfaces/<name>/{frames/, frames.json}.
 Credentials referenced as env:NAME are injected into a temporary take script that is
-deleted right after the run, so secrets never stay on disk next to the project.
+deleted right after the run, so secrets never stay on disk next to the project. The same goes
+for censor patterns written as env:NAME (a person's name kept in acceso.local.yaml).
 """
 from __future__ import annotations
 
@@ -36,6 +38,21 @@ def resolve_actions(steps: list[dict]) -> list[dict]:
     return resolved
 
 
+def resolve_censor(censor: dict | None) -> dict | None:
+    """S3: censor for the recorder, env:NAME patterns resolved (never printed)."""
+    if not censor:
+        return None
+    return {"selectors": list(censor.get("selectors") or []),
+            "text": [resolve_env_ref(p) for p in censor.get("text") or []]}
+
+
+def resolve_surfaces(surfaces: dict | None) -> dict:
+    """S5: what the recorder needs of each surface (compose reads `icon` from tutorial.yaml)."""
+    return {name: {"url": resolve_env_ref(spec["url"]), "size": list(spec["size"]), "dpr": spec.get("dpr", 1),
+                   "anchor": spec.get("anchor", "top-right"), "target_tab": spec.get("target_tab")}
+            for name, spec in (surfaces or {}).items()}
+
+
 def capture(slug: str) -> dict:
     tut = load_tutorial(slug)
     pdir = project_dir(slug)
@@ -47,6 +64,8 @@ def capture(slug: str) -> dict:
         "steps": resolve_actions(tut["steps"]),
         "viewport": tut.get("viewport", [1920, 1080]),
         "startUrl": resolve_env_ref(tut.get("app_url")),
+        "censor": resolve_censor(tut.get("censor")),
+        "surfaces": resolve_surfaces(tut.get("surfaces")),
     }
     take = build / "take.mjs"
     # Config on its own line: a Node error that echoes the failing call line shows no secrets.
@@ -75,6 +94,8 @@ def capture(slug: str) -> dict:
         raise PipelineError(f"Solo se capturaron {len(frames)} cuadros")
     fps = len(frames) / max(frames[-1]["t"], 0.001)
     print(f"[capture] ok: {len(frames)} cuadros (~{fps:.1f} fps), {len(actions['steps'])} pasos")
+    for name, surface in (actions.get("surfaces") or {}).items():
+        print(f"[capture] superficie {name}: {surface['frames']} cuadros en {len(surface['windows'])} apertura(s)")
     return actions
 
 
