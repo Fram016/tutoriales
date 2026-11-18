@@ -3,9 +3,13 @@
 Usage: python tools/smoke.py
 
 Serves demo-app/ on http://127.0.0.1:8765 (in-process; reuses a server already listening
-there if it serves DemoCRM), runs pipeline _demo --offline --quality draft (lint first) and
-then qa on every video of proyectos/_demo/tutorial.yaml: out/_demo-<video>.mp4, one QA report
-per video in qa/<video>.json. Needs ego-lite running for the capture stage.
+there if it serves DemoCRM) and mirrors the fast workflow on proyectos/_demo/tutorial.yaml:
+  1. pipeline _demo --offline --to compose (lint first)
+  2. qa.py --pre        layout + timeline + snapshots, no MP4
+  3. pipeline --only render --quality draft (every video in one call)
+  4. qa.py              full, with the MP4 checks
+printing the time of each phase: out/_demo-<video>.mp4 and one QA report per video in
+qa/<video>.json. Every phase runs even if a QA phase fails. Needs ego-lite for the capture stage.
 
 Offline the voice is a silent placeholder, but the music pad keeps the mix measurable, so
 A1 (loudness/true peak), A2 (silences, voice gaps from the timeline) and C4 still apply.
@@ -22,7 +26,7 @@ import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 from common import ROOT, PipelineError, main_guard
-from pipeline import STAGES, pipeline
+from pipeline import pipeline, select
 from qa import qa
 
 HOST, PORT = "127.0.0.1", 8765
@@ -70,18 +74,35 @@ def start_server() -> ThreadingHTTPServer | None:
 
 def smoke() -> bool:
     started = time.monotonic()
+    times: list[tuple[str, float]] = []
+
+    def phase(name, fn):
+        t0 = time.monotonic()
+        print(f"\n[smoke] === {name} ===")
+        try:
+            return fn()
+        finally:
+            times.append((name, time.monotonic() - t0))
+            print(f"[smoke] {name}: {times[-1][1]:.1f} s")
+
     server = start_server()
     try:
-        pipeline(SLUG, STAGES, offline=True, quality="draft")
-        print()
-        passed = qa(SLUG)
+        phase("pipeline --to compose", lambda: pipeline(SLUG, select(None, "compose", None), offline=True))
+        pre = phase("qa --pre", lambda: qa(SLUG, pre=True))
+        phase("pipeline --only render", lambda: pipeline(SLUG, select(None, None, "render"), quality="draft"))
+        full = phase("qa", lambda: qa(SLUG))
         for out in sorted((ROOT / "proyectos" / SLUG / "out").glob(f"{SLUG}-*.mp4")):
             print(f"[smoke] video: {out.relative_to(ROOT)}")
     finally:
         if server:
             server.shutdown()
             server.server_close()
-    print(f"\n[smoke] {'PASS' if passed else 'FAIL'} en {time.monotonic() - started:.1f} s")
+    passed = pre and full
+    print()
+    for name, seconds in times:
+        print(f"[smoke] {name:<24} {seconds:7.1f} s")
+    print(f"[smoke] {'PASS' if passed else 'FAIL'} en {time.monotonic() - started:.1f} s "
+          f"(qa --pre {'PASS' if pre else 'FAIL'}, qa {'PASS' if full else 'FAIL'})")
     return passed
 
 

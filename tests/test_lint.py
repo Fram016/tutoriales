@@ -38,13 +38,13 @@ BASE = {
     ],
     "videos": [
         {"id": "tutorial", "type": "TUT", "format": "16:9", "steps": "all",
-         "opening": {"narration": "Aquí aprendes a crear un contacto.",
-                     "text": "Aprende a crear un contacto"},
-         "closing": {"narration": "Siguiente video: registrar una oportunidad.",
+         "opening": {"narration": "Aprendes a crear contactos.",
+                     "text": "Tu primer contacto en minutos"},
+         "closing": {"narration": "Siguiente: una oportunidad.",
                      "text": "Siguiente: registrar una oportunidad"}},
         {"id": "redes", "type": "RED", "format": "9:16", "steps": ["nuevo", "datos", "guardar"],
          "opening": {"narration": "¿Lo conociste en una feria?", "text": "¿Conociste a alguien en una feria?"},
-         "closing": {"narration": "Mira el tutorial completo.", "text": "Mira el tutorial completo"},
+         "closing": {"narration": "Enlace del perfil.", "text": "Mira el tutorial completo en el enlace del perfil"},
          "narration": {"nuevo": "Abre Nuevo contacto y prepara el formulario de una vez sin perder tiempo.",
                        "datos": "Escribe el nombre y el correo que te dieron en la feria, nada más hace falta.",
                        "guardar": "Guarda y el contacto queda primero en la lista, listo para tu seguimiento."}},
@@ -275,9 +275,68 @@ class TypeRulesTest(BaseTest):
             title="Cómo crear tu primer contacto en Nexo CRM con nombre, apellido, correo, empresa, cargo y teléfono"))
         self.assertRule(warnings, "T3", "2 líneas")
 
+    def test_voice_estimate_is_realistic(self):
+        self.assertAlmostEqual(lint.seconds("uno dos tres cuatro"), 4 / 1.9 + 0.5)
+        self.assertEqual(lint.seconds(""), 0)
+        # 4 words: 2.6 s with the realistic estimate (was 1.5 s at 2.6 words/s)
+        _, warnings = run_lint(lambda d: video(d, "tutorial")["closing"].update(
+            narration="Siguiente: registrar una oportunidad."))
+        self.assertRule(warnings, "A2", "~2.6 s")
+
     def test_T3_wrap_never_splits_the_product(self):
         lines = lint.wrap("Cómo crear tu primer contacto en Nexo CRM", "Nexo CRM", 37)
         self.assertIn("Nexo CRM", lines[-1])
+
+
+class RoundTwoTest(BaseTest):
+    def test_N2_opening_text_repeating_the_title_is_an_error(self):
+        errors, _ = run_lint(lambda d: video(d, "tutorial")["opening"].update(text="Aprende a crear un contacto"))
+        self.assertRule(errors, "N2", "videos.tutorial.opening.text")
+        self.assertRule(errors, "N2", "%")
+
+    def test_N8_red_closing_without_destination_is_an_error(self):
+        errors, _ = run_lint(lambda d: video(d, "redes").update(
+            closing={"narration": "Mira el tutorial completo.", "text": "Mira el tutorial completo"}))
+        self.assertRule(errors, "N8", "videos.redes.closing")
+        for where in ("en nuestro canal de YouTube", "en el link de la descripción", "en nexocrm.com"):
+            errors, _ = run_lint(lambda d: video(d, "redes").update(
+                closing={"narration": "Mira el tutorial.", "text": f"Mira el tutorial {where}"}))
+            self.assertNoRule(errors, "N8")
+
+    def test_N8_applies_to_PRO_but_not_TUT_or_NOV(self):
+        def mutate(d):
+            d["videos"].append({"id": "promo", "type": "PRO", "format": "16:9", "steps": ["guardar"],
+                                "opening": {"narration": "¿Pierdes contactos?"},
+                                "closing": {"narration": "Pruébalo gratis hoy."}})
+        errors, _ = run_lint(mutate)
+        self.assertRule(errors, "N8", "videos.promo.closing")
+        self.assertNoRule(run_lint()[0], "N8")
+
+    def test_N4_story_from_the_opening_must_reach_the_steps(self):
+        def mutate(d):
+            video(d, "redes")["narration"]["datos"] = "Escribe el nombre y el correo, nada más hace falta para seguir."
+        _, warnings = run_lint(mutate)
+        self.assertRule(warnings, "N4", "«feria»")
+        def typed(d):
+            mutate(d)
+            d["steps"][2]["actions"].append({"select": {"in": "#c-origen", "option": "Feria"}})
+        _, warnings = run_lint(typed)
+        self.assertNoRule(warnings, "N4")
+
+    def test_N5_accent_with_a_foreign_hue_warns(self):
+        _, warnings = run_lint(lambda d: d.update(brand={"primary": "#7c3aed", "accent": "#ea580c"}))
+        self.assertRule(warnings, "N5", "#ea580c")
+        _, warnings = run_lint(lambda d: d.update(brand={"primary": "#7c3aed", "accent": "#6d28d9"}))
+        self.assertNoRule(warnings, "N5")
+
+    def test_omit_selectors_must_exist_in_the_video_steps(self):
+        errors, _ = run_lint(lambda d: video(d, "redes").update(omit=["#c-email"]))
+        self.assertNoRule(errors, "E2")
+        errors, _ = run_lint(lambda d: video(d, "redes").update(omit=["#c-cargo"]))
+        self.assertRule(errors, "E2", "omit")
+        self.assertRule(errors, "E2", "#c-cargo")
+        errors, _ = run_lint(lambda d: video(d, "redes").update(omit=["#login-email"]))  # login not in redes
+        self.assertRule(errors, "E2", "#login-email")
 
 
 class LintEntryPointTest(BaseTest):

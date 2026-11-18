@@ -4,13 +4,16 @@ Usage: python tools/lint.py <slug>
 
 Errors (exit 1, PipelineError) and warnings, each tagged with the rule ID it enforces:
   L1 voseo, L2 device verbs, L3 glossary synonyms, L4 regional idioms (narration, card texts,
-  step titles; L1 also typed demo data), E1 opening/closing, E2 step lists, T3 title length,
-  and the per-type rules of Parte 3 (TUT/RED/PRO/NOV: format, login, step count, estimated
-  duration from narration at 2.6 words/s).
+  step titles; L1 also typed demo data), E1 opening/closing, E2 step lists and videos[].omit
+  selectors, T3 title length, N2 opening text vs title (≥ 60 % shared words), N4 story of the
+  opening carried by the steps (warning), N8 RED/PRO closing names a destination, and the
+  per-type rules of Parte 3 (TUT/RED/PRO/NOV: format, login, step count, estimated duration).
+Voice estimate: 1.9 words/s + 0.5 s per clip (RED hook length: 2.6 words/s, no fixed part).
 """
 from __future__ import annotations
 
 import argparse
+import colorsys
 import re
 import sys
 import textwrap
@@ -22,7 +25,8 @@ from common import PipelineError, main_guard, project_dir
 
 TYPES = ("TUT", "RED", "PRO", "NOV")
 FORMATS = ("16:9", "9:16")
-WORDS_PER_SECOND = 2.6
+WORDS_PER_SECOND, CLIP_SECONDS = 1.9, 0.5
+HOOK_WORDS_PER_SECOND = 2.6
 CAPTION_CHARS = 42
 # Estimated duration ranges per type (seconds). Post-render errors are qa.py's job.
 DURATION_RANGES = {"RED": (15, 35), "PRO": (20, 60), "NOV": (15, 30)}
@@ -94,6 +98,23 @@ PRO_CTA = re.compile(r"\bprueba gratis\b|\bpruébalo\b|\bgratis\b|\bcontáct\w*|
                      r"\benlace\b|\blink\b|\bvisita\b|\bwww\.|https?://|\.com\b|\bregístrate\b|\bagenda\b|"
                      r"\bsolicita\b|\bdescarga\b", re.I)
 NOV_CTA = re.compile(r"\btutorial\b|\benlace\b|\blink\b", re.I)
+# N8: where to see or do the call to action.
+DESTINATION = re.compile(r"\b(?:enlace|perfil|canal|youtube|web|sitio|link|descripci[oó]n|bio)\b|www\.|https?://|"
+                         r"\b[\w-]+\.(?:com|ec|net|org|io|app|co)\b", re.I)
+# N2/N4: words that carry no idea of their own.
+STOPWORDS = set("""
+el la los las lo un una unos unas al del a ante bajo con contra de desde durante en entre hacia hasta
+mediante para por segun sin sobre tras y e ni o u que pero mas sino porque pues si aunque como cuando
+mientras tu tus su sus mi mis te se me este esta estos estas ese esa nuestro nuestra
+""".split())
+SIMILAR = 0.60
+# N4: a noun right after one of these is a scenario candidate, unless it is generic.
+DETERMINERS = set("un una unos unas el la los las tu tus su sus mi mis este esta ese esa del al".split())
+GENERIC = set("""
+video tutorial paso pasos minuto minutos segundo segundos forma manera vez dia dato datos sistema lista
+boton formulario pantalla primer primera primero nuevo nueva nuevos nuevas mismo misma otro otra cada
+solo sola menu campo campos
+""".split())
 LISTO = re.compile(r"^\W*(?:listo|eso es todo|fin|gracias|terminamos)\W*$", re.I)
 
 PASSWORD = re.compile(r"pass|contrase|clave", re.I)
@@ -115,7 +136,32 @@ def words(text: str | None) -> int:
 
 
 def seconds(text: str | None) -> float:
-    return words(text) / WORDS_PER_SECOND
+    """Realistic voice estimate of one clip (TTS pace plus its fixed lead/tail)."""
+    n = words(text)
+    return n / WORDS_PER_SECOND + CLIP_SECONDS if n else 0.0
+
+
+def hook_seconds(text: str | None) -> float:
+    return words(text) / HOOK_WORDS_PER_SECOND
+
+
+def stems(text: str | None, drop: set[str] = frozenset()) -> set[str]:
+    """Content words cut to 5 letters (guarda ~ guardar, contacto ~ contactos)."""
+    return {w[:5] for w in norm(text or "").split() if w not in STOPWORDS and w not in drop and len(w) > 2}
+
+
+def similarity(a: str | None, b: str | None, drop: set[str] = frozenset()) -> float:
+    """N2: share of the shorter text's content words that the other one repeats."""
+    sa, sb = stems(a, drop), stems(b, drop)
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / min(len(sa), len(sb))
+
+
+def scenario_nouns(text: str) -> list[str]:
+    """N4: nouns introduced by a determiner («una feria»), the story the opening promises."""
+    tokens = norm(text).split()
+    return [w for prev, w in zip(tokens, tokens[1:]) if prev in DETERMINERS and len(w) >= 4 and w not in GENERIC]
 
 
 def voseo_hint(word: str) -> str:
@@ -218,6 +264,39 @@ def is_login(step: dict) -> bool:
     return password and set(kinds) <= {"type", "click", "press"}
 
 
+def hue(color) -> float | None:
+    """Hue in degrees of a #rrggbb color, None for grays or invalid values."""
+    m = re.fullmatch(r"#([0-9a-fA-F]{6})", str(color or "").strip())
+    if not m:
+        return None
+    r, g, b = (int(m.group(1)[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    h, _, s = colorsys.rgb_to_hls(r, g, b)
+    return h * 360 if s >= 0.15 and max(r, g, b) - min(r, g, b) >= 0.04 else None
+
+
+def action_selectors(step: dict) -> set[str]:
+    found = set()
+    for action in step.get("actions") or []:
+        kind, value = action_kind(action)
+        if isinstance(value, dict):
+            value = value.get("into") or value.get("in")
+        if kind not in ("goto", "pause", "scroll", "press") and isinstance(value, str):
+            found.add(value)
+    return found
+
+
+def step_story(step: dict, narration: str | None) -> str:
+    """Narration plus the demo data typed or chosen in the step (N4)."""
+    parts = [narration or ""]
+    for action in step.get("actions") or []:
+        kind, value = action_kind(action)
+        if kind == "type" and isinstance(value, dict) and not str(value.get("text", "")).startswith("env:"):
+            parts.append(str(value.get("text") or ""))
+        elif kind == "select" and isinstance(value, dict):
+            parts.append(str(value.get("option") or ""))
+    return " ".join(parts)
+
+
 def is_interaction(step: dict) -> bool:
     return any(action_kind(a)[0] in INTERACTIONS for a in step.get("actions") or [])
 
@@ -257,6 +336,14 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
         errors.append(f"[L2] device: '{device}' (desktop | mobile)")
 
     lang("title", title)
+    # N5: the accent comes from the app (default = primary), never an invented hue.
+    brand = data.get("brand") or {}
+    h_primary, h_accent = hue(brand.get("primary")), hue(brand.get("accent"))
+    if h_primary is not None and h_accent is not None:
+        diff = abs(h_primary - h_accent) % 360
+        if min(diff, 360 - diff) > 15:
+            warnings.append(f"[N5] brand.accent: {brand['accent']} no es del tono de primary {brand['primary']}; "
+                            "usa un color de la app (por defecto, primary)")
     if len(wrap(title, product)) > 2:
         warnings.append(f"[T3] title: ocupa más de 2 líneas de {CAPTION_CHARS} caracteres; acórtalo")
 
@@ -317,6 +404,15 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
                 warnings.append(f"[E1] {where}.{name}: evita «¡Listo!»; di el siguiente paso")
         open_all = " ".join(blocks["opening"]).strip()
         close_all = " ".join(blocks["closing"]).strip()
+        # N2: the opening card text and the title may not say the same thing twice.
+        share = similarity(title, blocks["opening"][1])
+        if share >= SIMILAR:
+            errors.append(f"[N2] {where}.opening.text: repite el título ({share:.0%} de palabras en común); "
+                          "di otra idea (el problema, el resultado) o déjalo vacío")
+        # N8: RED and PRO closings say where to see or do it.
+        if vtype in ("RED", "PRO") and close_all and not DESTINATION.search(close_all):
+            errors.append(f"[N8] {where}.closing: di dónde verlo o hacerlo "
+                          "(«en el enlace del perfil», «en nuestro canal de YouTube»)")
         if open_all and close_all:
             if vtype == "TUT":
                 if not LEARN.search(open_all):
@@ -327,7 +423,8 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
                 if not PROBLEM.search(open_all):
                     errors.append(f"[RED1] {where}.opening: el gancho tiene que ser una pregunta o un problema")
                 if not RED_CTA.search(close_all):
-                    errors.append(f"[RED1] {where}.closing: falta el llamado a la acción («Mira el tutorial completo»)")
+                    errors.append(f"[RED1] {where}.closing: falta el llamado a la acción "
+                                  "(«Mira el tutorial completo en el enlace del perfil»)")
             elif vtype == "PRO":
                 if not PROBLEM.search(open_all):
                     warnings.append(f"[PRO1] {where}.opening: abre con el problema")
@@ -344,11 +441,36 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
             if seconds(blocks["requirements"][0]) > 5:
                 warnings.append(f"[TUT1] {where}.requirements: ~{seconds(blocks['requirements'][0]):.1f} s (máximo 5 s)")
 
+        # N4: the story the opening promises («una feria») is carried by the steps' narration or data.
+        if vtype in ("TUT", "RED"):
+            known = stems(f"{title} {product or ''}") | stems(" ".join(
+                f"{term} {' '.join(map(str, syns or []))}" for term, syns in glossary.items()))
+            story = stems(" ".join(step_story(s, overrides.get(s.get("id")) or s.get("narration")) for s in chosen))
+            missing = []
+            for noun in scenario_nouns(open_all):
+                if noun[:5] not in known | story and noun not in missing:
+                    missing.append(noun)
+            for noun in missing:
+                warnings.append(f"[N4] {where}: la apertura plantea «{noun}» pero ni la narración ni los datos "
+                                "de los pasos lo retoman; cumple la historia o cámbiala")
+
+        # E2/RED3: videos[].omit cuts typing of fields that exist in this video's steps.
+        omit = video.get("omit") or []
+        if not isinstance(omit, list):
+            errors.append(f"[E2] {where}.omit: tiene que ser una lista de selectores")
+        else:
+            available = set().union(*(action_selectors(s) for s in chosen))
+            unknown = [str(sel) for sel in omit if sel not in available]
+            if unknown:
+                errors.append(f"[E2] {where}.omit: selectores que no están en las acciones de sus pasos: "
+                              f"{', '.join(unknown)}")
+
         # Estimated timing (A2, E1, RED1).
         open_s, close_s = seconds(blocks["opening"][0]), seconds(blocks["closing"][0])
-        if vtype == "RED" and not HOOK_RANGE[0] <= open_s <= HOOK_RANGE[1]:
-            warnings.append(f"[RED1] {where}.opening: gancho de ~{open_s:.1f} s (1–2 s)")
-        elif open_s > OPENING_MAX:
+        hook_s = hook_seconds(blocks["opening"][0])
+        if vtype == "RED" and not HOOK_RANGE[0] <= hook_s <= HOOK_RANGE[1]:
+            warnings.append(f"[RED1] {where}.opening: gancho de ~{hook_s:.1f} s (1–2 s)")
+        elif vtype != "RED" and open_s > OPENING_MAX:
             warnings.append(f"[E1] {where}.opening: ~{open_s:.1f} s de narración (máximo {OPENING_MAX:g} s)")
         if close_s > CLOSING_MAX:
             warnings.append(f"[A2] {where}.closing: ~{close_s:.1f} s de narración (tarjeta de cierre ≤ {CLOSING_MAX:g} s)")
@@ -385,7 +507,8 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
         if vtype == "NOV" and len(chosen) > 3:
             warnings.append(f"[NOV3] {where}.steps: {len(chosen)} pasos; un solo cambio por video")
 
-        estimate = max(open_s, 1.0 if vtype == "RED" else CARD_FLOOR) + max(close_s, CARD_FLOOR)
+        estimate = max(hook_s if vtype == "RED" else open_s, 1.0 if vtype == "RED" else CARD_FLOOR)
+        estimate += max(close_s, CARD_FLOOR)
         estimate += seconds(blocks["requirements"][0])
         for step in chosen:
             estimate += max(seconds(overrides.get(step.get("id")) or step.get("narration")), STEP_FLOOR)

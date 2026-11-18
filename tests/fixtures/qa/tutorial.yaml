@@ -5,15 +5,16 @@ app_url: http://127.0.0.1:8766/
 viewport: [1920, 1080]
 language: es-EC
 device: desktop
+brand: {primary: "#7c3aed", background: "#ffffff", text: "#111111", surface: "#2e1065", on_surface: "#ffffff"}
 glossary:
   contacto: [cliente, prospecto, registro]
 steps:
   - id: nuevo
-    narration: "Haz clic en Nuevo contacto para abrir el formulario."
+    narration: "Haz clic en Nuevo contacto. Se abre el formulario con los campos del contacto nuevo."
     actions:
       - click: "#btn-nuevo"
   - id: guardar
-    narration: "Guarda y el contacto aparece primero en la lista."
+    narration: "Guarda. El contacto aparece primero en la lista."
     actions:
       - click: "#btn-guardar"
       - result: "#toast"
@@ -23,11 +24,11 @@ videos:
     type: TUT
     format: "16:9"
     steps: all
-    opening: {narration: "Aquí aprendes a crear un contacto.", text: "Aprende a crear un contacto"}
+    opening: {narration: "Aquí aprendes a crear un contacto.", text: "Tu primer contacto, paso a paso"}
     closing: {narration: "Siguiente video: registrar una oportunidad.", text: "Siguiente: una oportunidad"}
   - id: redes
     type: RED
     format: "9:16"
     steps: [nuevo, guardar]
     opening: {narration: "¿Lo conociste en una feria?", text: "¿Lo conociste en una feria?"}
-    closing: {narration: "Mira el tutorial completo.", text: "Mira el tutorial completo"}
+    closing: {narration: "Enlace del perfil.", text: "Mira el tutorial completo en el enlace del perfil"}
