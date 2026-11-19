@@ -126,6 +126,86 @@ class EditReadingTest(unittest.TestCase):
         self.assertLess(step["voice_start"] - step["start"], 0.5)
 
 
+def chain(pace):
+    """"Elige año, mes y día.": one sentence for three selects (perseo-xml-v2 periodo-recibidos)."""
+    tut, video = test_edit.video_of([("periodo", "Elige año, mes y día.")])
+    video["pace"] = pace
+    actions = {"steps": [{"id": "periodo", "t0": 0.0, "t1": 8.0, "events": [
+        {"type": "select", "t": 2.6, "selector": "#ano", **test_edit.box(300, 300)},
+        {"type": "select", "t": 4.4, "selector": "#mes", **test_edit.box(600, 300)},
+        {"type": "select", "t": 7.0, "selector": "#dia", **test_edit.box(900, 300)}]}]}
+    return edit.plan_video(tut, video, actions, [], {"opening": 1.5, "periodo": 2.2, "closing": 1.2})
+
+
+class EditChainTest(unittest.TestCase):
+    """T4 (A2 with P4): a one-sentence instruction for a chain of actions is said over the chain, ending with its
+    last action, so the chain does not play in silence after the voice."""
+
+    def test_fast_instruction_ends_with_the_last_action(self):
+        step = chain("fast")["steps"][0]
+        selects = [e for e in step["events"] if e["type"] == "select"]
+        self.assertAlmostEqual(step["action_t"], selects[-1]["t"])
+        self.assertLessEqual(step["instruction_end"], selects[-1]["t"] + edit.SYNC_AFTER + 1e-6)
+        self.assertGreater(step["instruction_end"], selects[1]["t"])        # said over the chain
+        end = step["start"] + step["duration"]
+        self.assertLessEqual(end - (step["voice_start"] + step["voice_duration"]), edit.GAP + 1e-6)
+
+    def test_normal_pace_keeps_the_first_action(self):
+        # PRESERVE: N1 at the normal pace syncs the instruction to the first select.
+        step = chain("normal")["steps"][0]
+        first = next(e for e in step["events"] if e["type"] == "select")
+        self.assertAlmostEqual(step["action_t"], first["t"])
+        self.assertLessEqual(step["instruction_end"], first["t"] + edit.SYNC_AFTER + 1e-6)
+
+    def test_two_sentences_keep_the_first_action(self):
+        tut, video = test_edit.video_of([("menu", "Haz clic en Ventas. Luego elige Facturas.")])
+        video["pace"] = "fast"
+        actions = {"steps": [{"id": "menu", "t0": 0.0, "t1": 6.0, "events": [
+            {"type": "click", "t": 2.0, "selector": "#ventas", **test_edit.box(300, 300)},
+            {"type": "click", "t": 4.0, "selector": "#facturas", **test_edit.box(300, 400)}]}]}
+        tl = edit.plan_video(tut, video, actions, [], {"opening": 1.5, "menu": 2.8, "closing": 1.2})
+        step = tl["steps"][0]
+        self.assertAlmostEqual(step["action_t"], step["events"][0]["t"])
+
+    def test_qa_checks_the_planned_action_under_fast(self):
+        fast_tl = chain("fast")
+        lay = compose.plan(fast_tl, test_compose.BRAND)
+        captions = [i for i in lay["items"] if i["kind"] == "caption"]
+        self.assertEqual(qa.check_sync(captions, fast_tl)["status"], "PASS", qa.check_sync(captions, fast_tl))
+        normal = dict(fast_tl, pace="normal")   # the same plan judged by the first select fails N1
+        self.assertEqual(qa.check_sync(captions, normal)["status"], "FAIL")
+
+
+class ScreenMarkTest(unittest.TestCase):
+    def test_a_click_mark_never_snaps_before_its_click(self):
+        # perseo-xml-v2 T4: Consultar clicked at 23.349 s, edit's screen_at 23.359 s, a change seen in the pixels
+        # at 23.345 s (the 30 fps grid): snapped there, the click fell into the new screen (no establishing shot,
+        # C7; a pan instead of a cut, C10).
+        tl = test_compose.fixture("tutorial")
+        click = tl["steps"][2]["events"][0]
+        tl["screen_cuts"] = [round(click["t"] - 0.004, 3)]
+        self.assertEqual(compose.screen_bounds(tl)[-1], round(click["screen_at"], 3))
+        # PRESERVE: a change seen just after the click is still where the screen starts.
+        tl["screen_cuts"] = [round(click["t"] + 0.004, 3)]
+        self.assertEqual(compose.screen_bounds(tl)[-1], round(click["t"] + 0.004, 3))
+
+
+class HighlightScreenTest(unittest.TestCase):
+    def test_highlight_ends_with_its_screen(self):
+        # perseo-xml-v2 T4: "Change" outlined on chrome://settings stayed lit over the SRI page after `back: main`.
+        tl = test_compose.fixture("tutorial")
+        step = tl["steps"][2]
+        hl = next(e for e in step["events"] if e["type"] == "highlight")
+        back = round(hl["t"] + 0.8, 3)
+        step["events"].append({"type": "goto", "t": back, "t_end": back})
+        item = next(i for i in compose.plan(tl, test_compose.BRAND)["items"] if i["kind"] == "highlight")
+        self.assertEqual((item["t0"], item["t1"]), (hl["t"], back))
+        # PRESERVE: without a later screen it lasts its step (at least HOLD).
+        item = next(i for i in compose.plan(test_compose.fixture("tutorial"), test_compose.BRAND)["items"]
+                    if i["kind"] == "highlight")
+        self.assertAlmostEqual(item["t1"], step["start"] + step["duration"], places=3)
+
+
 # --- compose ------------------------------------------------------------------------------------
 
 def texts_of(blocks):

@@ -970,7 +970,9 @@ def screen_bounds(timeline: dict) -> list[float]:
       0:58: the goto was marked 1.1 s after the page had changed);
     - a page click without screen_at gets the first change up to CUT_AFTER after it (perseo-xml 0:24).
     - a mark within CUT_KEEP of a seen change moves to it (_demo round 4: marked 6.61 s, the page changed at
-      6.60 s and that frame drew the new page under the old framing).
+      6.60 s and that frame drew the new page under the old framing);
+    - a click's mark never moves to or before the click itself (perseo-xml-v2 T4: a change seen 4 ms before the
+      Consultar click, on the 30 fps grid, put the click on the new screen: no establishing shot, C7/C10).
     Other seen changes (a loading overlay, a table appended, a scroll) do not start a screen."""
     ss, se = timeline["screen_start"], timeline["screen_end"]
     cuts = sorted(timeline.get("screen_cuts") or [])
@@ -981,11 +983,14 @@ def screen_bounds(timeline: dict) -> list[float]:
             if at is None and ev["type"] == "goto":
                 at = ev["t"]
             if at is not None:
+                mark = at
                 near = [d for d in cuts if abs(at - d) <= CUT_KEEP]
                 if near:
                     at = min(near, key=lambda d: abs(at - d))
                 else:
                     at = max((d for d in cuts if at - CUT_LATE <= d < at), default=at)
+                if ev["type"] != "goto" and at <= ev["t"] + 1e-6 < mark:
+                    at = mark
             elif ev["type"] == "click" and not ev.get("surface"):
                 at = next((d for d in cuts if ev["t"] < d <= ev["t"] + CUT_AFTER), None)
             if at is not None:
@@ -1634,6 +1639,7 @@ def plan(timeline: dict, brand: dict) -> dict:
     items: list[dict] = [{"kind": "band", "t0": round(ss, 3), "t1": round(se, 3), "rect": rnd(stage.band),
                           "color": pal["surface"]}]
     ends = {s["id"]: s["start"] + s["duration"] for s in timeline["steps"]}
+    bounds = screen_bounds(timeline)
 
     # Elements of every event, mapped through the camera.
     pointer_events = []
@@ -1658,7 +1664,10 @@ def plan(timeline: dict, brand: dict) -> dict:
                 items.append({"kind": "result", "t0": round(at, 3), "t1": round(t1, 3), **base,
                               "exempt": [round(min(move_in, at), 3), round(max(move_out, t1), 3)]})
             elif ev["type"] == "highlight":
-                t1 = min(max(ends[step["id"]], ev["t"] + HOLD["highlight"]), se)
+                # The outline belongs to its screen: it never outlives the next screen change (perseo-xml-v2 T4:
+                # "Change" stayed lit over the SRI page after `back: main`).
+                after = next((c for c in bounds if c > ev["t"] + 1e-6), se)
+                t1 = min(max(ends[step["id"]], ev["t"] + HOLD["highlight"]), se, after)
                 items.append({"kind": "highlight", "t0": round(ev["t"], 3), "t1": round(t1, 3), **base,
                               "color": pal["highlight"], "contrast": round(contrast(pal["highlight"], "#ffffff"), 2)})
             else:

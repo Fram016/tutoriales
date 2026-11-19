@@ -807,7 +807,8 @@ def instruction_end(step: dict) -> float:
 
 
 def check_sync(captions, timeline) -> dict:
-    """N1: the instruction (voice and caption) comes before the action, ≤ 0.3 s after it at most."""
+    """N1: the instruction (voice and caption) comes before the action, ≤ 0.3 s after it at most. Under pace fast
+    the action is edit's planned one (`action_t`: a one-sentence chain ends with its last action)."""
     found, checked = [], 0
     for step in timeline.get("steps", []):
         acts = [ev for ev in step.get("events", []) if ev.get("type") in ("click", "select")]
@@ -815,6 +816,8 @@ def check_sync(captions, timeline) -> dict:
             continue
         checked += 1
         t_act = min(float(ev["t"]) for ev in acts)
+        if is_fast(timeline) and step.get("action_t") is not None:
+            t_act = float(step["action_t"])
         end = instruction_end(step)
         if end > t_act + SYNC_LATE + TIME_RES:
             found.append(f"{step['id']}: la instrucción termina en {fmt_t(end)}, {end - t_act:.1f} s después de la "

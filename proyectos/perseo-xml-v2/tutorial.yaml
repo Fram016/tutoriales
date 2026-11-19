@@ -70,7 +70,7 @@ steps:
     title: "Revisa la carpeta de descargas"
     part: 1
     context: extension
-    narration: "Abre Carpeta de descargas; con Change la cambias."   # P4: one sentence, one caption
+    narration: "Abre Carpeta de descargas."   # T4: Change stays highlighted on screen, without its sentence (P1)
     actions:
       - click: {in: popup, sel: "#configure-folder"}
       - close: popup
@@ -93,7 +93,7 @@ steps:
     title: "Abre Consultas"
     part: 2
     context: sri
-    narration: "Abre Facturación Electrónica, Producción y Consultas."   # P4: the menu path in one sentence
+    narration: "Abre Consultas."   # T4: the menu path is shown, not named (P1 with P4 reading times)
     actions:
       - click: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
       - wait: "xpath=//a[normalize-space()='Producción']"
@@ -134,7 +134,7 @@ steps:
     title: "Descarga los XML emitidos"
     part: 2
     context: extension
-    narration: "Haz clic en XML Desde el RIDE. Revisa el resumen."
+    narration: "Haz clic en XML Desde el RIDE."   # T4: the summary stays on screen (N18), without its sentence
     actions:
       - open: popup
       - click: {in: popup, sel: "#boton4"}
@@ -185,7 +185,7 @@ steps:
     part: 3
     context: extension
     hold_ms: 1500
-    narration: "Haz clic en XML Para importar. Revisa el resumen."
+    narration: "Haz clic en XML Para importar."   # T4: the summary stays on screen (N18), without its sentence
     actions:
       - open: popup
       - click: {in: popup, sel: "#boton1"}
@@ -200,7 +200,7 @@ videos:
     format: "16:9"
     steps: all
     pace: fast                       # P2 (round 5): 0.5 s holds, waits cut to ~1 s, P3 zoom
-    max_seconds: 45                  # P1: "funciones que se pueden mostrar en maximo 45 segundos"
+    max_seconds: 47                  # P1 45 s + P4 reading times: the user accepted ~46.5 s (T4, "Recortar frases pero dejar las 3 partes")
     tempo: 1.05                      # P4: at most x1.05 under fast (reading time wins over the voice speed)
     # The requirement is the opening card text (P2: no separate requirements card); N2: it does not repeat the title.
     opening:

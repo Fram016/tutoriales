@@ -470,11 +470,17 @@ def _split(pieces: list[dict], c: float) -> None:
             return
 
 
-def main_action(events: list[dict], fast: bool = False) -> dict | None:
+def main_action(events: list[dict], fast: bool = False, chain: bool = False) -> dict | None:
     """N1: the action the narration asks for: the step's first click/select/open, or its single action. `fast`
     (P2, one sentence per step: "En Perseo XML, haz clic en XML Desde el RIDE"): a step that opens a surface and
-    then clicks inside it asks for that click."""
+    then clicks inside it asks for that click. `chain` (fast, a one-sentence narration: "Elige año, mes y día.",
+    "Abre Consultas." over a menu path): the sentence covers every pointer action of the step and ends with the
+    last one, so the chain is not played in silence after the voice (A2 with P4)."""
     ordered = sorted(events, key=lambda e: e["t"])
+    if fast and chain:
+        last = [e for e in ordered if e["type"] in POINTER_EVENTS]
+        if len(last) > 1:
+            return last[-1]
     first = next((e for e in ordered if e["type"] in ("click", "select", "open")), None)
     if first is None and len(ordered) == 1 and ordered[0]["type"] in ACTION_EVENTS:
         first = ordered[0]
@@ -693,7 +699,7 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         captured_events = _capture_events(cap, step)
         events, omitted = omit_events(captured_events, video.get("omit"), cap["t0"])
         # The narration was written for the whole step: its main action is chosen before omit.
-        action = main_action(captured_events, fast)
+        action = main_action(captured_events, fast, len(_sentences(step["narration"])[1]) == 1)
         action = action if action is None or any(e is action for e in events) else None
         instruction = voice * instruction_share(step["narration"])
         share = effect_share(step["narration"])
