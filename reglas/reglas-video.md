@@ -407,3 +407,18 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
 - **[N25] Censura uniforme.** Criterio del proyecto Perseo XML: se difuminan en todo el video la identidad del contribuyente (RUC, nombre, correo, teléfono), el RUC y la razón social de terceros, las claves de acceso y los montos, en todas las tablas por igual. Las páginas del navegador (configuración) también se censuran (ruta de carpeta con el usuario de Windows).
 - **[N26] Sin pantallas en blanco ni vistas mezcladas.** Las cargas y transiciones de navegación se cortan; nunca se ven dos páginas pegadas o superpuestas en un mismo cuadro.
 - **[N27] Cierre opcional.** “quita el ultimo espacio que dice siguiente video no es necesario”: la tarjeta de cierre ya no es obligatoria en TUT; si no hay cierre, el video termina en el resultado final (sustituye la parte de cierre de E1/TUT1).
+
+## Parte 7: Ritmo y zoom del tutorial Perseo XML v2 (texto del usuario)
+
+> “Esta mucho mejor pero hay un proboema, dura un minuto para funciones que se pueden mostrar en maximo 45 segundos, ademas no se ve tan bien realmente siento qeu va a un ritmo lento y diria usar menos zoom para que se vean mejor los formularios”
+
+### Reglas derivadas (ronda 5)
+
+- **[P1] Duración objetivo.** El tutorial de una función corta (como Perseo XML) dura como máximo 45 s en total, incluidas apertura y separadores. `videos[].max_seconds` fija el tope; el lint y el QA lo exigen.
+- **[P2] Ritmo ágil (`pace: fast`).** Sustituye a TUT4 (pausa mínima de 1,5 s) cuando el video declara `pace: fast`:
+  - pausas tras un resultado de 0,5 s;
+  - esperas y descargas aceleradas hasta 8× (o cortadas, dejando el estado inicial y el final);
+  - separadores de parte de 0,8 s y apertura de 2 s como máximo;
+  - voz algo más rápida (tempo ×1,1–1,15 sin cambiar el tono);
+  - ningún plano sin cambio visual por más de 2,5 s.
+- **[P3] Menos zoom.** Detalle 1,15–1,4× (sustituye 1,4–1,8× de C1 en `pace: fast` y en general para interfaces de escritorio); formularios encuadrados enteros a 1,0–1,2×; el plano de ubicación puede ser el propio plano del formulario. La legibilidad se mantiene con la banda delgada (N21) y sin bordes negros (N20).
