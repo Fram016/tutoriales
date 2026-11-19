@@ -6,7 +6,10 @@
 # proyectos/perseo-xml-v3/capture and takes/resultado (I3). Ronda 8 (odd/tasks/perseo-resultado.md, F1-F3): Parte 5
 # "Resultado final" = the user's video imported with tools/import_video_take.py (resultado.yaml, censored before it is
 # written); "Por último" moves to its first sentence. D5: one TTS read of every narration below.
-voice: {voice: es-419-commercial-11}     # user: "es-419-commercial-11 usa esa voz" (Gemini Extended Voice Library, es-419)
+voice:
+  voice: es-419-commercial-11          # user: "es-419-commercial-11 usa esa voz"
+  # user: "cambia la euforia y animo que hable mejor mas vendedor y con energia ahorita se escucha muy sozo y aburrido"
+  style: "vendedor entusiasta y con mucha energía, sonriente y convincente, ritmo ágil y dinámico, español latinoamericano, trato de tú"     # user: "es-419-commercial-11 usa esa voz" (Gemini Extended Voice Library, es-419)
 title: "Perseo XML: instala y descarga tus comprobantes"
 product: "Perseo XML"
 app_url: "https://www.google.com/?hl=es-419"   # first screen of the merged take (install.yaml)
@@ -26,8 +29,8 @@ glossary:                            # L3
   extensión: [complemento, plugin]
   descargar: [bajar]
   carpeta de descargas: [directorio, ruta]
-pronunciation:                       # D3
-  RIDE: "ri de"
+pronunciation:                       # D3: "se pronuncia como se lee RIDE no RAID ni R I D E"
+  RIDE: "ri-de"                      # es-419-commercial-11 spells "ri de" and says "raid" for "ride"; Whisper hears "ri-de" as ride
 music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}
 parts:                               # N16; I1: the install first, then the v3 parts renumbered
   - {n: 1, title: "Instalar la extensión"}

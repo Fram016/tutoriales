@@ -29,9 +29,10 @@ import hashlib
 import json
 import re
 import shutil
+import time
 from pathlib import Path
 
-from common import (env, ffmpeg, load_tutorial, main_guard, measure_loudness, media_duration, project_dir,
+from common import (PipelineError, env, ffmpeg, load_tutorial, main_guard, measure_loudness, media_duration, project_dir,
                     require_env, run, spoken_text, videos, which, write_json)
 
 
@@ -162,6 +163,38 @@ def estimate_seconds(text: str) -> float:
     return max(1.5, len(text.split()) / 2.6)
 
 
+BATCH_RETRIES = (5.0, 15.0)   # waits before the 2nd and 3rd attempt of one batch request
+BATCH_SPLIT = 3               # when a whole-video batch keeps failing: this many smaller batches
+
+class BatchDropped(RuntimeError):
+    """The server dropped a batch request on every attempt."""
+
+
+def synthesize_retry(client, model: str, text: str, voice: str, style: str, sleep=time.sleep) -> bytes:
+    """synthesize with retries on connection drops (the server may cut a long request). Other errors raise."""
+    for attempt, wait in enumerate((0.0, *BATCH_RETRIES)):
+        if wait:
+            print(f"[tts] la API cortó la conexión; reintento en {wait:.0f} s")
+            sleep(wait)
+        try:
+            return synthesize(client, model, text, voice, style)
+        except Exception as exc:   # noqa: BLE001 - only connection drops are retried
+            name = type(exc).__name__
+            if "Connection" not in name and "Protocol" not in name and "disconnected" not in str(exc):
+                raise
+            if attempt == len(BATCH_RETRIES):
+                raise BatchDropped(name) from exc
+    raise RuntimeError("unreachable")
+
+
+def batch_groups(voiced: list, split: bool = False) -> list[list]:
+    """The whole video as one batch (D5); after repeated server drops, BATCH_SPLIT contiguous batches."""
+    if not split or len(voiced) < 2 * BATCH_SPLIT:
+        return [list(voiced)]
+    size = -(-len(voiced) // BATCH_SPLIT)
+    return [list(voiced[i:i + size]) for i in range(0, len(voiced), size)]
+
+
 def synthesize(client, model: str, text: str, voice: str, style: str) -> bytes:
     interaction = client.interactions.create(
         model=model,
@@ -218,15 +251,33 @@ def tts(slug: str, offline: bool = False) -> dict:
         missing = [(name, text) for name, text in voiced if not (cache_dir / f"{keys[name][:32]}.wav").exists()]
         if missing and not offline:
             # D5: the whole video in one request, cut at its pauses.
-            raw = cache_dir / f"batch-{batch[:32]}.wav"
-            if not raw.exists():
-                if client is None:
-                    client = make_client()
-                print(f"[tts] {video['id']}: una tanda de {len(voiced)} frases (D5)")
-                raw.write_bytes(synthesize(client, model, "\n\n".join(t.replace("\n", " ") for _, t in voiced),
-                                           voice, style))
-            if not split_batch(raw, [t for _, t in voiced], [cache_dir / f"{keys[n][:32]}.wav" for n, _ in voiced]):
-                print(f"[tts] aviso (D5) {video['id']}: no pude cortar la tanda en sus pausas; pido cada frase aparte")
+            if client is None:
+                client = make_client()
+            # A long batch can be dropped by the server ("Server disconnected"): retry it, then fall back to the
+            # fewest smaller batches (same voice, style and tempo), never to one request per clip at once.
+            for split in (False, True):
+                groups = batch_groups(voiced, split)
+                if split and len(groups) == 1:
+                    raise PipelineError("La API de voz corta la conexión con la tanda completa y no se puede dividir")
+                if split:
+                    print(f"[tts] aviso (D5) {video['id']}: divido la lectura en {len(groups)} tandas "
+                          "(misma voz, estilo y tempo)")
+                try:
+                    for k, group in enumerate(groups):
+                        raw = cache_dir / (f"batch-{batch[:32]}.wav" if len(groups) == 1
+                                           else f"batch-{batch[:32]}-{k + 1}of{len(groups)}.wav")
+                        if not raw.exists():
+                            print(f"[tts] {video['id']}: una tanda de {len(group)} frases (D5)")
+                            text = "\n\n".join(t.replace("\n", " ") for _, t in group)
+                            raw.write_bytes(synthesize_retry(client, model, text, voice, style))
+                        if not split_batch(raw, [t for _, t in group],
+                                           [cache_dir / f"{keys[n][:32]}.wav" for n, _ in group]):
+                            print(f"[tts] aviso (D5) {video['id']}: no pude cortar la tanda en sus pausas; "
+                                  "pido cada frase aparte")
+                    break
+                except BatchDropped:
+                    if split:
+                        raise PipelineError("La API de voz sigue cortando la conexión; reintenta más tarde")
         for name, text in spoken:
             if not text:
                 durations[name] = 0.0

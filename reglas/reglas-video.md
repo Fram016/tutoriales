@@ -465,3 +465,7 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
 - **[F1] Resultado final.** El tutorial cierra mostrando el resultado en el equipo: la carpeta Perseo XML en Descargas, con Emitidos y Recibidos y sus XML.
 - **[F2] Video del usuario como toma.** Un video aportado por el usuario se convierte en una toma (`tools/import_video_take.py`): cuadros con la censura aplicada antes de guardarlos, pasos y recuadros definidos a mano por tiempo, y se une con `merge_takes` (I3). Su audio original no se usa; la narración sigue saliendo de una sola lectura (D5).
 - **[F3] Censura de escritorio.** En capturas del escritorio se difumina: otros archivos y carpetas de Descargas, nombres de los XML (llevan la clave de acceso con RUC), barra lateral con nombres personales y la barra de tareas; se deja legible lo que el resultado necesita mostrar (carpeta Perseo XML, Emitidos, Recibidos, tipo “Documento XML”, cantidad de archivos).
+
+> “Tambien cambia la euforia y animo que hable mejor mas vendedor y con energia ahorita se escucha muy sozo y aburrido”
+
+- **[D6] Voz con energía de vendedor.** El estilo de la narración es entusiasta, sonriente y convincente, con ritmo ágil (nunca plano o monótono). Se fija en `voice.style` del tutorial y aplica a toda la lectura (D5).
