@@ -154,7 +154,7 @@ class FakeApiCase(unittest.TestCase):
 class PronunciationTtsTest(FakeApiCase):
     def test_the_voice_reads_the_spoken_form_and_captions_keep_the_term(self):
         self.run_tts(TUTORIAL)
-        self.assertIn("Haz clic en XML desde el ri de.", self.calls[0].split("\n\n"))
+        self.assertIn("Haz clic en XML desde el ri de.", self.calls[0].split(tts.BATCH_SEP))
         self.assertFalse(any("RIDE" in c for c in self.calls))
         tut = common.load_tutorial("px")
         self.assertEqual(common.videos(tut)[0]["steps"][0]["narration"], "Haz clic en XML desde el RIDE.")
@@ -165,7 +165,7 @@ class PronunciationTtsTest(FakeApiCase):
         data = copy.deepcopy(TUTORIAL)
         data["pronunciation"] = {"RIDE": "ri dé"}
         self.run_tts(data)
-        self.assertIn("Haz clic en XML desde el ri dé.", self.calls[before].split("\n\n"))
+        self.assertIn("Haz clic en XML desde el ri dé.", self.calls[before].split(tts.BATCH_SEP))
 
 
 class OneVoiceToneTest(FakeApiCase):
@@ -174,7 +174,7 @@ class OneVoiceToneTest(FakeApiCase):
     def test_one_request_per_video_cut_into_its_clips(self):
         result = self.run_tts(TUTORIAL)
         self.assertEqual(len(self.calls), 2)               # one request per video, never a clip alone
-        self.assertEqual(self.calls[0].split("\n\n"), ["Aprendes a descargar.", "Haz clic en XML desde el ri de.",
+        self.assertEqual(self.calls[0].split(tts.BATCH_SEP), ["Aprendes a descargar.", "Haz clic en XML desde el ri de.",
                                                        "Haz clic en Nuevo.", "Guarda el contacto."])
         for name, seconds in result["tutorial"].items():
             with self.subTest(clip=name):   # each line is a 1 s tone: trimmed, sped up x1.05
@@ -186,7 +186,7 @@ class OneVoiceToneTest(FakeApiCase):
         data["steps"][1]["narration"] = "Haz clic en Nuevo contacto."
         self.run_tts(data)
         self.assertEqual(len(self.calls), 3)               # the tutorial again in one request, redes from the cache
-        self.assertEqual(len(self.calls[2].split("\n\n")), 4)
+        self.assertEqual(len(self.calls[2].split(tts.BATCH_SEP)), 4)
         self.run_tts(data)
         self.assertEqual(len(self.calls), 3)               # unchanged batch: all from the cache
 

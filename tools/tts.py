@@ -40,7 +40,7 @@ TRIM_VERSION = 1
 TRIM_DB = -45       # below this a sample is silence
 TRIM_PAD = 0.06     # silence kept before and after the speech
 LEVEL_VERSION = 1
-BATCH_VERSION = 1   # D5: one request per video, cut at its pauses (a new version never reuses older clips)
+BATCH_VERSION = 2   # v2: explicit <long pause> between lines (an energetic read barely pauses); D5: one request per video, cut at its pauses (a new version never reuses older clips)
 VOICE_LUFS = -20.0  # D5: every clip of a video at the same loudness (mix normalizes the whole track after)
 LEVEL_PEAK = -1.5   # dBTP a leveled clip never goes over
 
@@ -164,7 +164,12 @@ def estimate_seconds(text: str) -> float:
 
 
 BATCH_RETRIES = (5.0, 15.0)   # waits before the 2nd and 3rd attempt of one batch request
+BATCH_SEP = "\n\n<long pause>\n\n"   # Gemini TTS inline tag: an unspoken pause, so the batch can be cut
 BATCH_SPLIT = 3               # when a whole-video batch keeps failing: this many smaller batches
+
+class BatchUncut(RuntimeError):
+    """A whole-video batch could not be cut at its pauses: try smaller batches before one request per clip."""
+
 
 class BatchDropped(RuntimeError):
     """The server dropped a batch request on every attempt."""
@@ -268,13 +273,17 @@ def tts(slug: str, offline: bool = False) -> dict:
                                            else f"batch-{batch[:32]}-{k + 1}of{len(groups)}.wav")
                         if not raw.exists():
                             print(f"[tts] {video['id']}: una tanda de {len(group)} frases (D5)")
-                            text = "\n\n".join(t.replace("\n", " ") for _, t in group)
+                            text = BATCH_SEP.join(t.replace("\n", " ") for _, t in group)
                             raw.write_bytes(synthesize_retry(client, model, text, voice, style))
                         if not split_batch(raw, [t for _, t in group],
                                            [cache_dir / f"{keys[n][:32]}.wav" for n, _ in group]):
+                            if not split and len(batch_groups(voiced, True)) > 1:
+                                raise BatchUncut()
                             print(f"[tts] aviso (D5) {video['id']}: no pude cortar la tanda en sus pausas; "
                                   "pido cada frase aparte")
                     break
+                except BatchUncut:
+                    print(f"[tts] aviso (D5) {video['id']}: no pude cortar la tanda completa en sus pausas")
                 except BatchDropped:
                     if split:
                         raise PipelineError("La API de voz sigue cortando la conexión; reintenta más tarde")

@@ -87,7 +87,7 @@ def padded_tone(path: Path, before=0.5, tone=1.0, after=0.7) -> bytes:
 def batch_audio(path: Path, text: str, tone=1.0, pause=0.6, volume_db=lambda line: 0.0) -> bytes:
     """D5: what the API returns for a batch (one line per clip, blank line between): a 1 s tone per line with a
     pause after each; a single line is a padded tone."""
-    lines = text.split("\n\n")
+    lines = text.split(tts.BATCH_SEP)
     if len(lines) == 1:
         return padded_tone(path, tone=tone)
     args, gains, order = [], "", "[0]"

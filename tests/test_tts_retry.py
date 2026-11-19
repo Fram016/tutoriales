@@ -61,3 +61,11 @@ class GroupsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SeparatorTest(unittest.TestCase):
+    """An energetic read barely pauses between lines: the batch asks for an unspoken pause between them."""
+
+    def test_batch_lines_are_joined_with_a_long_pause_tag(self):
+        self.assertIn("<long pause>", tts.BATCH_SEP)
+        self.assertGreaterEqual(tts.BATCH_VERSION, 2)   # old batches without the pause are never reused
