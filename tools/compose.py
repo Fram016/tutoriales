@@ -138,7 +138,8 @@ PAD_X, PAD_Y, CHIP_PAD_Y, MARGIN, BAND_PAD = 32, 14, 10, 24, 40
 BADGE_FONT, BADGE_PAD_X, BADGE_PAD_Y, BADGE_GAP = 32, 20, 8, 12
 SPOT_AFTER_CLICK = 0.4   # N13: a lit target waits for the click that reveals it (menus, dialogs)
 NEUTRAL = "#404040"     # N17: the page (SRI) context is neutral gray, the brand color is kept for the product
-CONTEXT_LABELS = {"sri": "En el SRI", "page": "En el SRI", "chrome": "En Chrome"}    # extension: "En <product>"
+CONTEXT_LABELS = {"sri": "En el SRI", "page": "En el SRI", "chrome": "En Chrome",    # extension: "En <product>"
+                  "computer": "En tu equipo"}                                      # F1
 # N16/P4: the part separator card lasts PART_SECONDS; without edit's times it opens the part's first step.
 CENSOR_BLUR = 14        # N25: source px of blur of a censor region
 
@@ -1690,8 +1691,18 @@ def plan(timeline: dict, brand: dict) -> dict:
     for item in [i for i in items if i["kind"] == "result"]:
         nxt = next((e["t"] for e in pointer_events if e["t"] > item["t0"]), se)
         hidden.append((item["t0"] - 0.1, max(item["t1"], min(nxt - 0.6, se))))
+    # F2: an imported video shows the user's own pointer; compose's arrow is hidden there (one cursor), the halo stays.
+    recorded: list[tuple[float, float]] = []
+    for s in timeline["steps"]:
+        if s.get("cursor") != "recorded":
+            continue
+        a, b = s["start"], s["start"] + s["duration"]
+        if recorded and a <= recorded[-1][1] + 0.01:   # consecutive steps (times rounded apart): one span
+            recorded[-1] = (recorded[-1][0], max(recorded[-1][1], b))
+        else:
+            recorded.append((a, b))
     for ev in pointer_events:
-        if any(a <= ev["t"] < b for a, b in hidden):
+        if any(a <= ev["t"] < b for a, b in hidden + recorded):
             continue
         fr = frame_at(camera, ev["t"])
         p = ev["point"]
@@ -1737,7 +1748,8 @@ def plan(timeline: dict, brand: dict) -> dict:
             "base_scale": round(stage.base, 4),
             "safe": {"top": stage.spec["safe_top"], "bottom": stage.spec["safe_bottom"], "action": rnd(stage.safe)},
             "cursor_px": CURSOR_PX, "font_px": stage.font, "line_px": stage.line_h, "screen": [ss, se], "palette": pal,
-            "screen_changes": screen_bounds(timeline), "camera": camera, "cursor_hidden": [[round(a, 3), round(b, 3)] for a, b in hidden], "items": items}
+            "screen_changes": screen_bounds(timeline), "camera": camera, "cursor_hidden": [[round(a, 3), round(b, 3)] for a, b in hidden],
+            "cursor_recorded": [[round(a, 3), round(b, 3)] for a, b in recorded], "items": items}
 
 
 def plan_spotlights(shots: list[dict], camera: list[dict], stage: Stage, pal: dict, timeline: dict) -> list[dict]:
@@ -1914,6 +1926,9 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None,
         for a, b_ in layout["cursor_hidden"]:
             script.append(f'tl.set("#cursor", {{opacity: 0}}, {num(a)});')
             script.append(f'tl.set("#cursor", {{opacity: 1}}, {num(b_)});')
+        for a, b_ in layout.get("cursor_recorded", []):
+            script.append(f'tl.set("#cursor-arrow", {{opacity: 0}}, {num(a)});')
+            script.append(f'tl.set("#cursor-arrow", {{opacity: 1}}, {num(b_)});')
     else:
         script.append('tl.set("#cursor", {opacity: 0}, 0);')
 

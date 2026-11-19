@@ -58,7 +58,7 @@ import yaml
 
 from common import (CHIP_MIN, PART_SECONDS, PipelineError, main_guard, measure_loudness, project_dir, read_json,
                     reading_seconds, run, which, write_json)
-from compose import FORMATS as FRAMES, R2_CLEAN
+from compose import CUT_KEEP, FORMATS as FRAMES, R2_CLEAN
 from edit import INSTRUCTION, instruction_share
 from lint import DESTINATION, language_issues, norm, similarity, wrap
 
@@ -108,6 +108,7 @@ MENTIONS = (("Perseo", re.compile(r"\bPerseo\b"), "surface"),
             ("resumen", re.compile(r"\bresumen\b", re.I), "summary"),
             ("lista", re.compile(r"\blista\b", re.I), "list"))
 NAMED_LEAD = 1.0
+OFF_POPUP = {"chrome": "en Chrome", "computer": "en tu equipo"}   # N14: contexts where "Perseo" is not the popup
 PART_CHIP = re.compile(r"^Parte (\d+) · Paso (\d+)$")   # N16
 BADGES = ("context", "badge")                            # N17
 DOWNLOAD = re.compile(r"\bxml\b|descarg|download", re.I)  # N18
@@ -643,15 +644,21 @@ def screen_changes(timeline: dict) -> list[float]:
     return sorted(float(ev["screen_at"]) for _, ev in timeline_events(timeline) if ev.get("screen_at") is not None)
 
 
-def check_establishing(camera, timeline, base, fmt, excluded, results=()) -> dict:
+def check_establishing(camera, timeline, base, fmt, excluded, results=(), cuts=()) -> dict:
     """C7: every screen (first step + each screen_at) opens with a ≤ 1.0 s establishing shot. A screen whose
     toast (`result` item) starts within ESTABLISH_WINDOW opens on the toast shot instead (S1 a, N6 > C7); under
-    pace fast a whole-form shot within that window is the establishing shot (P3), however long."""
+    pace fast a whole-form shot within that window is the establishing shot (P3), however long. `cuts`: layout
+    `screen_changes`; a screen_at within CUT_KEEP of one starts at that cut, as compose moved it (screen_bounds)."""
     steps = timeline.get("steps", [])
     if not camera or not steps:
         return check("C7.establishing", "C7", "WARN", "sin cámara o sin pasos")
     end = float(timeline.get("screen_end") or 0) or max(float(s["t1"]) for s in camera)
-    starts = [float(steps[0]["start"])] + [t for t in screen_changes(timeline) if t < end and not in_cards(t, excluded)]
+
+    def at_cut(t: float) -> float:
+        near = [float(c) for c in cuts if abs(float(c) - t) <= CUT_KEEP + TIME_RES]
+        return min(near, key=lambda c: abs(c - t)) if near else t
+    starts = [float(steps[0]["start"])] + [at_cut(t) for t in screen_changes(timeline)
+                                           if t < end and not in_cards(t, excluded)]
     wide = merge([(float(s["t0"]), float(s["t1"])) for s in camera
                   if s.get("kind") != "move" and establishing(s, base)])
     forms = [float(s["t0"]) for s in camera if s.get("kind") == "form"] if is_fast(timeline) else []
@@ -808,11 +815,14 @@ def instruction_end(step: dict) -> float:
 
 def check_sync(captions, timeline) -> dict:
     """N1: the instruction (voice and caption) comes before the action, ≤ 0.3 s after it at most. Under pace fast
-    the action is edit's planned one (`action_t`: a one-sentence chain ends with its last action)."""
+    the action is edit's planned one (`action_t`: a one-sentence chain ends with its last action). F2: over the user's
+    own video (`cursor: recorded`) a narration without an imperative describes and asks for nothing (as in edit)."""
     found, checked = [], 0
     for step in timeline.get("steps", []):
         acts = [ev for ev in step.get("events", []) if ev.get("type") in ("click", "select")]
         if not acts or not float(step.get("voice_duration") or 0):
+            continue
+        if step.get("cursor") == "recorded" and not INSTRUCTION.search(str(step.get("narration") or "")):
             continue
         checked += 1
         t_act = min(float(ev["t"]) for ev in acts)
@@ -1178,7 +1188,8 @@ def check_round_two(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
     excluded = cards(timeline)
     actives, captions = by_kind.get("active", []), by_kind.get("caption", [])
     spots = by_kind.get("spotlight", [])
-    rows = [check_establishing(camera, timeline, base_scale(layout, fmt), fmt, excluded, by_kind.get("result", [])),
+    rows = [check_establishing(camera, timeline, base_scale(layout, fmt), fmt, excluded, by_kind.get("result", []),
+                               layout.get("screen_changes") or ()),
             check_static(camera, timeline.get("type", "TUT"), excluded, spots, is_fast(timeline)),
             check_in_frame(actives, camera, timeline, vp, excluded)]
     rows += check_clicks(actives, camera, timeline, vp, excluded)
@@ -1241,9 +1252,10 @@ def evidence(by_kind: dict, timeline: dict) -> dict[str, list[tuple[float, float
 def check_named(captions, by_kind, timeline) -> dict:
     """N14: while a caption names Perseo, the settings, Cambiar, the summary or the list, it is on screen (an
     instruction may name it up to NAMED_LEAD s before it appears). I1: in a `chrome` step (Google, the store)
-    "Perseo" is the typed query or the listing, not the popup: the timeline cannot prove it, the snapshots must."""
+    "Perseo" is the typed query or the listing, not the popup: the timeline cannot prove it, the snapshots must.
+    F1: the same in a `computer` step (the Perseo XML folder in File Explorer)."""
     proof = evidence(by_kind, timeline)
-    browser = {s["id"] for s in timeline.get("steps", []) if s.get("context") == "chrome"}
+    where = {s["id"]: OFF_POPUP[s["context"]] for s in timeline.get("steps", []) if s.get("context") in OFF_POPUP}
     found, unknown, named = [], [], 0
     for cap in captions:
         text = caption_text(cap)
@@ -1254,8 +1266,8 @@ def check_named(captions, by_kind, timeline) -> dict:
                 continue
             named += 1
             spans = proof[kind]
-            if kind == "surface" and cap.get("step") in browser:
-                unknown.append(f"«{text}» nombra {word} en Chrome")
+            if kind == "surface" and cap.get("step") in where:
+                unknown.append(f"«{text}» nombra {word} {where[cap['step']]}")
             elif spans is None:
                 unknown.append(f"«{text}» nombra {word}")
             elif not any(overlap(t0, t1 + lead, a, b) > EPS for a, b in spans):

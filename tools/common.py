@@ -116,7 +116,8 @@ DEFAULT_FORMAT = {"TUT": "16:9", "RED": "9:16", "PRO": "16:9", "NOV": "16:9"}
 REMOVED_KEYS = {"intro": "videos[].opening", "outro": "videos[].closing"}
 VIDEO_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 # N17: where a step happens (the context indicator of compose). I1: "chrome" = the browser itself (Google, the store).
-CONTEXTS = ("sri", "extension", "page", "chrome")
+# F1: "computer" = the user's computer (File Explorer, an imported video take).
+CONTEXTS = ("sri", "extension", "page", "chrome", "computer")
 # P2 (§Parte 7): videos[].pace. `fast` replaces TUT4 (short holds, waits cut, shorter cards, less zoom) and speeds
 # the voice up by videos[].tempo (atempo, no pitch change), FAST_TEMPO by default. P4: under fast at most x1.05.
 PACES = ("normal", "fast")
@@ -232,7 +233,7 @@ def _validate_steps(steps, surfaces=(), parts=None) -> list[str]:
                 _fail(f"paso {sid}", f"la parte {part} va después de la parte {last_part} (N16)")
             last_part = part
         if "context" in step and step["context"] not in CONTEXTS:
-            _fail(f"paso {sid}", "'context' tiene que ser sri, extension, page o chrome (N17)")
+            _fail(f"paso {sid}", "'context' tiene que ser sri, extension, page, chrome o computer (N17)")
         actions = step.get("actions", [])
         if not isinstance(actions, list):
             _fail(f"paso {sid}", "'actions' tiene que ser una lista")

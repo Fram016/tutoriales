@@ -99,7 +99,7 @@ class InstallSchemaTest(unittest.TestCase):
         self.assertEqual(compose.context_label({"product": "Perseo XML"}, "extension"), "En Perseo XML")
         with self.assertRaises(common.PipelineError) as ctx:
             common.validate_tutorial(minimal([{"id": "a", "narration": "x", "context": "tienda", "actions": []}]))
-        self.assertIn("'context' tiene que ser sri, extension, page o chrome (N17)", str(ctx.exception))
+        self.assertIn("'context' tiene que ser sri, extension, page, chrome o computer (N17)", str(ctx.exception))
 
     def test_top_level_hide(self):
         common.validate_tutorial(minimal(install_steps(), hide=[".gSrP5d"]))

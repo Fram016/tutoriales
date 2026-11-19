@@ -2,8 +2,10 @@
 # Base: proyectos/perseo-xml-v3/tutorial.yaml, the approved video ("el video quedo perfecto"): its steps, wording,
 # voice (defaults), style, tempo, pace, pronunciation, censor, surfaces and music are kept; only Parte 1 (install) is
 # new, the parts are renumbered and the first SRI sentence gets the connector "Ahora" (D1 over the whole video).
-# The capture is not recorded from this file: capture/ = tools/merge_takes.py of takes/install (install.yaml) and
-# proyectos/perseo-xml-v3/capture (I3). D5: one TTS read of every narration below.
+# The capture is not recorded from this file: capture/ = tools/merge_takes.py of takes/install (install.yaml),
+# proyectos/perseo-xml-v3/capture and takes/resultado (I3). Ronda 8 (odd/tasks/perseo-resultado.md, F1-F3): Parte 5
+# "Resultado final" = the user's video imported with tools/import_video_take.py (resultado.yaml, censored before it is
+# written); "Por último" moves to its first sentence. D5: one TTS read of every narration below.
 title: "Perseo XML: instala y descarga tus comprobantes"
 product: "Perseo XML"
 app_url: "https://www.google.com/?hl=es-419"   # first screen of the merged take (install.yaml)
@@ -31,6 +33,7 @@ parts:                               # N16; I1: the install first, then the v3 p
   - {n: 2, title: "Configurar la carpeta"}
   - {n: 3, title: "Comprobantes emitidos"}
   - {n: 4, title: "Comprobantes recibidos"}
+  - {n: 5, title: "Resultado final"}   # F1
 hide:                                # I2: ego's notice on the store listing (as recorded by install.yaml)
   - ".gSrP5d"
   - '[jsname="UUbT9"]'               # Google: the search box dropdown (it lists the profile's search history)
@@ -279,14 +282,48 @@ steps:
     part: 4
     context: extension
     hold_ms: 1500
-    narration: "Por último, haz clic en XML para importar. Quedan listos para Perseo."   # D2 as the effect sentence   # D2
+    narration: "Después haz clic en XML para importar. Quedan listos para Perseo."   # D2 as the effect sentence; D1: "Por último" is Parte 5
     actions:
       - open: popup
       - click: {in: popup, sel: "#boton1"}
       - wait: {in: popup, sel: "#boton1 b"}
       - pause: 2100
       - wait: {in: popup, sel: ".estadisticas"}
-      - result: {in: popup, sel: ".estadisticas"}   # N18; the video ends here (N27)
+      - result: {in: popup, sel: ".estadisticas"}   # N18
+  # Parte 5: Resultado final (F1). Take: resultado.yaml, the user's video imported (F2); the actions below only name
+  # what the take shows (manual boxes by time), nothing is recorded from them. F3: the take is censored on import.
+  - id: descargas
+    title: "Abre Descargas"
+    part: 5
+    context: computer
+    narration: "Por último, abre tu carpeta de Descargas."   # D1: the true last step of the sequence
+    actions:
+      - press_visual: "manual:panel-descargas"   # the user's pointer on "Descargas" (already open in the video)
+  - id: carpeta-perseo
+    title: "Abre Perseo XML"
+    part: 5
+    context: computer
+    narration: "En Perseo XML están las carpetas Emitidos y Recibidos."
+    actions:
+      - click: "manual:fila-perseo-xml"
+      - result: "manual:carpetas"
+  - id: resultado-emitidos
+    title: "Revisa los emitidos"
+    part: 5
+    context: computer
+    narration: "En Emitidos tienes los XML transformados desde el RIDE."   # D2, D3 voice "ri de"
+    actions:
+      - click: "manual:fila-emitidos"
+      - result: "manual:lista-emitidos"
+  - id: resultado-recibidos
+    title: "Revisa los recibidos"
+    part: 5
+    context: computer
+    narration: "Y en Recibidos, los XML listos para importar en Perseo."
+    actions:
+      - click: "manual:ruta-perseo-xml"   # back to Perseo XML
+      - click: "manual:fila-recibidos"
+      - result: "manual:lista-recibidos"   # the video ends here (N27)
 
 videos:
   - id: tutorial

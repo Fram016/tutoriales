@@ -54,6 +54,9 @@ warp into edit/V/surface-<name>.mp4, and timeline `surfaces.<name>.windows` says
 times). Events inside a surface keep `surface` (boxes in surface CSS px); `open` is the click on the
 toolbar icon, so it is a pointer action (C3 lead, N1 main action). The censor regions of a followed tab
 (actions.json `censor_regions`, N25) go through the same warp into timeline `censor_regions` (output times).
+F2 (§Parte 10): a step of an imported video take (tools/import_video_take.py) keeps `cursor: "recorded"` in the
+timeline: its frames already show the user's pointer. Its narration may only describe (no imperative): then no
+action waits for it (N1 asks for nothing) and the user's clicks keep their pace under the sentence (N14).
 """
 from __future__ import annotations
 
@@ -709,6 +712,10 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         # The narration was written for the whole step: its main action is chosen before omit.
         action = main_action(captured_events, fast, len(_sentences(step["narration"])[1]) == 1)
         action = action if action is None or any(e is action for e in events) else None
+        if cap.get("cursor") == "recorded" and not INSTRUCTION.search(step["narration"]):
+            # F2/N14: over the user's own video a description ("En Emitidos tienes…") asks for nothing: the
+            # user's click is not held for it (N1), so the sentence plays over the view it names.
+            action = None
         instruction = voice * instruction_share(step["narration"])
         share = effect_share(step["narration"])
         if fast and action is not None and share is not None:
@@ -765,6 +772,8 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             "effect_t": _r(t + plan["effect_offset"]) if plan["effect_offset"] is not None else None,
             "speed": plan["speed"], "events": out_events, "warp": warped,
         })
+        if cap.get("cursor"):
+            steps[-1]["cursor"] = cap["cursor"]   # F2: "recorded", the frames show the user's own pointer
         t += plan["duration"]
     screen_end = t
     closing = card("closing", t)   # N27: None when the TUT has no closing card
