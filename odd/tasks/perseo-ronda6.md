@@ -18,3 +18,4 @@
 
 - L1 (user, verbatim in reglas/reglas-video.md §Parte 8).
 - L2 (decision): the native Windows folder picker cannot be captured; the video shows the click on "Change" and the settings page with the new folder (real pref change via chrome.settingsPrivate.setPref('download.default_directory', ...) on the followed chrome://settings tab), one folder per type: %USERPROFILE%\Downloads\Perseo XML\Emitidos and ...\Recibidos (created by the take). The original download folder is read before and restored after the take (also on failure). Path censor keeps blurring "C:\Users\<user>" while the folder names stay visible.
+- L3 (user): "Algo adicional mantene un solo tono de voz hubieron cambios de tono de voz, eso añade como orden" → rule D5 (one voice tone), added to T1/T2.

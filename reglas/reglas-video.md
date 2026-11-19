@@ -438,3 +438,7 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
 - **[D3] Pronunciación.** `pronunciation: {TÉRMINO: lectura}` en tutorial.yaml: la voz lee la forma indicada (RIDE → “ri de”); los subtítulos muestran el término original.
 - **[D4] Configuración completa de la carpeta.** Se muestra el clic en “Cambiar / Change” y la carpeta resultante en la configuración (una carpeta para emitidos y otra para recibidos, configurada antes de cada descarga). El selector nativo de Windows no se graba: el video corta del clic al resultado. Al terminar la toma se restaura la carpeta original del usuario.
 - **[P1 revisada] Duración.** Este tutorial puede durar más de 45 s si gana claridad, siempre menos de 60 s (`max_seconds: 58`).
+
+> “Algo adicional mantene un solo tono de voz hubieron cambios de tono de voz, eso añade como orden”
+
+- **[D5] Un solo tono de voz.** Todo el video usa la misma voz, el mismo estilo y el mismo tempo en todos los clips. Las frases de un video se generan juntas en una misma tanda (nunca se mezclan clips de corridas anteriores con otro estilo o tempo), y cada clip se nivela al mismo volumen antes de la mezcla. El QA compara el tono medio (frecuencia fundamental) y el volumen de cada clip contra la mediana del video y marca los que se desvían.
