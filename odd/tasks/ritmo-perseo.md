@@ -20,3 +20,5 @@ Re-edit the existing take of proyectos/perseo-xml-v2 (no recapture) into a ≤45
 - L2 (decision): reuse proyectos/perseo-xml-v2/capture (valid take, censor verified); no SRI access needed. Rules P1-P3 in reglas/reglas-video.md §Parte 7 override TUT4 and the C1 detail range for `pace: fast`.
 - L3 (current state): 105 s total (opening + requirements 6.8 s + 3 separators + 13 steps); downloads ~10 s each on screen; detail zoom 1.4–1.6×, popup 1.32×.
 - L4 (result): 43.4 s, QA PASS except C4.empty_frames on sparse real pages (settings, whole forms) — accepted: P3 "menos zoom" is the latest user request and prevails over C4 for whole-page/whole-form shots.
+- L5 (user): "No, cuando muestras los pasos no deja leer es muy rapdio" → rule P4 (reading time). T4: apply P4 in tools + re-edit perseo-xml-v2 (≤45 s still), no recapture.
+- [ ] T4 P4 — reading time for separators/captions/chips, tempo ≤1.05, re-edit perseo-xml-v2 ≤45 s — worker

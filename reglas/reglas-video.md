@@ -422,3 +422,7 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
   - voz algo más rápida (tempo ×1,1–1,15 sin cambiar el tono);
   - ningún plano sin cambio visual por más de 2,5 s.
 - **[P3] Menos zoom.** Detalle 1,15–1,4× (sustituye 1,4–1,8× de C1 en `pace: fast` y en general para interfaces de escritorio); formularios encuadrados enteros a 1,0–1,2×; el plano de ubicación puede ser el propio plano del formulario. La legibilidad se mantiene con la banda delgada (N21) y sin bordes negros (N20).
+
+> “No, cuando muestras los pasos no deja leer es muy rapdio” (sobre la versión de 43,4 s)
+
+- **[P4] Tiempo de lectura.** Todo texto en pantalla se ve al menos el tiempo de leerlo: separadores de parte ≥ 1,5 s; cada subtítulo ≥ caracteres/15 + 0,4 s (mínimo 1,5 s); la etiqueta de paso no cambia antes de 1,5 s. Para cumplir el tope de P1 se acorta la narración o se juntan pasos, nunca el tiempo de lectura. El tempo de voz baja a ×1,05 como máximo.
