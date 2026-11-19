@@ -1,5 +1,6 @@
 # Perseo XML v2 (odd/tasks/reglas-ronda4.md T6, S1–S5). Brief: proyectos/perseo-xml-v2/brief.md.
 # Round 5 (odd/tasks/ritmo-perseo.md T2, S1–S3): same take, pace fast, ≤ 45 s, one short sentence per step.
+# T4 (P4): every caption stays its reading time, so the narration is shorter (settings and menu path in one sentence).
 # Selectors rehearsed live (space 64, 2026-11-18): visible, elementFromPoint ok, text as narrated (N13).
 # The SRI session comes from the profile cookies; nothing here types credentials.
 title: "Perseo XML: tus comprobantes del SRI"
@@ -69,7 +70,7 @@ steps:
     title: "Revisa la carpeta de descargas"
     part: 1
     context: extension
-    narration: "Haz clic en Carpeta de descargas. Con Change cambias la carpeta."
+    narration: "Abre Carpeta de descargas; con Change la cambias."   # P4: one sentence, one caption
     actions:
       - click: {in: popup, sel: "#configure-folder"}
       - close: popup
@@ -83,7 +84,7 @@ steps:
     title: "Abre el menú"
     part: 2
     context: sri
-    narration: "En el SRI, abre el menú."
+    narration: "Abre el menú."
     actions:
       - click: "#sri-menu"
       - wait: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
@@ -92,7 +93,7 @@ steps:
     title: "Abre Consultas"
     part: 2
     context: sri
-    narration: "Haz clic en Facturación Electrónica. Luego, en Producción y Consultas."
+    narration: "Abre Facturación Electrónica, Producción y Consultas."   # P4: the menu path in one sentence
     actions:
       - click: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
       - wait: "xpath=//a[normalize-space()='Producción']"
@@ -106,7 +107,7 @@ steps:
     title: "Abre los emitidos"
     part: 2
     context: sri
-    narration: "Abre Comprobantes electrónicos emitidos."
+    narration: "Abre los comprobantes emitidos."   # P4: shorter caption
     actions:
       - click: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos emitidos']"
       - wait: '[id="frmPrincipal:calendarFechaDesde_input"]'
@@ -114,7 +115,7 @@ steps:
     title: "Completa la consulta"
     part: 2
     context: sri
-    narration: "Completa fecha, establecimiento y punto de emisión."
+    narration: "Llena fecha, establecimiento y punto de emisión."
     actions:
       - type: {into: '[id="frmPrincipal:calendarFechaDesde_input"]', text: "13/11/2026", clear: true}
       - press: "Tab"                 # closes the calendar overlay
@@ -155,7 +156,7 @@ steps:
     title: "Abre los recibidos"
     part: 3
     context: sri
-    narration: "Abre Comprobantes electrónicos recibidos."
+    narration: "Abre los comprobantes recibidos."   # P4: shorter caption
     actions:
       - click: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos recibidos']"
       - wait: '[id="frmPrincipal:ano"]'
@@ -200,7 +201,7 @@ videos:
     steps: all
     pace: fast                       # P2 (round 5): 0.5 s holds, waits cut to ~1 s, P3 zoom
     max_seconds: 45                  # P1: "funciones que se pueden mostrar en maximo 45 segundos"
-    tempo: 1.15                      # P2: voice x1.1-1.15; the top of the range for the 45 s budget
+    tempo: 1.05                      # P4: at most x1.05 under fast (reading time wins over the voice speed)
     # The requirement is the opening card text (P2: no separate requirements card); N2: it does not repeat the title.
     opening:
       narration: "Aprendes a descargar tus comprobantes."

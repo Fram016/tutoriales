@@ -22,3 +22,4 @@ Re-edit the existing take of proyectos/perseo-xml-v2 (no recapture) into a ≤45
 - L4 (result): 43.4 s, QA PASS except C4.empty_frames on sparse real pages (settings, whole forms) — accepted: P3 "menos zoom" is the latest user request and prevails over C4 for whole-page/whole-form shots.
 - L5 (user): "No, cuando muestras los pasos no deja leer es muy rapdio" → rule P4 (reading time). T4: apply P4 in tools + re-edit perseo-xml-v2 (≤45 s still), no recapture.
 - [ ] T4 P4 — reading time for separators/captions/chips, tempo ≤1.05, re-edit perseo-xml-v2 ≤45 s — worker
+- L6: P4 applied in tools (513 tests); perseo-xml-v2 under P4 is 50.3 s; ≤45 s needs content cut or a cap change — waiting user decision.

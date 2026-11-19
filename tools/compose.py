@@ -35,8 +35,11 @@ read from the recording by detect_screen_ink), up to the legible floor.
 
 Round 5 (§Parte 7, timeline `pace: fast`): P3 detail 1.15-1.4x, forms whole at 1.0-1.2x (legible floor at the
 base scale), the whole-form shot is the establishing shot of its screen (cut straight to it); P2 shorter
-establishing shot, part separators of 0.8 s and no framing frozen longer than 2.5 s (C8). layout.json records
-`pace` (and `legible_scale` under fast).
+establishing shot and no framing frozen longer than 2.5 s (C8). layout.json records `pace` (and `legible_scale`
+under fast).
+P4 (every pace): part separators of PART_SECONDS (1.5 s, at edit's `parts[].start`); each caption block stays
+max(its share of the voice, its reading time common.reading_seconds), back to back from the voice start, and
+never under a separator.
 """
 from __future__ import annotations
 
@@ -51,8 +54,8 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from common import (ROOT, PipelineError, ffmpeg, load_tutorial, main_guard, project_dir, read_json, run,
-                    which, write_json)
+from common import (PART_SECONDS, ROOT, PipelineError, ffmpeg, load_tutorial, main_guard, project_dir,
+                    read_json, reading_seconds, run, which, write_json)
 
 TEMPLATE = ROOT / "templates" / "composition.html"
 FIXTURES = ROOT / "templates" / "fixtures"
@@ -105,12 +108,11 @@ KEEP = {"click": 0.15, "hover": 0.3, "type": 0.0, "select": 0.2, "focus": 0.8, "
 R2_CLEAN = 0.8          # R2: result visible without caption or cursor over it
 HOLD_LIMIT = {"RED": 3.0}  # C8: identical framing at most 3 s in RED, 4 s otherwise
 HOLD_LIMIT_DEFAULT = 4.0
-# P2/P3 (pace: fast): zoom ranges of Stage, a shorter establishing shot, C8 at 2.5 s, 0.8 s part separators.
+# P2/P3 (pace: fast): zoom ranges of Stage, a shorter establishing shot, C8 at 2.5 s.
 FAST_ZOOM = {"detail_min": 1.15, "detail_max": 1.4, "detail_pref": 1.3, "form_min": 1.0, "form_pref": 1.2,
              "legible": 1.0}
 FAST_ESTABLISH_WANT = 0.4
 FAST_HOLD_LIMIT = 2.5
-FAST_PART = 0.8
 PUSH = 0.1              # C8: slow push-in (scale +0.1 over a long hold)
 DRIFT = 8               # C8: output px of slow drift when no push-in keeps the target whole
 
@@ -137,8 +139,7 @@ BADGE_FONT, BADGE_PAD_X, BADGE_PAD_Y, BADGE_GAP = 32, 20, 8, 12
 SPOT_AFTER_CLICK = 0.4   # N13: a lit target waits for the click that reveals it (menus, dialogs)
 NEUTRAL = "#404040"     # N17: the page (SRI) context is neutral gray, the brand color is kept for the product
 CONTEXT_LABELS = {"sri": "En el SRI", "page": "En el SRI"}    # extension: "En <product>"
-# N16: part separator card, at most 1.5 s; without edit's times it opens the part's first step.
-PART_MAX, PART_DEFAULT = 1.5, 1.2
+# N16/P4: the part separator card lasts PART_SECONDS; without edit's times it opens the part's first step.
 CENSOR_BLUR = 14        # N25: source px of blur of a censor region
 
 FORMATS = {
@@ -1504,16 +1505,27 @@ def subtract(spans: list[tuple[float, float]], blocked: list[tuple[float, float]
     return [(a, b) for a, b in out if b - a > 1e-6]
 
 
+def caption_wants(texts: list[str], vdur: float) -> list[float]:
+    """T1/P4: seconds of each caption block: its share of the voice (by characters), at least its reading time."""
+    total = sum(len(t) for t in texts) or 1
+    return [max(reading_seconds(t), vdur * len(t) / total) for t in texts]
+
+
+def caption_span(texts: list[str], vdur: float) -> float:
+    """P4: seconds from the voice start until the step's last caption block has been read (edit's step floor)."""
+    return sum(caption_wants(texts, vdur)) if texts else 0.0
+
+
 def schedule(blocks: list[tuple[int, list[str]]], v0: float, vdur: float, s0: float, s1: float,
              blocked: list[tuple[float, float]] = ()) -> list[tuple[float, float, list[str], int]]:
-    """T1/N1: captions (caption_blocks) follow the voice in time order inside the step, >= 1.2 s each.
-    Returns (t0, t1, lines, sentence)."""
+    """T1/N1/P4: captions (caption_blocks) follow the voice in time order inside the step, back to back, each
+    for caption_wants (its reading time at least) and never in `blocked` (a part separator). Returns (t0, t1,
+    lines, sentence)."""
     if not blocks:
         return []
     caps = [lines for _, lines in blocks]
     free = subtract([(max(v0, s0), s1)], list(blocked))
-    total = sum(len(" ".join(c)) for c in caps)
-    wants = [max(CAPTION_MIN, max(vdur, CAPTION_MIN) * len(" ".join(c)) / total) for c in caps]
+    wants = caption_wants([" ".join(c) for c in caps], vdur)
     out, t, k = [], None, 0
     for (sentence, lines), want in zip(blocks, wants):
         while k < len(free):
@@ -1615,6 +1627,7 @@ def plan(timeline: dict, brand: dict) -> dict:
         texts = {context_label(timeline, c) for s in timeline["steps"] for _, _, c in step_contexts(timeline, s)}
         chip_w += BADGE_GAP + max(text_width(t, BADGE_FONT) + 2 * BADGE_PAD_X for t in texts)
     stage = Stage(fmt, chip_w, timeline.get("pace", "normal"))
+    seps = [(start, start + dur) for _, _, start, dur in separators(timeline)]   # P4: no caption under them
     camera, shots = camera_shots(timeline, stage)
     arrival = {id(ev): shot["arrive"] for shot in shots for ev in shot["events"]}
     ss, se = timeline["screen_start"], timeline["screen_end"]
@@ -1697,7 +1710,8 @@ def plan(timeline: dict, brand: dict) -> dict:
                               "color": color, "text_color": pal["chip_text"], "font_px": BADGE_FONT,
                               "contrast": round(contrast(pal["chip_text"], color), 2)})
         blocks = caption_blocks(step.get("narration") or "", product, stage.chars)
-        for t0, t1, lines, sentence in schedule(blocks, step.get("voice_start", s0), step.get("voice_duration", 0), s0, s1):
+        for t0, t1, lines, sentence in schedule(blocks, step.get("voice_start", s0), step.get("voice_duration", 0),
+                                                s0, s1, seps):
             items.append({"kind": "caption", "t0": round(t0, 3), "t1": round(t1, 3), "rect": rnd(stage.cap_rect(len(lines))),
                           "text": " ".join(lines), "lines": lines, "step": step["id"], "sentence": sentence,
                           "style": style, "color": pal["on_surface"], "background": pal["surface"], "font_px": stage.font})
@@ -1750,24 +1764,30 @@ def plan_spotlights(shots: list[dict], camera: list[dict], stage: Stage, pal: di
     return out
 
 
-def plan_cards(timeline: dict, stage: Stage, product: str | None, kind: str, pal: dict) -> list[dict]:
-    """E1 cards. N2: the TUT opening shows the title, plus opening.text only when it adds something. N16: a
-    "Parte N: título" separator card (<= 1.5 s; 0.8 s under P2) opens every part. N27: no closing card when there
-    is none."""
-    spec = stage.spec
-    width = stage.W - 2 * spec["card_pad"]
-    mid = (spec["safe_top"] + spec["safe_bottom"]) / 2
+def separators(timeline: dict) -> list[tuple[int, str, float, float]]:
+    """N16/P4: (n, text, start, duration) of every "Parte N: título" separator: at edit's `parts[].start` (else
+    the part's first step), PART_SECONDS long."""
     out = []
-    parts = [("opening", timeline.get("opening")), ("requirements", timeline.get("requirements"))]
     for part in timeline.get("parts") or []:
         first = next((s for s in timeline["steps"] if part_of(s) == part.get("n")), None)
         start = part.get("start", first["start"] if first else None)
         if start is None:
             continue
         text = f"Parte {part['n']}: {part['title']}" if part.get("title") else f"Parte {part['n']}"
-        default, cap = (FAST_PART, FAST_PART) if stage.fast else (PART_DEFAULT, PART_MAX)
-        parts.append((f"part-{part['n']}", {"start": start, "text": text,
-                                            "duration": min(part.get("duration") or default, cap)}))
+        out.append((part["n"], text, start, PART_SECONDS))
+    return out
+
+
+def plan_cards(timeline: dict, stage: Stage, product: str | None, kind: str, pal: dict) -> list[dict]:
+    """E1 cards. N2: the TUT opening shows the title, plus opening.text only when it adds something. N16/P4: a
+    "Parte N: título" separator card of PART_SECONDS opens every part. N27: no closing card when there is none."""
+    spec = stage.spec
+    width = stage.W - 2 * spec["card_pad"]
+    mid = (spec["safe_top"] + spec["safe_bottom"]) / 2
+    out = []
+    parts = [("opening", timeline.get("opening")), ("requirements", timeline.get("requirements"))]
+    for n, text, start, duration in separators(timeline):
+        parts.append((f"part-{n}", {"start": start, "text": text, "duration": duration}))
     parts.append(("closing", timeline.get("closing")))
     for name, card in parts:
         if not card:
@@ -2020,7 +2040,10 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None,
         bar_y = max(p["rect"][1] + p["rect"][3] for p in parts) + 28
         inner.append(f'        <div class="bar" id="{name}-bar" style="top: {num(bar_y)}px"></div>')
         script.append(f'tl.from("#{name}-bar", {{scaleX: 0, duration: 0.4, ease: "power3.out"}}, {num(t0 + 0.1)});')
-        cards.append(f'      <div id="{name}" class="clip scene" data-start="{num(t0)}" data-duration="{num(t1 - t0)}">\n'
+        # N16: a separator covers its part's first chip and badge by design; hyperframes only excuses a flagged occluder.
+        flag = " data-layout-allow-occlusion" if name.startswith("part-") else ""
+        cards.append(f'      <div id="{name}" class="clip scene"{flag} data-start="{num(t0)}" '
+                     f'data-duration="{num(t1 - t0)}">\n'
                      + "\n".join(inner) + "\n      </div>")
 
     values = {

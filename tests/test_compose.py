@@ -1203,9 +1203,9 @@ class RoundFourTest(unittest.TestCase):
         seps = [i for i in lay["items"] if str(i.get("card", "")).startswith("part-")]
         self.assertEqual([(s["card"], s["text"].replace(NBSP, " ")) for s in seps],
                          [("part-1", "Parte 1: Crear el contacto"), ("part-2", "Parte 2: Guardar")])
-        self.assertEqual((seps[0]["t0"], seps[0]["t1"]), (tl["screen_start"], round(tl["screen_start"] + 1.2, 3)))
+        self.assertEqual((seps[0]["t0"], seps[0]["t1"]), (tl["screen_start"], round(tl["screen_start"] + 1.5, 3)))
         self.assertEqual(seps[1]["t0"], tl["steps"][2]["start"])
-        self.assertLessEqual(seps[1]["t1"] - seps[1]["t0"], 1.5 + 1e-6)             # capped at 1.5 s
+        self.assertAlmostEqual(seps[1]["t1"] - seps[1]["t0"], 1.5)                   # P4: 1.5 s
         html = compose.build(tl, BRAND)[0]
         self.assertIn('id="part-2" class="clip scene"', html)
         # Without edit's times the separator opens the first step of its part.

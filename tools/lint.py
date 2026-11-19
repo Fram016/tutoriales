@@ -13,10 +13,13 @@ Errors (exit 1, PipelineError) and warnings, each tagged with the rule ID it enf
   = ≤ 2 caption lines and one instruction, N25 every highlighted table censored by column, N27
   closing optional in TUT, requirements say what you need («Necesitas…»).
   Round five (Parte 7): P1 the estimated length over videos[].max_seconds is an error, P2 videos[].pace is
-  normal or fast; under fast the opening warns over 2 s and the requirements over 2.5 s.
+  normal or fast; under fast the opening warns over 2 s and the requirements over 2.5 s. P4 under fast the voice
+  tempo is at most x1.05 (error).
 Voice estimate: 1.9 words/s + 0.5 s per clip (RED hook length: 2.6 words/s, no fixed part), divided by the
 video's voice tempo (P2: 1.12 under pace fast, common.video_tempo). P1 is an error, so its budget is a lower
 bound: BUDGET_WPS (the fastest trimmed read measured), no fixed part, the same tempo and floors.
+P4: a step lasts at least its lead plus the reading time of its caption blocks (compose.caption_blocks,
+common.reading_seconds), and every part adds its PART_SECONDS separator.
 """
 from __future__ import annotations
 
@@ -29,7 +32,10 @@ import unicodedata
 
 import yaml
 
-from common import PACES, TEMPO_RANGE, PipelineError, main_guard, project_dir, video_tempo
+from common import (FAST_TEMPO_MAX, PACES, PART_SECONDS, TEMPO_RANGE, PipelineError, main_guard, project_dir,
+                    reading_seconds, video_tempo)
+from compose import FORMATS as CAPTION_FORMATS, caption_blocks
+from edit import FAST_PACE, LEAD
 
 TYPES = ("TUT", "RED", "PRO", "NOV")
 FORMATS = ("16:9", "9:16")
@@ -492,8 +498,17 @@ def estimate(data: dict, video: dict, budget: bool = False) -> float:
     if " ".join(blocks["closing"]).strip():
         total += max(voice(blocks["closing"][0]) / tempo, CARD_FLOOR)
     total += voice(blocks["requirements"][0]) / tempo
-    for step in video_steps(video, data.get("steps") or []):
-        total += max(voice(overrides.get(step.get("id")) or step.get("narration")) / tempo, STEP_FLOOR)
+    # P4: the captions are read from the voice start (edit's lead) and every part opens with its separator.
+    lead = FAST_PACE["lead"] if video.get("pace") == "fast" else LEAD
+    chars = CAPTION_FORMATS.get(video.get("format") or "16:9", CAPTION_FORMATS["16:9"])["chars"]
+    chosen = video_steps(video, data.get("steps") or [])
+    for step in chosen:
+        text = overrides.get(step.get("id")) or step.get("narration")
+        read = sum(reading_seconds(" ".join(lines)) for _, lines in caption_blocks(str(text or ""), data.get("product"),
+                                                                                    chars))
+        total += max(voice(text) / tempo, STEP_FLOOR, lead + read if read else 0.0)
+    if data.get("parts"):
+        total += PART_SECONDS * len({s.get("part") for s in chosen if s.get("part") is not None})
     return total
 
 
@@ -574,6 +589,9 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
                                   or not TEMPO_RANGE[0] <= tempo <= TEMPO_RANGE[1]):
             errors.append(f"[P2] {where}.tempo: tiene que ser un número entre {TEMPO_RANGE[0]:g} y {TEMPO_RANGE[1]:g}")
             tempo = None
+        elif tempo is not None and fast and tempo > FAST_TEMPO_MAX:
+            errors.append(f"[P4] {where}.tempo: con pace: fast es como máximo {FAST_TEMPO_MAX:g}")
+            tempo = FAST_TEMPO_MAX
         tempo = video_tempo({**video, "tempo": tempo})
 
         wanted = video.get("steps", "all")

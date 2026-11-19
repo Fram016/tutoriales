@@ -26,7 +26,10 @@ For each video of tutorial.yaml (or only --video ID) it reads proyectos/<slug>/:
                            round five (Parte 7, timeline `pace: fast`): P3 detail 1.15–1.4× (C1/R1),
                            form shots usually 1.0–1.2×, a whole-form shot opens its screen (C7), C8
                            at 2.5 s, a form wider than the viewport may be cropped beyond the used
-                           fields (N12); P1 timeline total ≤ videos[].max_seconds.
+                           fields (N12); P1 timeline total ≤ videos[].max_seconds; P4 (every pace) each
+                           caption visible (outside the cards) ≥ max(1.5, caracteres/15 + 0.4) s, part
+                           separators ≥ 1.5 s, each step chip visible ≥ 1.5 s before it changes; a part
+                           separator is no A2 voice gap.
                            Surface events (`surface`) are moved onto their panel (layout `surface` box)
                            before C9/C10 and the other geometric checks
   out/<slug>-<video>.mp4   (not with --pre) resolution by format, duration vs timeline total (±0.3 s),
@@ -53,7 +56,8 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from common import PipelineError, main_guard, project_dir, read_json, run, which, write_json
+from common import (CHIP_MIN, PART_SECONDS, PipelineError, main_guard, project_dir, read_json, reading_seconds,
+                    run, which, write_json)
 from compose import FORMATS as FRAMES, R2_CLEAN
 from edit import INSTRUCTION, instruction_share
 from lint import DESTINATION, language_issues, norm, similarity, wrap
@@ -229,11 +233,16 @@ def check_timeline(timeline: dict) -> list[dict]:
                           f"{total:.1f} s (máximo {float(cap):g} s, max_seconds)"))
 
     spans = voice_spans(timeline)
+    seps = [(float(p["start"]), float(p["start"]) + float(p["duration"])) for p in timeline.get("parts") or []
+            if p.get("start") is not None and p.get("duration")]
     gaps = []
     cursor = 0.0
     for start, end in spans + [(total, total)]:
-        if start - cursor > MAX_GAP + EPS:
-            gaps.append(f"{fmt_t(cursor)}–{fmt_t(start)} ({start - cursor:.1f} s)")
+        # P4: a part separator card is shown, not a silence of the voice.
+        card = sum(overlap(cursor, start, a, b) for a, b in seps)
+        if start - cursor - card > MAX_GAP + EPS:
+            gaps.append(f"{fmt_t(cursor)}–{fmt_t(start)} ({start - cursor - card:.1f} s"
+                        + (f" sin los {card:.1f} s del separador)" if card > 0 else ")"))
         cursor = max(cursor, end)
     if not spans:
         gaps.append("sin narración")
@@ -540,7 +549,8 @@ def check_layout(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
         text = cap.get("text") or " ".join(cap.get("lines") or [])
         lang += [f"{rule} {msg}" for rule, msg in language_issues(text, device, glossary)]
     rows.append(problems("L.captions", "L1-L4", lang, f"{len(captions)} subtítulos sin voseo, modismos ni sinónimos"))
-    return rows + check_round_two(layout, timeline, tutorial) + check_round_four(layout, timeline, tutorial)
+    return (rows + check_round_two(layout, timeline, tutorial) + check_round_four(layout, timeline, tutorial)
+            + check_reading(layout, timeline))
 
 
 # ---------- round two: C7-C10, N1-N9 ----------
@@ -1513,6 +1523,33 @@ def check_round_four(layout: dict, timeline: dict, tutorial: dict) -> list[dict]
             check_band_height(layout, by_kind, out_h),
             check_surfaces_inside(by_kind, camera, vp, excluded),
             check_logo(by_kind, layout)]
+
+
+def check_reading(layout: dict, timeline: dict) -> list[dict]:
+    """P4: every text on screen lasts the time to read it. A caption or a chip under a card (a part separator)
+    is not visible, so only its time outside the cards counts."""
+    items = layout.get("items", [])
+    covers = merge(sorted((float(i["t0"]), float(i["t1"])) for i in items if i.get("kind") in ("card", "title")))
+
+    def visible(it) -> float:
+        t0, t1 = float(it["t0"]), float(it["t1"])
+        return (t1 - t0) - sum(overlap(t0, t1, a, b) for a, b in covers)
+
+    tol = 2 * TIME_RES
+    captions = [i for i in items if i.get("kind") == "caption"]
+    short = [f"«{c.get('text', '')}» {visible(c):.2f} s visible (mínimo {reading_seconds(c.get('text', '')):.2f} s)"
+             for c in captions if visible(c) < reading_seconds(c.get("text", "")) - tol]
+    seps = separator_items({"card": [i for i in items if i.get("kind") == "card"],
+                            "separator": [i for i in items if i.get("kind") == "separator"]})
+    quick = [f"«{s.get('text', '')}» {float(s['t1']) - float(s['t0']):.2f} s (mínimo {PART_SECONDS:g} s)"
+             for s in seps if float(s["t1"]) - float(s["t0"]) < PART_SECONDS - tol]
+    chips = [i for i in items if i.get("kind") == "chip"]
+    flips = [f"«{c.get('text', '')}» {visible(c):.2f} s antes de cambiar (mínimo {CHIP_MIN:g} s)"
+             for c in chips if visible(c) < CHIP_MIN - tol]
+    return [problems("P4.captions", "P4", short, f"{len(captions)} subtítulos visibles ≥ caracteres/15 + 0.4 s "
+                                                 f"(mínimo 1.5 s)"),
+            problems("P4.separators", "P4", quick, f"{len(seps)} separadores ≥ {PART_SECONDS:g} s"),
+            problems("P4.chips", "P4", flips, f"{len(chips)} etiquetas de paso visibles ≥ {CHIP_MIN:g} s")]
 
 
 def c4_ranges(timeline: dict, layout: dict | None) -> list[tuple[float, float]]:

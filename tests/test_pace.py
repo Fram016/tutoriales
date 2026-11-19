@@ -63,11 +63,11 @@ class SchemaPaceTest(test_schema.YamlCase):
         tut = self.load(with_pace(test_schema.BASE, max_seconds=45))
         fast, redes = common.videos(tut)
         self.assertEqual((fast["pace"], fast["max_seconds"], fast["tempo"]), ("fast", 45, common.FAST_TEMPO))
-        self.assertEqual(common.FAST_TEMPO, 1.12)
+        self.assertEqual(common.FAST_TEMPO, 1.05)   # P4 (round five, second pass): at most x1.05
         # PRESERVE: a video without pace is normal, has no cap and keeps the voice as synthesized.
         self.assertEqual((redes["pace"], redes["max_seconds"], redes["tempo"]), ("normal", None, 1.0))
-        tut = self.load(with_pace(test_schema.BASE, tempo=1.1))
-        self.assertEqual(common.videos(tut)[0]["tempo"], 1.1)
+        tut = self.load(with_pace(test_schema.BASE, tempo=1.03))
+        self.assertEqual(common.videos(tut)[0]["tempo"], 1.03)
 
 
 # --- tts ----------------------------------------------------------------------------------------
@@ -104,7 +104,7 @@ class TtsTempoTest(unittest.TestCase):
         trimmed = 1.0 + 2 * tts.TRIM_PAD
         for name, seconds in result["tutorial"].items():
             with self.subTest(clip=name):
-                self.assertAlmostEqual(seconds, trimmed / common.FAST_TEMPO, delta=0.04)
+                self.assertAlmostEqual(seconds, trimmed / common.FAST_TEMPO, delta=0.05)
                 wav = self.pdir / "audio" / "voice" / "tutorial" / f"{name}.wav"
                 self.assertAlmostEqual(common.media_duration(wav), seconds, delta=0.01)
         # PRESERVE: the normal video keeps the trimmed length, and a text in both videos is billed once.
@@ -114,10 +114,10 @@ class TtsTempoTest(unittest.TestCase):
     def test_tempo_is_part_of_the_clip_cache_key(self):
         self.write(pace="fast")
         tts.tts("crm")
-        self.write(pace="fast", tempo=1.2)
+        self.write(pace="fast", tempo=1.02)
         again = tts.tts("crm")
         self.assertEqual(len(self.calls), 7)          # a new tempo re-derives from the raw cache, no API call
-        self.assertAlmostEqual(again["tutorial"]["opening"], (1.0 + 2 * tts.TRIM_PAD) / 1.2, delta=0.04)
+        self.assertAlmostEqual(again["tutorial"]["opening"], (1.0 + 2 * tts.TRIM_PAD) / 1.02, delta=0.05)
 
     def test_offline_fast_clips_follow_the_tempo(self):
         self.write(pace="fast")
@@ -219,7 +219,8 @@ def download(pace=None):
         {"type": "result", "t": 9.0, "surface": "popup", "selector": ".estadisticas", **test_edit.box(40, 420)}]}],
         "surfaces": {"popup": {"size": [460, 660], "dpr": 2, "anchor": "top-right", "dir": "surfaces/popup",
                                "windows": [{"t0": 1.0, "t1": 12.0}]}}}
-    return edit.plan_video(tut, video, actions, [], {"opening": 1.5, "bajar": 2.4, "closing": 1.5})
+    # P4: a real read of the two sentences (3.67 s at x1.05 in perseo-xml-v2) is about their reading time.
+    return edit.plan_video(tut, video, actions, [], {"opening": 1.5, "bajar": 3.6, "closing": 1.5})
 
 
 class EditFastTimelineTest(unittest.TestCase):
@@ -332,15 +333,15 @@ class ComposeFastTest(unittest.TestCase):
         self.assertLessEqual(fr["s"], 1.4 + 1e-6)
         self.assertTrue(test_compose.inside(compose.Stage.map(test_compose.AREA, fr), lay["viewport"]))
 
-    def test_part_separators_last_0_8_s(self):
+    def test_part_separators_last_1_5_s(self):
         lay = compose.plan(fast(test_compose.parts_timeline()), test_compose.BRAND)
         cards = [i for i in lay["items"] if str(i.get("card", "")).startswith("part-")]
         self.assertEqual(len(cards), 2)
         for card in cards:
-            self.assertAlmostEqual(card["t1"] - card["t0"], 0.8)
-        normal = compose.plan(test_compose.parts_timeline(), test_compose.BRAND)   # PRESERVE: 1.2 s, cap 1.5 s
+            self.assertAlmostEqual(card["t1"] - card["t0"], 1.5)   # P4 replaces P2's 0.8 s
+        normal = compose.plan(test_compose.parts_timeline(), test_compose.BRAND)   # P4: 1.5 s in every pace
         self.assertEqual(sorted(round(i["t1"] - i["t0"], 3) for i in normal["items"]
-                                if str(i.get("card", "")).startswith("part-")), [1.2, 1.5])
+                                if str(i.get("card", "")).startswith("part-")), [1.5, 1.5])
 
     def test_band_under_a_separator_may_be_occluded(self):
         # The separator opens its part over the first step (N16): that step's chip, badge and caption are hidden by
@@ -350,7 +351,11 @@ class ComposeFastTest(unittest.TestCase):
         layers = [i for i in lay["items"] if i["kind"] in ("chip", "caption")]
         under = [i for i in layers if any(i["t0"] < b and a < i["t1"] for a, b in seps)]
         self.assertTrue(under)
-        self.assertEqual(html.count("data-layout-allow-occlusion"), len(under))
+        # hyperframes only excuses an occluder that carries the flag (allowsOcclusionOf): the separator scene does
+        # (a 1.5 s separator over the chip failed the check, perseo-xml-v2 T4).
+        for n in (1, 2):
+            self.assertIn(f'id="part-{n}" class="clip scene" data-layout-allow-occlusion', html)
+        self.assertEqual(html.count("data-layout-allow-occlusion"), len(under) + len(seps))
         plain, _ = compose.build(test_compose.fixture("tutorial"), test_compose.BRAND)   # PRESERVE: no parts
         self.assertNotIn("data-layout-allow-occlusion", plain)
 
@@ -391,7 +396,9 @@ class LintPaceTest(unittest.TestCase):
         data = copy.deepcopy(test_lint.BASE)
         data["steps"] = [{"id": "menu", "narration": "En el SRI, abre el menú.", "actions": [{"click": "#m"}]}]
         video = {"id": "v", "type": "TUT", "steps": "all", "opening": {"narration": ""}}
-        self.assertLessEqual(lint.estimate(data, video, budget=True), 1.5 + 2.15)   # opening floor + the clip
+        # opening floor + the clip, or (P4) the lead and the caption's reading time when that is longer
+        read = edit.LEAD + common.reading_seconds("En el SRI, abre el menú.")
+        self.assertLessEqual(lint.estimate(data, video, budget=True), 1.5 + max(2.15, read) + 1e-9)
         self.assertAlmostEqual(lint.estimate(data, video), 1.5 + lint.seconds("En el SRI, abre el menú."))   # PRESERVE
 
     def test_estimate_uses_the_voice_tempo(self):

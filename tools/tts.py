@@ -9,7 +9,8 @@ narration only re-synthesizes that clip. Every clip is trimmed of its leading/tr
 (keeping TRIM_PAD) into _cache/trim-v<TRIM_VERSION>/ before it is measured, so edit and lint work
 with the real speech length; a new trim version re-derives from the raw cache, never re-billing.
 P2 (`pace: fast`): the trimmed clip is sped up by the video's tempo (ffmpeg atempo, no pitch change; default
-common.FAST_TEMPO) into _cache/tempo-<factor>/ before it is measured; the raw API audio stays shared.
+common.FAST_TEMPO, x1.05, also the most P4 allows under fast) into _cache/tempo-<factor>/ before it is measured;
+the raw API audio stays shared.
 --offline writes silent clips of estimated length (smoke tests without an API key; not trimmed).
 """
 from __future__ import annotations

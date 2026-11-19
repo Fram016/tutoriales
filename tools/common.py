@@ -115,10 +115,16 @@ VIDEO_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 # N17: where a step happens (the context indicator of compose).
 CONTEXTS = ("sri", "extension", "page")
 # P2 (§Parte 7): videos[].pace. `fast` replaces TUT4 (short holds, waits cut, shorter cards, less zoom) and speeds
-# the voice up by videos[].tempo (atempo, no pitch change), FAST_TEMPO by default.
+# the voice up by videos[].tempo (atempo, no pitch change), FAST_TEMPO by default. P4: under fast at most x1.05.
 PACES = ("normal", "fast")
-FAST_TEMPO = 1.12
+FAST_TEMPO = 1.05
+FAST_TEMPO_MAX = 1.05
 TEMPO_RANGE = (1.0, 1.25)
+# P4 (§Parte 7): every on-screen text is shown at least the time to read it, whatever the pace. A caption block
+# chars/READ_CPS + READ_PAD seconds, never under READ_MIN; a part separator PART_SECONDS; a step chip CHIP_MIN.
+READ_CPS, READ_PAD, READ_MIN = 15.0, 0.4, 1.5
+PART_SECONDS = 1.5
+CHIP_MIN = 1.5
 # N25: JS flags of the censor patterns (the recorder always adds g); default case-insensitive.
 REGEX_FLAGS = "imsu"
 PY_FLAGS = {"i": re.I, "m": re.M, "s": re.S, "u": 0}
@@ -368,6 +374,8 @@ def _validate_videos(videos, step_ids: list[str]) -> None:
         if tempo is not None and (isinstance(tempo, bool) or not isinstance(tempo, (int, float))
                                   or not TEMPO_RANGE[0] <= tempo <= TEMPO_RANGE[1]):
             _fail(where, f"'tempo' tiene que ser un número entre {TEMPO_RANGE[0]:g} y {TEMPO_RANGE[1]:g} (P2)")
+        if tempo is not None and video.get("pace") == "fast" and tempo > FAST_TEMPO_MAX:
+            _fail(where, f"'tempo' con pace: fast es como máximo {FAST_TEMPO_MAX:g} (P4)")
 
 
 BRAND_COLORS = ("primary", "accent", "background", "text", "surface", "on_surface")
@@ -389,6 +397,11 @@ def brand_defaults(brand: dict) -> dict:
         out["accent"] = out["primary"]
     out.setdefault("on_surface", "#ffffff")
     return out
+
+
+def reading_seconds(text: str) -> float:
+    """P4: seconds a caption block `text` has to stay on screen to be read."""
+    return max(READ_MIN, len(text or "") / READ_CPS + READ_PAD)
 
 
 def video_tempo(video: dict) -> float:

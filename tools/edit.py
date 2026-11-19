@@ -43,6 +43,11 @@ the spinner, then the summary), a minimal lead and tail per step, opening <= 2 s
 room for compose's establishing shot; the click inside a surface is the main action of a step that opens it, and
 an effect sentence after it waits for the step's next result or screen change ("Revisa el resumen", N14).
 `videos[].max_seconds` (P1): the timeline carries it and warns when the video is longer.
+P4 (every pace, §Parte 7): the first step of every part opens with PART_SECONDS of its first frame under the
+"Parte N" separator (timeline `parts[].start/duration`; its voice, actions and captions come after it, and that
+time is no voice gap); a step lasts until its captions have been read (compose.caption_span from the voice start)
+and, in TUT, at least CHIP_MIN so its chip can be read: the last frame is held or the actions run slower, the
+reading time is never cut.
 
 Surfaces (perseo-xml S5, an extension popup recorded next to the tab): their frames go through the same
 warp into edit/V/surface-<name>.mp4, and timeline `surfaces.<name>.windows` says when each is open (output
@@ -59,9 +64,9 @@ import re
 import numpy as np
 from PIL import Image
 
-from common import (PipelineError, ffmpeg, is_secret_ref, load_tutorial, main_guard, project_dir,
-                    read_json, videos, write_json)
-from compose import HOLD, MOVE, R2_CLEAN, establish_room
+from common import (CHIP_MIN, PART_SECONDS, PipelineError, ffmpeg, is_secret_ref, load_tutorial, main_guard,
+                    project_dir, read_json, videos, write_json)
+from compose import FORMATS, HOLD, MOVE, R2_CLEAN, caption_blocks, caption_span, establish_room
 
 LEAD = 0.3         # voice starts this long after the step's first frame
 TAIL = 0.4         # breathing room after the voice ends
@@ -495,14 +500,15 @@ def effect_event(action: dict, events: list[dict]) -> dict:
 
 def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: dict,
               instruction: float | None = None, action=..., carry: float | None = None,
-              effect: float | None = None) -> dict:
+              effect: float | None = None, read: float = 0.0, floor: float = 0.0) -> dict:
     """Pick the slowest idle speed that keeps the step within voice + GAP (A2), leave compose room on
     new screens and toasts (C7/N6, leave_room; `carry` as there), hold the frame before the main action
     (default main_action(events)) until the instruction (`instruction` seconds into the voice, default
     all of it) ends at most SYNC_AFTER after it (N1), then pad. `carry` of the result: for the next step.
     N14 `effect`: seconds into the voice where the effect sentence starts; then the instruction ends before
     the action and the frame before the action's `effect_c` is held until that sentence starts. The lead and the
-    tail come from `pc` (P2: minimal)."""
+    tail come from `pc` (P2: minimal). P4: `read` is the seconds from the voice start until its captions have been
+    read and `floor` the shortest step (the chip), so the step never ends before either."""
     fast = pc.get("kind") == "fast"
     lead, tail = pc.get("lead", LEAD), pc.get("tail", TAIL)
     if action is ...:
@@ -532,19 +538,20 @@ def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: 
                 _split(pieces, ce)
                 _freeze_before(pieces, ce, deficit)
         actions = sum(p["d"] for p in pieces)
-        if voice <= 0 or actions <= voice + GAP or speed >= pc["max"]:
+        if voice <= 0 or actions <= max(voice, read) + GAP or speed >= pc["max"]:
             break
         speed = min(round(speed + 0.1, 3), pc["max"])
     # With a main action the voice ends before it and what follows the action is the breathing room:
     # padding a TAIL after it would only add silence (A2).
     need = voice + lead + (0.0 if action else tail) if voice > 0 else 0.0
+    need = max(need, lead + read if voice > 0 else 0.0, floor)
     duration = max(actions, need)
     if duration - actions > 1e-9:
         pieces.append({"c0": b, "c1": b, "d": duration - actions, "kind": "freeze"})
     if action:
         offset = lead
     else:
-        offset = lead + max(0.0, duration - voice - GAP) / 2 if voice > 0 else 0.0
+        offset = lead + max(0.0, duration - max(voice, read) - GAP) / 2 if voice > 0 else 0.0
     carry_out = screen[1] + warp(pieces, b) - warp(pieces, screen[0]) if screen else None
     return {"pieces": pieces, "duration": duration, "voice_offset": offset, "speed": speed, "sync": sync,
             "action_offset": warp(pieces, at) if action else None, "instruction": instruction,
@@ -676,6 +683,8 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
     screen_start = t
     steps = []
     carry = 0.0   # C7: the first screen starts at screen_start
+    chars = FORMATS.get(video["format"], FORMATS["16:9"])["chars"]
+    reads, seps, part = {}, {}, None   # P4: caption reading span and separator time of each step
     for step in video["steps"]:
         cap = captured.get(step["id"])
         if cap is None:
@@ -690,10 +699,23 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         share = effect_share(step["narration"])
         if fast and action is not None and share is not None:
             action = effect_event(action, events)
+        texts = [" ".join(lines) for _, lines in caption_blocks(step["narration"], tut.get("product"), chars)]
+        reads[step["id"]] = caption_span(texts, voice) if voice > 0 else 0.0
         plan = plan_step(cap["t0"], cap["t1"], events, list(blanks) + omitted, voice, pc, instruction, action,
-                         carry, voice * share if share is not None else None)
+                         carry, voice * share if share is not None else None, reads[step["id"]],
+                         CHIP_MIN if vtype == "TUT" else 0.0)
         carry = plan["carry"]
         pieces = plan["pieces"]
+        if tut.get("parts") and step.get("part") is not None and step.get("part") != part:
+            # P4/N16: the part's separator card covers its first frame, held PART_SECONDS before anything moves.
+            seps[step["id"]] = PART_SECONDS
+            pieces.insert(0, {"c0": cap["t0"], "c1": cap["t0"], "d": PART_SECONDS, "kind": "freeze"})
+            plan["duration"] += PART_SECONDS
+            plan["voice_offset"] += PART_SECONDS
+            for key in ("action_offset", "effect_offset"):
+                if plan[key] is not None:
+                    plan[key] += PART_SECONDS
+        part = step.get("part")
         out_events = []
         for ev in sorted(events, key=lambda e: e["t"]):
             at = t + warp(pieces, min(max(ev["t"], cap["t0"]), cap["t1"]))
@@ -741,12 +763,13 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
     def window(b):
         if "events" not in b:
             return b["voice_start"], b["voice_start"]
-        hi = b["start"] + b["duration"] - b["voice_duration"]
+        lo = b["start"] + seps.get(b["id"], 0.0)   # P4: never under the separator
+        hi = b["start"] + b["duration"] - max(b["voice_duration"], reads.get(b["id"], 0.0))
         if b["action_t"] is not None:
             hi = min(hi, b["action_t"] + b["sync_after"] - b["instruction_duration"])
         if b["effect_t"] is not None:
             hi = min(hi, b["effect_t"] - b["effect_voice"])
-        return b["start"], max(hi, b["start"])
+        return lo, max(hi, lo)
     windows = [window(b) for _, b in voiced]
     starts = place_voices([(lo, hi, b["voice_start"], b["voice_duration"])
                            for (lo, hi), (_, b) in zip(windows, voiced)]) if voiced else []
@@ -758,7 +781,8 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             if b["effect_voice"] is not None:
                 b["effect_start"] = _r(start + b["effect_voice"])
     for (name_a, a), (name_b, b) in zip(voiced, voiced[1:]):
-        gap = b["voice_start"] - (a["voice_start"] + a["voice_duration"])
+        # P4: the separator card before a part is no voice gap.
+        gap = b["voice_start"] - (a["voice_start"] + a["voice_duration"]) - seps.get(name_b, 0.0)
         if gap > GAP + 1e-3:
             warnings.append(f"{gap:.1f} s de silencio entre {name_a} y {name_b} (A2 pide como máximo "
                             f"{GAP:.1f} s): alarga la narración o quita acciones")
@@ -778,7 +802,10 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             warnings.append(f"el video dura {total:.1f} s y el máximo es {cap:g} s (P1): acorta la narración o "
                             "quita pasos")
     if tut.get("parts"):
-        timeline["parts"] = [dict(p) for p in tut["parts"]]   # N16: compose draws separators and "Parte N · Paso M"
+        # N16: compose draws separators and "Parte N · Paso M"; P4: each at its first step, PART_SECONDS long.
+        first = {s["part"]: s["start"] for s in reversed(steps) if s["id"] in seps}
+        timeline["parts"] = [{**p, "start": first[p["n"]], "duration": PART_SECONDS} if p.get("n") in first
+                             else dict(p) for p in tut["parts"]]
     surfaces = surface_specs(tut, actions, steps)
     if surfaces:
         timeline["surfaces"] = surfaces

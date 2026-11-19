@@ -203,3 +203,12 @@ Evidencia: snapshots `qa-01` (toma 1) y `qa-02` (toma 3); ya no hay MP4. "Correg
 - 27,4 s popup entero "12 Descargados / 0 Con error" + "Revisa el resumen."; 43,2 s cierre en el popup "6 Descargados / 0 Con error" (N27).
 
 Costo: Gemini TTS 13 + 7 clips nuevos; sin Lyria (música reutilizada).
+
+## 2026-11-18 — Ronda 5, T4: tiempo de lectura (odd/tasks/ritmo-perseo.md L5, P4)
+
+- Cuadros del MP4 de 43,4 s: el separador de 0,8 s tapa la pantalla entera y también la banda, así que el primer subtítulo de cada parte («Abre Perseo XML.») se veía unos 0,9 s; 13 de 15 subtítulos duraban menos de caracteres/15 + 0,4 s («Haz clic en Consultar.» 1,26 s de 1,87 s).
+- Herramientas (P4, todos los ritmos): separador de 1,5 s con tiempo propio (edit congela el primer cuadro de la parte; voz, acciones y subtítulos van después); cada paso dura al menos la lectura de sus subtítulos y 1,5 s (etiqueta); compose reparte los subtítulos por tiempo de lectura; lint estima P1 con lectura y separadores; qa P4.captions/separators/chips; tempo rápido ≤ 1,05. tests/test_reading.py.
+- tutorial.yaml: `tempo: 1.05`; «Abre Carpeta de descargas; con Change la cambias.», «Abre el menú.», «Abre Facturación Electrónica, Producción y Consultas.», «Abre los comprobantes emitidos/recibidos.», «Llena fecha, establecimiento y punto de emisión.».
+- `pipeline.py perseo-xml-v2 --from tts --to compose` (1) 21:43:19–21:44:36 → exit 1: 52,2 s y `hyperframes check` text_occluded del chip y la insignia bajo el separador (hyperframes solo excusa al elemento que tapa: el separador lleva ahora `data-layout-allow-occlusion`). (2) 21:48:42–21:49:53 → exit 0: 50,3 s, compose check OK.
+- `qa.py --pre` 21:49:58–21:50:27 → exit 1: P4 PASS (15 subtítulos, 3 separadores de 1,5 s, 13 etiquetas), N1–N27 PASS; FAIL P1 50,3 s > 45 s, A2.voice_gaps (silencios tras el clic: menú, formulario, periodo), C8 3,8 s (cuadro fijo antes de los clics del menú, la oración única se dice antes del primer clic).
+- **P1 no se cumple con P4**: el piso (apertura 2,7 s + 3 separadores + 0,2 s + lectura de cada subtítulo) ya es ~44,4 s sin contar lo que pasa después de cada clic. Simulación sobre la misma toma: sin «Revisa el resumen.» (×2) 50,0 s; además sin la oración de Change 48,8 s; además sin nombrar Facturación/Producción/Consultas 46,5 s. Para ≤ 45 s habría que quitar contenido: un paso entero (p. ej. la parte 1 de la carpeta) o subir `max_seconds`. Sin render: decisión del usuario.

@@ -460,7 +460,7 @@ class SyncTest(unittest.TestCase):
             {"type": "click", "t": 0.7, "selector": "#btn-save", **box(1300, 900)},
             {"type": "result", "t": 1.2, "selector": "#toast", **box(1500, 950)},
             {"type": "highlight", "t": 2.0, "selector": "tr.new", **box(400, 200)}]}]}
-        voice = 4.2
+        voice = 6.0   # P4: a real read (~14 chars/s) is about as long as its captions' reading time
         tl = edit.plan_video(tut, video, actions, [], {"opening": 2.0, "guardar": voice, "closing": 1.5})
         step, click = tl["steps"][0], event(tl, 0, "click")
         instruction = step["instruction_duration"]
@@ -918,7 +918,9 @@ class PartsContextTest(unittest.TestCase):
 
     def test_parts_and_step_part_context_reach_the_timeline(self):
         tl = self.plan(parts=True)
-        self.assertEqual(tl["parts"], [{"n": 1, "title": "Configurar la carpeta"}])
+        # P4: edit times the separator: PART_SECONDS at the start of the part's first step.
+        self.assertEqual(tl["parts"], [{"n": 1, "title": "Configurar la carpeta", "start": tl["steps"][0]["start"],
+                                        "duration": 1.5}])
         self.assertEqual((tl["steps"][0]["part"], tl["steps"][0]["context"]), (1, "sri"))
 
     def test_no_parts_key_without_parts(self):
