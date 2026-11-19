@@ -426,3 +426,15 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
 > “No, cuando muestras los pasos no deja leer es muy rapdio” (sobre la versión de 43,4 s)
 
 - **[P4] Tiempo de lectura.** Todo texto en pantalla se ve al menos el tiempo de leerlo: separadores de parte ≥ 1,5 s; cada subtítulo ≥ caracteres/15 + 0,4 s (mínimo 1,5 s); la etiqueta de paso no cambia antes de 1,5 s. Para cumplir el tope de P1 se acorta la narración o se juntan pasos, nunca el tiempo de lectura. El tempo de voz baja a ×1,05 como máximo.
+
+## Parte 8: Diálogos, carpeta y pronunciación (texto del usuario)
+
+> “Haz mas coherente los dialogos y por ejemplo debes mencionar explicitamente, Ingresa a la plataforma del SRI, luego ingresa a... y sigue con frases coherentes, no mostraste tambien como configurar correctamente la carpeta de descargas, no importa que consumas un poco mas de tiuempo siempre que sea claro solo no llegues al minuto, y explica que por ejemplo en emitidos transforma los RIDE a XML ademas RIDE se pronuncia RI DE no raid”
+
+### Reglas derivadas (ronda 6)
+
+- **[D1] Narración en secuencia.** La narración cuenta el recorrido completo con conectores explícitos y nombra cada lugar: “Ingresa a la plataforma del SRI en línea.”, “Luego entra a Facturación Electrónica, Producción y Consultas.”, “Después…”, “Por último…”. Cada frase sigue a la anterior; nada de frases sueltas.
+- **[D2] Explicar qué hace cada opción.** Cuando la herramienta transforma algo, se dice: en emitidos, “XML desde el RIDE” transforma los RIDE (PDF) en XML; en recibidos, “XML para importar” descarga los XML listos para importar.
+- **[D3] Pronunciación.** `pronunciation: {TÉRMINO: lectura}` en tutorial.yaml: la voz lee la forma indicada (RIDE → “ri de”); los subtítulos muestran el término original.
+- **[D4] Configuración completa de la carpeta.** Se muestra el clic en “Cambiar / Change” y la carpeta resultante en la configuración (una carpeta para emitidos y otra para recibidos, configurada antes de cada descarga). El selector nativo de Windows no se graba: el video corta del clic al resultado. Al terminar la toma se restaura la carpeta original del usuario.
+- **[P1 revisada] Duración.** Este tutorial puede durar más de 45 s si gana claridad, siempre menos de 60 s (`max_seconds: 58`).
