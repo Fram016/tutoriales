@@ -1240,8 +1240,10 @@ def evidence(by_kind: dict, timeline: dict) -> dict[str, list[tuple[float, float
 
 def check_named(captions, by_kind, timeline) -> dict:
     """N14: while a caption names Perseo, the settings, Cambiar, the summary or the list, it is on screen (an
-    instruction may name it up to NAMED_LEAD s before it appears)."""
+    instruction may name it up to NAMED_LEAD s before it appears). I1: in a `chrome` step (Google, the store)
+    "Perseo" is the typed query or the listing, not the popup: the timeline cannot prove it, the snapshots must."""
     proof = evidence(by_kind, timeline)
+    browser = {s["id"] for s in timeline.get("steps", []) if s.get("context") == "chrome"}
     found, unknown, named = [], [], 0
     for cap in captions:
         text = caption_text(cap)
@@ -1252,7 +1254,9 @@ def check_named(captions, by_kind, timeline) -> dict:
                 continue
             named += 1
             spans = proof[kind]
-            if spans is None:
+            if kind == "surface" and cap.get("step") in browser:
+                unknown.append(f"«{text}» nombra {word} en Chrome")
+            elif spans is None:
                 unknown.append(f"«{text}» nombra {word}")
             elif not any(overlap(t0, t1 + lead, a, b) > EPS for a, b in spans):
                 found.append(f"«{text}» ({fmt_t(t0)}–{fmt_t(t1)}) nombra {word}, que no está en pantalla")

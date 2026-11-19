@@ -1,0 +1,57 @@
+# Perseo XML v4 — take of Parte 1 "Instalar la extensión" (odd/tasks/perseo-instalacion.md T2, S1-S2; I1-I3).
+# Recorded alone: .venv/Scripts/python.exe tools/capture.py perseo-xml-v4 --config install.yaml --out takes/install
+# then merged before the approved v3 take with tools/merge_takes.py (I3). Steps and narration live in tutorial.yaml.
+# I2: nothing is installed. ego shows "Agregar a ego" and cannot open Chrome's native confirmation: the button is
+# relabeled (show_text), Chrome's dialog is drawn in the page (simulate_dialog), both presses are press_visual (the
+# real button is never clicked) and the installed state is the relabel "Quitar de Chrome".
+title: "Perseo XML: instalar la extensión"
+product: "Perseo XML"
+app_url: "https://www.google.com/?hl=es-419"   # rehearsal 2026-11-19: no "tráfico inusual" page, Google is used
+viewport: [1920, 1080]
+language: es-EC
+device: desktop
+hide:                                # I2: notices of the recording browser (Chrome never shows them)
+  - ".gSrP5d"                        # store listing: "Cambia a ego para instalar extensiones y temas"
+  - '[jsname="UUbT9"]'               # Google: the search box dropdown (it lists the profile's search history)
+censor:                              # the Google account of the recording profile
+  selectors:
+    - 'a[href*="accounts.google.com/SignOutOptions"]'
+    - 'h2.tCQDwe'                    # store home greeting "<Nombre>, tal vez te guste" (name and text are two nodes)
+
+steps:
+  - id: buscar-tienda
+    actions:
+      - wait: "textarea[name=q]"
+      - type: {into: "textarea[name=q]", text: "Chrome Web Store"}
+      - click: 'input[name="btnK"]'     # "Buscar con Google": a click, so the camera cuts to the results (C10)
+      - wait: 'a[href="https://chromewebstore.google.com/"] h3'
+  - id: abrir-tienda
+    actions:
+      - click: 'a[href="https://chromewebstore.google.com/"] h3'
+      - wait: 'input[aria-label="Buscar en Chrome Web Store"]'
+  - id: buscar-perseo
+    actions:
+      - type: {into: 'input[aria-label="Buscar en Chrome Web Store"]', text: "Perseo XML"}
+      - press: "Enter"
+      - wait: 'a[href*="nggkmolkfkhfdjgbclinjcojpikldbhp"]'
+  - id: abrir-ficha
+    actions:
+      - show_text: {sel: "xpath=//button[contains(normalize-space(.),' a ego')]", text: "Agregar a Chrome", watch: true}   # I2: relabeled as the listing paints (same document)
+      - click: 'a[href*="nggkmolkfkhfdjgbclinjcojpikldbhp"]'
+      - wait: "xpath=//h1[normalize-space()='Perseo XML']"
+  - id: agregar
+    actions:
+      - wait: "button:has([data-tutorial-text])"   # the button state loads after the title
+      - show_text: {sel: "button:has([data-tutorial-text])", text: "Agregar a Chrome"}
+      - press_visual: "button:has([data-tutorial-text])"   # the relabeled button (the original label is hidden)
+  - id: confirmar
+    actions:
+      - simulate_dialog:
+          title: '¿Quieres agregar "Perseo XML"?'
+          body: ["Puede:", "Leer y cambiar tus datos en srienlinea.sri.gob.ec"]
+          buttons: ["Agregar extensión", "Cancelar"]   # Chrome on Windows: the primary button first
+          icon: brand/ext-icon48.png
+      - press_visual: "#sim-btn-0"
+      - pause: 900                      # the press ripple ends on the dialog, not on the page behind it
+      - remove_dialog: true
+      - show_text: {sel: "button:has([data-tutorial-text])", text: "Quitar de Chrome"}

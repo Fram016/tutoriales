@@ -138,7 +138,7 @@ PAD_X, PAD_Y, CHIP_PAD_Y, MARGIN, BAND_PAD = 32, 14, 10, 24, 40
 BADGE_FONT, BADGE_PAD_X, BADGE_PAD_Y, BADGE_GAP = 32, 20, 8, 12
 SPOT_AFTER_CLICK = 0.4   # N13: a lit target waits for the click that reveals it (menus, dialogs)
 NEUTRAL = "#404040"     # N17: the page (SRI) context is neutral gray, the brand color is kept for the product
-CONTEXT_LABELS = {"sri": "En el SRI", "page": "En el SRI"}    # extension: "En <product>"
+CONTEXT_LABELS = {"sri": "En el SRI", "page": "En el SRI", "chrome": "En Chrome"}    # extension: "En <product>"
 # N16/P4: the part separator card lasts PART_SECONDS; without edit's times it opens the part's first step.
 CENSOR_BLUR = 14        # N25: source px of blur of a censor region
 
@@ -1364,7 +1364,10 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
         # N10: a form shot stays at most its preferred scale (1.5x; 1.2x under P3) while it pushes in. P3: the legible
         # floor is the base scale, so a detail shot never pushes out of the detail range (R1).
         floor = (stage.form_min if shot.get("form") else stage.detail_min) if stage.fast else None
-        return stage.push(shot["frame"], shot["keep"], shot.get("boxes"),
+        boxes = shot.get("boxes")
+        if shot.get("form") and boxes and stage.holds(shot["frame"], [shot["frame_box"]]):
+            boxes = boxes + [shot["frame_box"]]   # N12: a form that fits across keeps fitting while it pushes in
+        return stage.push(shot["frame"], shot["keep"], boxes,
                           stage.form_pref if shot.get("form") else stage.detail_max, floor)
 
     def hold(shot, t0, t1, end):

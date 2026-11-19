@@ -12,10 +12,16 @@ so a failed take (e.g. a captcha) does not leave the project without a usable ta
 D4: `show_download_dir.path` may name environment variables (%USERPROFILE%); they are expanded here and the path is
 never printed (it carries the Windows user name). Display only: the recorder writes it into the settings row; the
 browser's download folder is never changed.
+I3 (§Parte 9): `--config install.yaml --out takes/install` records another take config of the project (same schema)
+into its own take dir, merged later with tools/merge_takes.py. I2: a `simulate_dialog.icon` path (relative to the
+project) is sent to the recorder as a data URL; top-level `hide` hides notices of the recording browser on the page.
+
+Usage: python tools/capture.py <slug> [--config FILE] [--out DIR]
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -42,7 +48,15 @@ def expand_path(path: str) -> str:
     return ENV_VAR.sub(value, path)
 
 
-def resolve_actions(steps: list[dict]) -> list[dict]:
+def icon_data_url(pdir: Path | None, path: str) -> str:
+    """I2: the dialog icon (a PNG of the project) as a data URL the page can show."""
+    file = (pdir or ROOT) / path
+    if not file.is_file():
+        raise PipelineError(f"simulate_dialog: no existe el ícono {path}")
+    return "data:image/png;base64," + base64.b64encode(file.read_bytes()).decode("ascii")
+
+
+def resolve_actions(steps: list[dict], pdir: Path | None = None) -> list[dict]:
     resolved = []
     for step in steps:
         actions = []
@@ -58,6 +72,8 @@ def resolve_actions(steps: list[dict]) -> list[dict]:
                 arg = resolve_env_ref(arg)
             elif kind == "show_download_dir":
                 arg = {**arg, "path": expand_path(arg["path"])}
+            elif kind == "simulate_dialog" and arg.get("icon"):
+                arg = {**arg, "icon": icon_data_url(pdir, arg["icon"])}
             actions.append({kind: arg})
         resolved.append({"id": step["id"], "actions": actions, "hold_ms": step.get("hold_ms", 600)})
     return resolved
@@ -83,40 +99,53 @@ def resolve_surfaces(surfaces: dict | None) -> dict:
 KEEP_PREVIOUS = 2
 
 
-def keep_previous_take(pdir: Path, now: float | None = None) -> Path | None:
-    """Move capture/ (if it holds a take) to capture.prev-<timestamp>/; prune the oldest beyond KEEP_PREVIOUS."""
-    out_dir = pdir / "capture"
+def keep_previous_take(pdir: Path, now: float | None = None, out_dir: Path | None = None) -> Path | None:
+    """Move capture/ (or the take dir `out_dir`, if it holds a take) to <name>.prev-<timestamp>/ next to it; prune
+    the oldest beyond KEEP_PREVIOUS."""
+    out_dir = out_dir or pdir / "capture"
     if not (out_dir / "actions.json").exists():
         return None
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now if now is not None else time.time()))
-    dest = pdir / f"capture.prev-{stamp}"
+    parent, name = out_dir.parent, out_dir.name
+    dest = parent / f"{name}.prev-{stamp}"
     n = 1
     while dest.exists():
         n += 1
-        dest = pdir / f"capture.prev-{stamp}-{n}"
+        dest = parent / f"{name}.prev-{stamp}-{n}"
     out_dir.rename(dest)
-    for old in sorted(pdir.glob("capture.prev-*"))[:-KEEP_PREVIOUS]:
+    for old in sorted(parent.glob(f"{name}.prev-*"))[:-KEEP_PREVIOUS]:
         shutil.rmtree(old, ignore_errors=True)
     return dest
 
 
-def capture(slug: str) -> dict:
-    tut = load_tutorial(slug)
+def take_config(slug: str, file: str = "tutorial.yaml", out: str | None = None) -> tuple[dict, Path, dict]:
+    """(tutorial, take dir, recorder config) of a take: tutorial.yaml into capture/ by default; I3: another take
+    config of the project (install.yaml) into a take dir inside the project (takes/install)."""
+    tut = load_tutorial(slug, file)
     pdir = project_dir(slug)
-    out_dir = pdir / "capture"
-    previous = keep_previous_take(pdir)
-    if previous:
-        print(f"[capture] toma anterior guardada en {previous.name}")
-    build = pdir / "build"
-    build.mkdir(parents=True, exist_ok=True)
+    out_dir = pdir / out if out else pdir / "capture"
+    if out and pdir.resolve() not in out_dir.resolve().parents:
+        raise PipelineError("--out tiene que quedar dentro del proyecto (p.ej. takes/install)")
     config = {
         "outDir": out_dir.as_posix(),
-        "steps": resolve_actions(tut["steps"]),
+        "steps": resolve_actions(tut["steps"], pdir),
         "viewport": tut.get("viewport", [1920, 1080]),
         "startUrl": resolve_env_ref(tut.get("app_url")),
         "censor": resolve_censor(tut.get("censor")),
         "surfaces": resolve_surfaces(tut.get("surfaces")),
+        "hide": list(tut.get("hide") or []),
     }
+    return tut, out_dir, config
+
+
+def capture(slug: str, file: str = "tutorial.yaml", out: str | None = None) -> dict:
+    tut, out_dir, config = take_config(slug, file, out)
+    pdir = project_dir(slug)
+    previous = keep_previous_take(pdir, out_dir=out_dir)
+    if previous:
+        print(f"[capture] toma anterior guardada en {previous.name}")
+    build = pdir / "build"
+    build.mkdir(parents=True, exist_ok=True)
     take = build / "take.mjs"
     # Config on its own line: a Node error that echoes the failing call line shows no secrets.
     take.write_text(
@@ -158,7 +187,10 @@ def capture(slug: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("slug")
-    capture(ap.parse_args().slug)
+    ap.add_argument("--config", default="tutorial.yaml", help="otra configuración de toma del proyecto (I3: install.yaml)")
+    ap.add_argument("--out", help="carpeta de la toma dentro del proyecto (I3: takes/install); por defecto capture/")
+    a = ap.parse_args()
+    capture(a.slug, a.config, a.out)
 
 
 if __name__ == "__main__":

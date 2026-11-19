@@ -101,7 +101,10 @@ def load_access(slug: str) -> None:
 
 ACTION_KINDS = {"goto", "click", "hover", "press", "scroll", "wait", "pause", "type", "select",
                 "focus", "result", "highlight", "open", "close", "follow", "back",
-                "manual_fallback", "press_visual", "show_download_dir"}
+                "manual_fallback", "press_visual", "show_download_dir",
+                "show_text", "simulate_dialog", "remove_dialog"}
+# I2 (§Parte 9): simulate_dialog {title, body?, buttons, primary?, anchor?, icon?}.
+DIALOG_KEYS = {"title", "body", "buttons", "primary", "anchor", "icon"}
 # Actions that may run inside an open surface: {in: SURFACE, sel: SELECTOR} ({in, px} for scroll).
 SURFACE_ACTIONS = {"click", "hover", "scroll", "wait", "focus", "result", "highlight", "press_visual"}
 ANCHORS = ("top-right", "top-left")
@@ -112,8 +115,8 @@ FORMATS = ("16:9", "9:16")
 DEFAULT_FORMAT = {"TUT": "16:9", "RED": "9:16", "PRO": "16:9", "NOV": "16:9"}
 REMOVED_KEYS = {"intro": "videos[].opening", "outro": "videos[].closing"}
 VIDEO_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-# N17: where a step happens (the context indicator of compose).
-CONTEXTS = ("sri", "extension", "page")
+# N17: where a step happens (the context indicator of compose). I1: "chrome" = the browser itself (Google, the store).
+CONTEXTS = ("sri", "extension", "page", "chrome")
 # P2 (§Parte 7): videos[].pace. `fast` replaces TUT4 (short holds, waits cut, shorter cards, less zoom) and speeds
 # the voice up by videos[].tempo (atempo, no pitch change), FAST_TEMPO by default. P4: under fast at most x1.05.
 PACES = ("normal", "fast")
@@ -181,12 +184,33 @@ def _validate_parts(parts) -> list[int]:
     return numbers
 
 
+def _text(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _dialog_ok(arg) -> bool:
+    """I2: the shape of simulate_dialog."""
+    if not isinstance(arg, dict) or not set(arg) <= DIALOG_KEYS or not _text(arg.get("title")):
+        return False
+    buttons = arg.get("buttons")
+    if not isinstance(buttons, list) or not buttons or not all(_text(b) for b in buttons):
+        return False
+    body = arg.get("body")
+    if body is not None and not (isinstance(body, str) or isinstance(body, list) and all(isinstance(b, str) for b in body)):
+        return False
+    primary = arg.get("primary", 0)
+    if isinstance(primary, bool) or not isinstance(primary, int) or not 0 <= primary < len(buttons):
+        return False
+    return all(arg.get(k) is None or _text(arg[k]) for k in ("anchor", "icon"))
+
+
 def _validate_steps(steps, surfaces=(), parts=None) -> list[str]:
     if not isinstance(steps, list) or not steps:
         raise PipelineError("tutorial.yaml: 'steps' tiene que ser una lista con al menos un paso")
     ids = []
     opened: set[str] = set()   # surfaces open at this point of the take (open/close run in step order)
     followed = False           # a tab adopted with follow: tab, until back: main
+    dialog = False             # I2: a simulated dialog shown, until remove_dialog
     last_part = None
     for i, step in enumerate(steps):
         if not isinstance(step, dict) or not isinstance(step.get("id"), str) or not step["id"]:
@@ -208,7 +232,7 @@ def _validate_steps(steps, surfaces=(), parts=None) -> list[str]:
                 _fail(f"paso {sid}", f"la parte {part} va después de la parte {last_part} (N16)")
             last_part = part
         if "context" in step and step["context"] not in CONTEXTS:
-            _fail(f"paso {sid}", "'context' tiene que ser sri, extension o page (N17)")
+            _fail(f"paso {sid}", "'context' tiene que ser sri, extension, page o chrome (N17)")
         actions = step.get("actions", [])
         if not isinstance(actions, list):
             _fail(f"paso {sid}", "'actions' tiene que ser una lista")
@@ -239,6 +263,23 @@ def _validate_steps(steps, surfaces=(), parts=None) -> list[str]:
                 if not followed:
                     _fail(where, "'show_download_dir' va en la pestaña seguida (follow: tab antes), la configuración "
                                  "de descargas (D4)")
+            # I2, display only: a relabeled element and Chrome's confirmation dialog drawn in the page.
+            if kind == "show_text" and not (isinstance(arg, dict) and {"sel", "text"} <= set(arg) <= {"sel", "text", "watch"}
+                                            and _text(arg["sel"]) and isinstance(arg["text"], str)
+                                            and isinstance(arg.get("watch", False), bool)):
+                _fail(where, "'show_text' necesita {sel: SELECTOR, text: TEXTO, watch?: true} (I2)")
+            if kind == "simulate_dialog":
+                if not _dialog_ok(arg):
+                    _fail(where, "'simulate_dialog' necesita {title, body?, buttons: [...], primary?, anchor?, icon?} (I2)")
+                if dialog:
+                    _fail(where, "'simulate_dialog' con otro diálogo abierto (usa remove_dialog antes; I2)")
+                dialog = True
+            if kind == "remove_dialog":
+                if arg is not True:
+                    _fail(where, "'remove_dialog' solo admite true")
+                if not dialog:
+                    _fail(where, "'remove_dialog' sin un 'simulate_dialog' antes (I2)")
+                dialog = False
             if kind in SURFACE_ACTIONS and isinstance(arg, dict):
                 _validate_surface_action(where, kind, arg, surfaces, opened)
             elif kind in ("open", "close"):
@@ -480,6 +521,10 @@ def validate_tutorial(data) -> None:
         _validate_brand(data["brand"])
     if data.get("censor") is not None:
         _validate_censor(data["censor"])
+    # I2: notices of the recording browser hidden on the recorded page ("Cambia a ego para instalar extensiones").
+    hide = data.get("hide", [])
+    if not isinstance(hide, list) or not all(_text(s) for s in hide):
+        raise PipelineError("tutorial.yaml: 'hide' tiene que ser una lista de selectores CSS (I2)")
     if data.get("pronunciation") is not None:
         found = pronunciation_problems(data["pronunciation"])
         if found:
@@ -494,8 +539,9 @@ def validate_tutorial(data) -> None:
         _validate_videos(data["videos"], step_ids)
 
 
-def load_tutorial(slug: str) -> dict:
-    data = yaml.safe_load((project_dir(slug) / "tutorial.yaml").read_text(encoding="utf-8"))
+def load_tutorial(slug: str, file: str = "tutorial.yaml") -> dict:
+    """`file`: another take config of the project with the same schema (I3: install.yaml)."""
+    data = yaml.safe_load((project_dir(slug) / file).read_text(encoding="utf-8"))
     load_access(slug)
     validate_tutorial(data)
     if data.get("brand") is not None:

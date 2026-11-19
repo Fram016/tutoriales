@@ -405,7 +405,7 @@ class RoundFourSchemaTest(YamlCase):
             step["context"] = ctx
         self.assertEqual([s["context"] for s in self.load(data)["steps"]], ["sri", "extension", "page"])
         data["steps"][1]["context"] = "perseo"
-        self.assertRejects(data, "paso nuevo: 'context' tiene que ser sri, extension o page (N17)")
+        self.assertRejects(data, "paso nuevo: 'context' tiene que ser sri, extension, page o chrome (N17)")
 
     def test_tut_closing_is_optional(self):
         data = copy.deepcopy(BASE)

@@ -18,6 +18,11 @@
 // folder picker cannot be recorded); `show_download_dir: {path}` on the followed chrome://settings tab writes the
 // folder into the "Location" row (display only: the browser's folder is never changed) and logs a `result` on it.
 // No path ever reaches a log or actions.json (it carries the Windows user name).
+//
+// Round 7 (odd/tasks/perseo-instalacion.md T1, I2): the install is shown, never done. `show_text: {sel, text}` relabels
+// an element for display only ("Agregar a ego" -> "Agregar a Chrome") and logs a `result` on it; `simulate_dialog`
+// draws Chrome's confirmation dialog in the page (buttons #sim-btn-0.. for press_visual) and logs a `result` on it;
+// `remove_dialog` takes it away. take({hide}) hides notices of the recording browser on the page before any frame.
 
 const fs = await import("node:fs/promises");
 
@@ -706,6 +711,195 @@ async function showDownloadDir(page, sel, path) {
   }
 }
 
+// --- install shown in the page (I2, display only) ---------------------------------------------------
+
+// Shows `text` as the visible text of `el`. A page framework puts its own text back into the label it renders
+// (the Chrome Web Store does, rehearsal 2026-11-19), so the original label is hidden, not edited: the element holding
+// the first non-blank text gets a sibling with its class and our text ([data-tutorial-text]), every element holding
+// only other text is hidden too (a bare text node is emptied instead). A second call just rewrites our label. False
+// when `el` has no text. Also runs inside the page (showTextSource).
+export function relabel(el, text) {
+  const mine = el.querySelector("[data-tutorial-text]");
+  if (mine) {
+    if (mine.textContent !== text) mine.textContent = text;
+    return true;
+  }
+  const nodes = [];
+  const walk = (n) => {
+    for (const c of n.childNodes || []) {
+      if (c.nodeType === 3) {
+        if ((c.nodeValue || "").trim()) nodes.push(c);
+      } else if (c.nodeType === 1) {
+        walk(c);
+      }
+    }
+  };
+  walk(el);
+  if (!nodes.length) return false;
+  let placed = false;
+  for (const n of nodes) {
+    const holder = n.parentElement;
+    if (holder && holder !== el && holder.childNodes.length === 1) {
+      if (!placed) {
+        const label = holder.ownerDocument.createElement("span");
+        label.className = holder.className;
+        label.setAttribute("data-tutorial-text", "");
+        label.textContent = text;
+        holder.after(label);
+        placed = true;
+      }
+      holder.style.setProperty("display", "none", "important");
+    } else {
+      n.nodeValue = placed ? "" : text;
+      placed = true;
+    }
+  }
+  return true;
+}
+
+// In the page: relabels the first visible match of `sel`. If the page re-renders the element and drops the label, it
+// is put back a bounded number of times (never a fight with the page's own rendering). True when found.
+export function showTextSource(sel, text) {
+  return `(() => {
+${TARGET_FNS.join("\n")}
+${relabel}
+const sel = ${JSON.stringify(sel)}, text = ${JSON.stringify(text)};
+let el = null;
+try {
+  el = matchTargets(sel).els.find((e) => describeTarget(e).shown) || null;
+} catch (e) {
+  return false;
+}
+if (!el) return false;
+const keep = (globalThis.__tutorialShowText ??= []);
+for (const k of keep.filter((k) => k.el === el)) k.observer.disconnect();
+if (!relabel(el, text)) return false;
+let tries = 0;
+const observer = new MutationObserver(() => {
+  if ((el.innerText || "").trim() === text) return;
+  if (++tries > 10) {
+    observer.disconnect();
+    return;
+  }
+  setTimeout(() => relabel(el, text), 0);
+});
+observer.observe(el, { childList: true, subtree: true, characterData: true });
+keep.push({ el, observer });
+return true;
+})()`;
+}
+
+// In the page: `show_text {watch: true}`. Before a same-document navigation (the store opens a listing without a new
+// document), relabels every visible match of `sel` the moment the page inserts it: MutationObserver callbacks run
+// before the next paint, so no frame shows the original text. Elements already relabeled are left alone (a later
+// show_text may give them another text). Stops after 60 s or 20 relabels (never a fight with the page).
+export function watchTextSource(sel, text) {
+  return `(() => {
+${TARGET_FNS.join("\n")}
+${relabel}
+const sel = ${JSON.stringify(sel)}, text = ${JSON.stringify(text)};
+let done = 0;
+const apply = () => {
+  let els = [];
+  try {
+    els = matchTargets(sel).els.filter((e) => describeTarget(e).shown);
+  } catch (e) {
+    return;
+  }
+  for (const el of els) {
+    if (el.querySelector("[data-tutorial-text]")) continue;
+    if (++done > 20) return watcher.disconnect();
+    relabel(el, text);
+  }
+};
+const watcher = new MutationObserver(apply);
+watcher.observe(document.documentElement, { childList: true, subtree: true });
+(globalThis.__tutorialWatchText ??= []).push(watcher);
+setTimeout(() => watcher.disconnect(), 60000);
+apply();
+return true;
+})()`;
+}
+
+export const DIALOG_ID = "tutorial-sim-dialog";
+const DIALOG_W = 440;
+
+const escapeHtml = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+// Chrome's tab-modal confirmation (2023 refresh): white rounded card with a soft shadow, system font, optional icon
+// next to the title, body lines (the first one plain, the rest as a list: "Puede:" + permissions) and pill buttons
+// on the right, the primary one (`primary`, the first by default: Windows order) blue. Buttons are #sim-btn-<i>.
+// A tree of {tag, attrs, text?, kids?}: built with DOM calls in the page (Google pages enforce Trusted Types, so no
+// HTML strings there) and rendered as HTML by dialogHtml.
+export function dialogTree({ title, body = [], buttons = [], primary = 0, icon = null }) {
+  const lines = Array.isArray(body) ? body : [body];
+  const font = "font-family:'Segoe UI',system-ui,-apple-system,sans-serif";
+  const head = [];
+  if (icon) head.push({ tag: "img", attrs: { src: icon, alt: "", style: "width:32px;height:32px;flex:none" } });
+  head.push({ tag: "div", attrs: { style: "font-size:18px;line-height:24px;color:#1f1f1f" }, text: title });
+  const [first, ...rest] = lines;
+  const text = [];
+  if (first !== undefined) text.push({ tag: "div", attrs: { style: "margin-top:16px" }, text: first });
+  if (rest.length) {
+    text.push({ tag: "ul", attrs: { style: "margin:8px 0 0;padding-left:22px" },
+      kids: rest.map((l) => ({ tag: "li", attrs: {}, text: l })) });
+  }
+  const pill = "height:36px;padding:0 18px;border-radius:18px;font-size:15px;font-weight:500;cursor:default;" + font;
+  const btns = buttons.map((b, i) => ({ tag: "button", text: b, attrs: { id: `sim-btn-${i}`, type: "button",
+    style: `${pill};` + (i === primary ? "background:#0b57d0;color:#ffffff;border:none"
+      : "background:#ffffff;color:#0b57d0;border:1px solid #747775") } }));
+  return { tag: "div", attrs: { id: DIALOG_ID, role: "dialog", style: "position:fixed;z-index:2147483647;top:8px;"
+    + `left:calc(50% - ${DIALOG_W / 2}px);width:${DIALOG_W}px;box-sizing:border-box;padding:24px;background:#ffffff;`
+    + "border-radius:12px;box-shadow:0 4px 12px 2px rgba(60,64,67,.2),0 1px 3px rgba(60,64,67,.3);"
+    + `${font};font-size:15px;line-height:22px;color:#444746;text-align:left` },
+  kids: [{ tag: "div", attrs: { style: "display:flex;align-items:center;gap:12px" }, kids: head }, ...text,
+    { tag: "div", attrs: { style: "display:flex;justify-content:flex-end;gap:8px;margin-top:24px" }, kids: btns }] };
+}
+
+function renderHtml(node) {
+  const attrs = Object.entries(node.attrs || {}).map(([k, v]) => ` ${k}="${escapeHtml(v)}"`).join("");
+  if (node.tag === "img") return `<img${attrs}>`;
+  const inner = node.text !== undefined ? escapeHtml(node.text) : (node.kids || []).map(renderHtml).join("");
+  return `<${node.tag}${attrs}>${inner}</${node.tag}>`;
+}
+
+export function dialogHtml(spec) {
+  return renderHtml(dialogTree(spec));
+}
+
+// In the page: the DOM of a dialogTree node.
+function buildNode(node) {
+  const el = document.createElement(node.tag);
+  for (const [k, v] of Object.entries(node.attrs || {})) el.setAttribute(k, v);
+  if (node.text !== undefined) el.textContent = node.text;
+  for (const kid of node.kids || []) el.appendChild(buildNode(kid));
+  return el;
+}
+
+// In the page: shows the dialog (replacing a previous one) at the top center, or under `anchor` when given. True
+// when shown.
+export function simulateDialogSource(spec) {
+  return `(() => {
+${buildNode}
+document.getElementById(${JSON.stringify(DIALOG_ID)})?.remove();
+const box = document.body.appendChild(buildNode(${JSON.stringify(dialogTree(spec))}));
+const anchor = ${JSON.stringify(spec.anchor || null)};
+const a = anchor ? document.querySelector(anchor) : null;
+if (a) {
+  const r = a.getBoundingClientRect();
+  const left = Math.max(8, Math.min(innerWidth - ${DIALOG_W} - 8, r.left + r.width / 2 - ${DIALOG_W / 2}));
+  box.style.left = left + "px";
+  box.style.top = Math.round(r.bottom + 8) + "px";
+}
+return !!box;
+})()`;
+}
+
+export function removeDialogSource() {
+  return `(() => { document.getElementById(${JSON.stringify(DIALOG_ID)})?.remove(); return true; })()`;
+}
+
 // The tab a click opened: one not in `known` (target ids), the active one first.
 export function pickNewTab(tabs, known) {
   const seen = new Set(known);
@@ -969,19 +1163,24 @@ export async function runSteps(target, rec, steps, { typeDelay = 10 } = {}) {
       const [kind, arg] = Object.entries(action)[0];
       const page = ctx.page;
       switch (kind) {
-        case "goto":
+        case "goto": {
+          const down = rec.now();
           await page.goto(arg, { timeout: 30000 });
           await page.waitForLoadState("load").catch(() => {});
           // No URL in the log: it may come from env:NAME and carry a token.
-          ev.push({ type: "goto", t: rec.now() });
+          ev.push({ type: "goto", t: rec.now(), t_down: down });
           break;
+        }
         case "click": {
           const at = where(ctx, arg);
           const p = await pointAt(at.page, rec, ev, "click", at.sel, `click ${at.sel}`.slice(0, 40), cfg);
           tag(at);
           verify();
+          // ego returns from a click once a fast navigation has finished: t_down keeps when it was sent (edit).
+          const down = rec.now();
           await at.page.mouse.click(p.x, p.y, { label: "click" });
           ev.at(-1).t = rec.now();
+          ev.at(-1).t_down = down;
           if (at.surface) await front(ctx);
           await sleep(350);
           break;
@@ -1007,6 +1206,37 @@ export async function runSteps(target, rec, steps, { typeDelay = 10 } = {}) {
           await sleep(300);
           break;
         }
+        case "show_text": {
+          if (arg.watch) {
+            // I2: armed before the page shows the element; it is marked by a later show_text without watch.
+            await evaluate(page, watchTextSource(arg.sel, String(arg.text)));
+            break;
+          }
+          // I2: display only; the element keeps its behavior (it is never clicked).
+          const found = await evaluate(page, showTextSource(arg.sel, String(arg.text))).catch(() => false);
+          if (!found) throw new Error(`show_text: no encontré '${arg.sel}' (I2)`);
+          await sleep(150);
+          await markAt(page, rec, ev, "result", arg.sel, cfg);
+          ev.at(-1).show_text = true;
+          if (censorRanges(String(arg.text), cfg.text || [], cfg.flags ?? "i").length) delete ev.at(-1).target_text;
+          verify();
+          await sleep(300);
+          break;
+        }
+        case "simulate_dialog": {
+          const shown = await evaluate(page, simulateDialogSource(arg)).catch(() => false);
+          if (!shown) throw new Error("simulate_dialog: no pude mostrar el diálogo en la página (I2)");
+          await sleep(250);
+          await markAt(page, rec, ev, "result", `#${DIALOG_ID}`, cfg);
+          ev.at(-1).simulated = true;
+          verify();
+          await sleep(300);
+          break;
+        }
+        case "remove_dialog":
+          await evaluate(page, removeDialogSource()).catch(() => {});
+          await sleep(300);
+          break;
         case "manual_fallback": {
           // After a click the site may refuse (invisible captcha): a person repeats the click (see manualFallback).
           const last = [...ev].reverse().find((e) => e.type === "click");
@@ -1067,11 +1297,13 @@ export async function runSteps(target, rec, steps, { typeDelay = 10 } = {}) {
           await sleep(300);
           break;
         }
-        case "press":
+        case "press": {
+          const down = rec.now();
           await page.keyboard.press(arg);
-          ev.push({ type: "press", t: rec.now(), key: arg });
+          ev.push({ type: "press", t: rec.now(), key: arg, t_down: down });
           await sleep(300);
           break;
+        }
         case "scroll": {
           const at = where(ctx, arg, "px");
           const dy = Number(at.sel);
@@ -1156,11 +1388,14 @@ async function manualFallback(ctx, at, cfg, event) {
 }
 
 // Full take: fixed viewport, censor injected before the first frame, record, run, write actions.json.
-export async function take(task, { outDir, steps, viewport = [1920, 1080], startUrl, censor = null, surfaces = {} }) {
+export async function take(task, { outDir, steps, viewport = [1920, 1080], startUrl, censor = null, surfaces = {},
+  hide = [] }) {
   const page = (await task.pages())[0] ?? (await task.newPage());
   await page.cdp("Emulation.setDeviceMetricsOverride", {
     width: viewport[0], height: viewport[1], deviceScaleFactor: 1, mobile: false,
   });
+  const hideJs = hideSource(hide);   // I2: notices of the recording browser, hidden before the first frame
+  if (hideJs) await page.cdp("Page.addScriptToEvaluateOnNewDocument", { source: hideJs });
   const censorJs = censor && ((censor.selectors || []).length || (censor.text || []).length) ? censorSource(censor) : null;
   const censorCfg = { text: (censor && censor.text) || [], flags: (censor && censor.flags) ?? "i" };
   if (censorJs) await page.cdp("Page.addScriptToEvaluateOnNewDocument", { source: censorJs });
@@ -1168,6 +1403,7 @@ export async function take(task, { outDir, steps, viewport = [1920, 1080], start
     await page.goto(startUrl, { timeout: 30000 });
     await page.waitForLoadState("load").catch(() => {});
   }
+  if (hideJs) await inPage(page, hideJs).catch(() => {});
   if (censorJs) {
     await inPage(page, censorJs);
     // S3: never record a frame without the censor.

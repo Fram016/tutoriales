@@ -225,6 +225,13 @@ def mark_screen_changes(actions: dict, frames: list[dict], flags: list[bool], fr
             if ev["type"] in SCREEN_EVENTS and not ev.get("surface"):
                 lag = CLICK_LAG if ev["type"] in ("click", "select") else 0.0
                 at = screen_change(frames, flags, frames_dir, ev["t"] - lag)
+                if at is None and ev.get("t_down") is not None and ev["t_down"] < ev["t"] - lag:
+                    # The recorder got the click (or goto) back only after the new screen had loaded (a fast
+                    # navigation): the change is between t_down and t, and the action happened at t_down.
+                    early = screen_change(frames, flags, frames_dir, ev["t_down"])
+                    if early is not None and early <= ev["t"]:
+                        at = early
+                        ev["t"] = ev["t_down"]
                 if at is not None:
                     ev["screen_c"] = at
                     found += 1
