@@ -453,3 +453,15 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
 - **[I2] Simulación honesta.** Lo que el navegador no deja grabar o hacer por programa (el botón “Agregar a Chrome” en otro navegador, la ventana nativa de confirmación, el estado instalado) se simula dentro de la página con el mismo texto y aspecto que verá el usuario en Chrome; no se instala nada de verdad.
 - **[I3] Tomas unidas.** Un tutorial puede armarse con varias tomas (`tools/merge_takes.py`) cuando una parte no necesita repetir las demás; la narración completa se sigue generando en una sola lectura (D5).
 - **[P1 revisada 2] Sin tope de duración** para este tutorial (“no apliques restricciones de tiempo”); se mantienen P4 (lectura), D1-D5 y la misma voz, estilo y tempo de la v3.
+
+## Parte 10: Resultado final con video del usuario (texto del usuario)
+
+> “"C:\Users\Francisco Lopez\Videos\2026-11-19 09-39-50.mp4" ahi te dejo un video de algo que debes añadir al final como resultado final”
+>
+> Narración del propio video: “y ahora debes hacer lo siguiente para la parte final, yo estoy mostrando como voy a descargas la carpeta Perse Xml, voy a mostrar los emitidos, regreso y muestro los recibidos, censura la información delicada de la carpeta de descargas y simplemente muestra cómo se ve el resultado final”
+
+### Reglas derivadas (ronda 8)
+
+- **[F1] Resultado final.** El tutorial cierra mostrando el resultado en el equipo: la carpeta Perseo XML en Descargas, con Emitidos y Recibidos y sus XML.
+- **[F2] Video del usuario como toma.** Un video aportado por el usuario se convierte en una toma (`tools/import_video_take.py`): cuadros con la censura aplicada antes de guardarlos, pasos y recuadros definidos a mano por tiempo, y se une con `merge_takes` (I3). Su audio original no se usa; la narración sigue saliendo de una sola lectura (D5).
+- **[F3] Censura de escritorio.** En capturas del escritorio se difumina: otros archivos y carpetas de Descargas, nombres de los XML (llevan la clave de acceso con RUC), barra lateral con nombres personales y la barra de tareas; se deja legible lo que el resultado necesita mostrar (carpeta Perseo XML, Emitidos, Recibidos, tipo “Documento XML”, cantidad de archivos).
