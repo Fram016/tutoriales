@@ -139,7 +139,7 @@ steps:
     title: "Ingresa al SRI en línea"
     part: 2
     context: sri
-    narration: "Ahora ingresa a la plataforma del SRI."   # D1: v3 wording, "Ahora" after the install
+    narration: "Ahora ingresa a la plataforma del SRI en línea."   # D1: v3 wording, "Ahora" after the install
     actions:
       - wait: "img.app-name"
       - hover: "img.app-name"        # "SRI en línea" logo of the header (rehearsal: visible, 78,18 106x25)
