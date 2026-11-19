@@ -56,6 +56,8 @@ Use after mix. For every entry in `videos:`, compose builds `proyectos/<slug>/hf
 | N9, V1–V4 | 9:16 is one stable composition (never alternating full screen and bands), a real crop of the 1920x1080 source following the active element (UI ≥ 70 % of height); nothing important in top 15 % / bottom 20 %; title only in the opening ≤ 3 s |
 | V5 | duration comes from the RED step subset (edit) |
 
+`pace: fast` (timeline `pace`, P3): detail 1.15–1.4× (C1/R1 in qa too), forms whole at 1.0–1.2× (a form wider than the viewport is fitted to the width at 1.0× and cropped beyond the used fields), the popup at the scale that keeps it whole, no framing frozen > 2.5 s (C8), part separators of 0.8 s, and the whole-form shot is the establishing shot of its screen (hard cut to it). Still no pillarbox (N20). layout.json then records `pace` and `legible_scale` (1.0). Known limit: C4 (≤ 70 % empty) flags sparse real pages at this zoom (SRI forms and link pages, the Chrome settings page: 71–77 %).
+
 `hf-<video>/layout.json` (read by qa.py): `output`, `viewport`, `cursor_px`, `font_px`, `camera[{t0,t1,scale,kind,reason?,form_box?}]` (establishing shots: kind `context`, reason `establishing`; form shots: kind `form` + `form_box`) and `items[{kind: caption|band|chip|title|card|cursor|active|result|highlight|spotlight, t0, t1, rect, text, lines, step, color, dim?}]`, rects in output pixels (`spotlight.rect` = active field frame_box); caption items carry `sentence`; part separators and the context badge are items too.
 
 ## Execution Steps

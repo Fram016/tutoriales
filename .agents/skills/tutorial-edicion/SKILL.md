@@ -36,6 +36,7 @@ Use after capture and tts (tts trims each clip's leading/trailing silence, keepi
 | N6, R2 | the toast/result window is always kept, at 1.0× speed (never sped up) for ≥ R2 clean time + margin, and exempt from C4 cuts | `result: SEL` on the toast |
 | RED3 | `videos[].omit`: typing/select events on those selectors are cut from that video; the step stays | list only optional selectors |
 
+- `videos[].pace: fast` (P2) replaces TUT4: holds of 0.5 s after results (R2/N6 still keep a toast ≥ 0.8 s clean), idle up to 8× and any wait longer than ~1 s on screen cut to its first and last state (download: spinner, then the summary), lead 0.2 s / tail 0.1 s per step, opening ≤ 2 s, requirements ≤ 2.5 s, only the C3 lead before the first field of a new screen (the form shot is the establishing shot); the click inside an opened surface is the step's main action (N1) and its effect sentence waits for the step's result. tts speeds the voice by `tempo` (atempo, after trimming, cached per tempo). `max_seconds` (P1) is carried to the timeline; edit warns when the total exceeds it.
 - Each video uses only its `steps` minus its `omit` events; step numbers keep the original index (E2); RED shows no numbers (N7).
 - Timeline events carry `frame_box` (control + label, C9) and `screen_at` (C10) for compose.
 - Rerun edit only when the take, `steps`, `omit` or voice durations changed; music/mix reuse their outputs when the length and prompt did not change.

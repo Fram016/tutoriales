@@ -1,4 +1,5 @@
 # Perseo XML v2 (odd/tasks/reglas-ronda4.md T6, S1–S5). Brief: proyectos/perseo-xml-v2/brief.md.
+# Round 5 (odd/tasks/ritmo-perseo.md T2, S1–S3): same take, pace fast, ≤ 45 s, one short sentence per step.
 # Selectors rehearsed live (space 64, 2026-11-18): visible, elementFromPoint ok, text as narrated (N13).
 # The SRI session comes from the profile cookies; nothing here types credentials.
 title: "Perseo XML: tus comprobantes del SRI"
@@ -60,7 +61,7 @@ steps:
     title: "Abre Perseo XML"
     part: 1
     context: extension
-    narration: "Abre Perseo XML desde su ícono del navegador. Aquí descargas tus comprobantes del SRI."
+    narration: "Abre Perseo XML."
     actions:
       - open: popup
       - focus: {in: popup, sel: ".cabecera"}
@@ -68,7 +69,7 @@ steps:
     title: "Revisa la carpeta de descargas"
     part: 1
     context: extension
-    narration: "Haz clic en Carpeta de descargas. Con el botón Change eliges dónde se guardan tus XML."
+    narration: "Haz clic en Carpeta de descargas. Con Change cambias la carpeta."
     actions:
       - click: {in: popup, sel: "#configure-folder"}
       - close: popup
@@ -91,7 +92,7 @@ steps:
     title: "Abre Consultas"
     part: 2
     context: sri
-    narration: "Haz clic en Facturación Electrónica, Producción y Consultas. Se abre la página de consultas de comprobantes."
+    narration: "Haz clic en Facturación Electrónica. Luego, en Producción y Consultas."
     actions:
       - click: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
       - wait: "xpath=//a[normalize-space()='Producción']"
@@ -105,7 +106,7 @@ steps:
     title: "Abre los emitidos"
     part: 2
     context: sri
-    narration: "Haz clic en Comprobantes electrónicos emitidos. Aparece el formulario para consultar tus facturas emitidas."
+    narration: "Abre Comprobantes electrónicos emitidos."
     actions:
       - click: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos emitidos']"
       - wait: '[id="frmPrincipal:calendarFechaDesde_input"]'
@@ -113,7 +114,7 @@ steps:
     title: "Completa la consulta"
     part: 2
     context: sri
-    narration: "Completa la fecha de emisión, el establecimiento y el punto de emisión. Así filtras tus facturas."
+    narration: "Completa fecha, establecimiento y punto de emisión."
     actions:
       - type: {into: '[id="frmPrincipal:calendarFechaDesde_input"]', text: "13/11/2026", clear: true}
       - press: "Tab"                 # closes the calendar overlay
@@ -123,7 +124,7 @@ steps:
     title: "Consulta los emitidos"
     part: 2
     context: sri
-    narration: "Haz clic en Consultar. En unos segundos aparece la lista de facturas emitidas."
+    narration: "Haz clic en Consultar."
     actions:
       - click: '[id="frmPrincipal:btnConsultar"]'
       - wait: '[id="frmPrincipal:tablaCompEmitidos_data"] tr'
@@ -132,7 +133,7 @@ steps:
     title: "Descarga los XML emitidos"
     part: 2
     context: extension
-    narration: "Abre Perseo XML. En Comprobantes emitidos, haz clic en XML Desde el RIDE. Mientras trabaja, el botón dice En proceso. Al terminar, el resumen muestra los descargados y los que tienen error."
+    narration: "Haz clic en XML Desde el RIDE. Revisa el resumen."
     actions:
       - open: popup
       - click: {in: popup, sel: "#boton4"}
@@ -146,7 +147,7 @@ steps:
     title: "Vuelve a Consultas"
     part: 3
     context: sri
-    narration: "En el SRI, haz clic en Anterior. Vuelves a la página de Consultas."
+    narration: "Haz clic en Anterior."
     actions:
       - click: '[id="frmPrincipal:btnAnterior"]'
       - wait: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos recibidos']"
@@ -154,7 +155,7 @@ steps:
     title: "Abre los recibidos"
     part: 3
     context: sri
-    narration: "Haz clic en Comprobantes electrónicos recibidos. Aparece el formulario para consultar tus facturas recibidas."
+    narration: "Abre Comprobantes electrónicos recibidos."
     actions:
       - click: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos recibidos']"
       - wait: '[id="frmPrincipal:ano"]'
@@ -162,7 +163,7 @@ steps:
     title: "Elige el periodo"
     part: 3
     context: sri
-    narration: "En Periodo emisión, elige el año, el mes y el día de tus facturas recibidas."
+    narration: "Elige año, mes y día."
     actions:
       - select: {in: '[id="frmPrincipal:ano"]', option: "2026"}
       - select: {in: '[id="frmPrincipal:mes"]', option: "Noviembre"}
@@ -171,7 +172,7 @@ steps:
     title: "Consulta los recibidos"
     part: 3
     context: sri
-    narration: "Haz clic en Consultar. En unos segundos aparece la lista de facturas recibidas."
+    narration: "Haz clic en Consultar."
     actions:
       - pause: 1500                  # invisible reCAPTCHA: no instant submit after the selects (take 2: "Captcha incorrecta")
       - click: '[id="frmPrincipal:btnBuscar"]'
@@ -183,7 +184,7 @@ steps:
     part: 3
     context: extension
     hold_ms: 1500
-    narration: "Abre Perseo XML. En Comprobantes recibidos, haz clic en XML Para importar. Mientras trabaja, el botón dice En proceso. Al terminar, el resumen muestra los descargados y los que tienen error."
+    narration: "Haz clic en XML Para importar. Revisa el resumen."
     actions:
       - open: popup
       - click: {in: popup, sel: "#boton1"}
@@ -197,9 +198,12 @@ videos:
     type: TUT
     format: "16:9"
     steps: all
-    opening: {narration: "Aprendes a descargar XML."}
-    requirements:
-      narration: "Necesitas la extensión Perseo XML instalada y tu sesión del SRI abierta."
-      text: "Necesitas la extensión Perseo XML instalada y tu sesión del SRI abierta"
+    pace: fast                       # P2 (round 5): 0.5 s holds, waits cut to ~1 s, P3 zoom
+    max_seconds: 45                  # P1: "funciones que se pueden mostrar en maximo 45 segundos"
+    tempo: 1.15                      # P2: voice x1.1-1.15; the top of the range for the 45 s budget
+    # The requirement is the opening card text (P2: no separate requirements card); N2: it does not repeat the title.
+    opening:
+      narration: "Aprendes a descargar tus comprobantes."
+      text: "Necesitas la extensión instalada y tu sesión del SRI abierta"
     # no closing (N27): the video ends on the last download summary
     music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}

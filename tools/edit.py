@@ -37,6 +37,13 @@ screen_start..screen_end. Each step is a piecewise warp of its capture span:
 Every action event is remapped through the warp so zooms, cursor and captions land exactly; a click
 that changes the screen also gets `screen_at`, the output time of the new screen (compose cuts there).
 
+`videos[].pace: fast` (P2, §Parte 7; replaces TUT4): holds after results of 0.5 s (R2 still keeps a toast 0.8 s
+clean), idle up to 8x and every wait longer than FAST_WAIT on screen cut to its first and last state (a download:
+the spinner, then the summary), a minimal lead and tail per step, opening <= 2 s and requirements <= 2.5 s, less
+room for compose's establishing shot; the click inside a surface is the main action of a step that opens it, and
+an effect sentence after it waits for the step's next result or screen change ("Revisa el resumen", N14).
+`videos[].max_seconds` (P1): the timeline carries it and warns when the video is longer.
+
 Surfaces (perseo-xml S5, an extension popup recorded next to the tab): their frames go through the same
 warp into edit/V/surface-<name>.mp4, and timeline `surfaces.<name>.windows` says when each is open (output
 times). Events inside a surface keep `surface` (boxes in surface CSS px); `open` is the click on the
@@ -68,6 +75,8 @@ PRE_TYPE = 0.3     # C3 for typing: compose frames the field 0.3 s ahead, the fo
 CLICK_LAG = 0.15   # the recorder logs clicks/selects once they return: the page changed ~0.05-0.1 s earlier
 IDLE_LONG = 1.0    # idle spans longer than this always run at max speed (waits, pauses)
 MAX_SPEED = 3.0
+FAST_MAX = 8.0     # P2: waits and downloads sped up to 8x
+FAST_WAIT = 1.0    # P2: a wait longer than this on screen keeps its first and last state, the middle is cut
 FPS = 30
 POINTER_EVENTS = ("click", "type", "select", "hover", "open")
 # C4: a load is a frame with (almost) no ink off the page colour; a spinner is < 0.1 %, while a sparse
@@ -109,18 +118,26 @@ PACES = {  # per video type (reglas-video.md Parte 3)
     "PRO": {"pref": 1.5, "hold": {"result": 0.8, "highlight": 0.8}},   # dinámico
     "NOV": {"pref": 1.2, "hold": {"result": 1.0, "highlight": 1.0}},   # directo
 }
+# P2 ritmo ágil (videos[].pace: fast), for every type: replaces TUT4's 1.5 s pause.
+FAST_PACE = {"pref": 2.0, "hold": {"result": 0.5, "highlight": 0.5}, "max": FAST_MAX, "wait": FAST_WAIT,
+             "lead": 0.2, "tail": 0.1}
 CARD_LIMITS = {  # (min, max) seconds; E1, TUT1, RED1, A2
     "opening": {"TUT": (2.0, 3.0), "RED": (1.5, 2.0), "PRO": (2.0, 3.0), "NOV": (2.0, 3.0)},
     "requirements": {"TUT": (1.5, 5.0)},
     # Closing = its voice + <= 0.3 s (A2): no padding up to a minimum.
     "closing": {"TUT": (1.0, 2.5), "RED": (1.0, 2.5), "PRO": (1.0, 2.5), "NOV": (1.0, 2.5)},
 }
+FAST_CARDS = {"opening": (1.0, 2.0), "requirements": (1.0, 2.5)}   # P2: opening <= 2 s, requirements <= 2.5 s
 CARD_LEAD = {"opening": 0.2, "requirements": 0.2, "closing": 0.1}
 CARD_TAIL = 0.2
 
 
-def pace(vtype: str) -> dict:
-    return {"type": vtype, "max": MAX_SPEED, **PACES[vtype]}
+def pace(vtype: str, kind: str = "normal") -> dict:
+    """Warp settings of a video type; `kind` is videos[].pace (P2: fast is the same for every type)."""
+    if kind == "fast":
+        return {"type": vtype, "kind": "fast", **FAST_PACE}
+    return {"type": vtype, "kind": "normal", "max": MAX_SPEED, "wait": None, "lead": LEAD, "tail": TAIL,
+            **PACES[vtype]}
 
 
 def typing_seconds(chars: int) -> float:
@@ -311,6 +328,14 @@ def build_pieces(a: float, b: float, events: list[dict], blanks, pc: dict, speed
                 pieces.append({"c0": c0, "c1": c1, "d": 0.0, "kind": "cut"})
                 continue
             rate = pc["max"] if c1 - c0 > IDLE_LONG else min(speed, pc["max"])
+            wait = pc.get("wait")
+            if wait and (c1 - c0) / rate > wait + 1e-9:
+                # P2: a long wait shows its first and its last state, `wait` seconds in all; the middle is cut.
+                keep = wait * rate / 2
+                pieces.extend([{"c0": c0, "c1": c0 + keep, "d": wait / 2, "kind": "idle"},
+                               {"c0": c0 + keep, "c1": c1 - keep, "d": 0.0, "kind": "cut"},
+                               {"c0": c1 - keep, "c1": c1, "d": wait / 2, "kind": "idle"}])
+                continue
             pieces.append({"c0": c0, "c1": c1, "d": (c1 - c0) / rate, "kind": "idle"})
 
     cursor = a
@@ -346,13 +371,14 @@ def _freeze_before(pieces: list[dict], c: float, d: float) -> None:
     pieces.insert(k, {"c0": c, "c1": c, "d": d, "kind": "freeze"})
 
 
-def leave_room(pieces: list[dict], events: list[dict], a: float, b: float, carry: float | None):
+def leave_room(pieces: list[dict], events: list[dict], a: float, b: float, carry: float | None, fast: bool = False):
     """C7/N6, the contract with compose's camera (compose.establish_room): on every new screen
     - the frame before its first pointer action is held until the establishing shot and the zoom fit;
     - a toast is held until the camera has surely landed on it, plus R2_CLEAN (sets ev["hold"]): on a new
       screen by establish_room, else once the previous target's framing (compose.HOLD) and the pan are over.
     `carry`: output seconds the screen shown at `a` has been on before this step, or None when it already
-    had its first action. Returns (same for the next step, whether a hold grew: rebuild the pieces)."""
+    had its first action. `fast`: compose's P2 establishing shot. Returns (same for the next step, whether a hold
+    grew: rebuild the pieces)."""
     clamp = lambda t: min(max(t, a), b)  # noqa: E731
     screen = (a, carry) if carry is not None else None   # (capture start, output seconds before it)
     since = (a, carry or 0.0)
@@ -364,14 +390,16 @@ def leave_room(pieces: list[dict], events: list[dict], a: float, b: float, carry
         lands = 0.0
         if ev["type"] in POINTER_EVENTS and screen:
             s, before = screen
-            deficit = establish_room(kind) - (before + warp(pieces, t) - warp(pieces, s))
+            # P3: a form (an opening surface is one too, compose.with_surfaces) is its own establishing shot.
+            form = bool(ev.get("form_box")) or ev["type"] == "open"
+            deficit = establish_room(kind, fast, form) - (before + warp(pieces, t) - warp(pieces, s))
             if deficit > 1e-9:
                 _freeze_before(pieces, t, deficit)
             screen = None
         if ev["type"] == "result":
             s, before = since
             elapsed = before + warp(pieces, t) - warp(pieces, s)
-            lands = max(0.0, establish_room(None) - elapsed)
+            lands = max(0.0, establish_room(None, fast) - elapsed)
             if free is not None:
                 lands = max(lands, free + MOVE - warp(pieces, t))
             need = lands + R2_CLEAN + R2_MARGIN
@@ -437,13 +465,32 @@ def _split(pieces: list[dict], c: float) -> None:
             return
 
 
-def main_action(events: list[dict]) -> dict | None:
-    """N1: the action the narration asks for: the step's first click/select/open, or its single action."""
+def main_action(events: list[dict], fast: bool = False) -> dict | None:
+    """N1: the action the narration asks for: the step's first click/select/open, or its single action. `fast`
+    (P2, one sentence per step: "En Perseo XML, haz clic en XML Desde el RIDE"): a step that opens a surface and
+    then clicks inside it asks for that click."""
     ordered = sorted(events, key=lambda e: e["t"])
     first = next((e for e in ordered if e["type"] in ("click", "select", "open")), None)
     if first is None and len(ordered) == 1 and ordered[0]["type"] in ACTION_EVENTS:
         first = ordered[0]
+    if fast and first is not None and first["type"] == "open":
+        first = next((e for e in ordered if e["type"] == "click" and e["t"] > first["t"]
+                      and e.get("surface") == first.get("surface")), first)
     return first
+
+
+def effect_event(action: dict, events: list[dict]) -> dict:
+    """P2/N14: `action` with the capture time of its visible effect: its own (effect_c, screen_c), else the step's
+    next result or screen change after it (a click inside a surface changes no page: "Revisa el resumen"). That
+    later effect is not at the click, so the instruction keeps N1's SYNC_AFTER (`effect_late`)."""
+    if "effect_c" in action or "screen_c" in action:
+        return action
+    later = next((e for e in sorted(events, key=lambda e: e["t"]) if e["t"] > action["t"]
+                  and (e["type"] == "result" or "screen_c" in e)), None)
+    if later is None:
+        return action
+    return {**action, "effect_c": later["t"] if later["type"] == "result" else later["screen_c"],
+            "effect_late": True}
 
 
 def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: dict,
@@ -454,30 +501,33 @@ def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: 
     (default main_action(events)) until the instruction (`instruction` seconds into the voice, default
     all of it) ends at most SYNC_AFTER after it (N1), then pad. `carry` of the result: for the next step.
     N14 `effect`: seconds into the voice where the effect sentence starts; then the instruction ends before
-    the action and the frame before the action's `effect_c` is held until that sentence starts."""
+    the action and the frame before the action's `effect_c` is held until that sentence starts. The lead and the
+    tail come from `pc` (P2: minimal)."""
+    fast = pc.get("kind") == "fast"
+    lead, tail = pc.get("lead", LEAD), pc.get("tail", TAIL)
     if action is ...:
-        action = main_action(events)
+        action = main_action(events, fast)
     action = action if voice > 0 else None
     at = min(max(action["t"], a), b) if action else None
     instruction = voice if instruction is None else instruction
     effect = effect if action else None
-    sync = SYNC_AFTER if effect is None else 0.0
+    sync = SYNC_AFTER if effect is None or action.get("effect_late") else 0.0
     effect_c = action.get("effect_c", action.get("screen_c")) if effect is not None else None
     ce = max(at, min(effect_c - EFFECT_EPS, b)) if effect_c is not None else None
     speed = pc["pref"]
     while True:
         pieces = build_pieces(a, b, events, blanks, pc, speed)
-        screen, grew = leave_room(pieces, events, a, b, carry)
+        screen, grew = leave_room(pieces, events, a, b, carry, fast)
         if grew:
             pieces = build_pieces(a, b, events, blanks, pc, speed)
-            screen, _ = leave_room(pieces, events, a, b, carry)
+            screen, _ = leave_room(pieces, events, a, b, carry, fast)
         if action:
-            deficit = LEAD + instruction - (warp(pieces, at) + sync)
+            deficit = lead + instruction - (warp(pieces, at) + sync)
             if deficit > 1e-9:
                 k = next((i for i, p in enumerate(pieces) if p["c0"] >= at), len(pieces))
                 pieces.insert(k, {"c0": at, "c1": at, "d": deficit, "kind": "freeze"})
         if ce is not None:
-            deficit = LEAD + effect - warp(pieces, ce)
+            deficit = lead + effect - warp(pieces, ce)
             if deficit > 1e-9:
                 _split(pieces, ce)
                 _freeze_before(pieces, ce, deficit)
@@ -487,16 +537,16 @@ def plan_step(a: float, b: float, events: list[dict], blanks, voice: float, pc: 
         speed = min(round(speed + 0.1, 3), pc["max"])
     # With a main action the voice ends before it and what follows the action is the breathing room:
     # padding a TAIL after it would only add silence (A2).
-    need = voice + LEAD + (0.0 if action else TAIL) if voice > 0 else 0.0
+    need = voice + lead + (0.0 if action else tail) if voice > 0 else 0.0
     duration = max(actions, need)
     if duration - actions > 1e-9:
         pieces.append({"c0": b, "c1": b, "d": duration - actions, "kind": "freeze"})
     if action:
-        offset = LEAD
+        offset = lead
     else:
-        offset = LEAD + max(0.0, duration - voice - GAP) / 2 if voice > 0 else 0.0
+        offset = lead + max(0.0, duration - voice - GAP) / 2 if voice > 0 else 0.0
     carry_out = screen[1] + warp(pieces, b) - warp(pieces, screen[0]) if screen else None
-    return {"pieces": pieces, "duration": duration, "voice_offset": offset, "speed": speed,
+    return {"pieces": pieces, "duration": duration, "voice_offset": offset, "speed": speed, "sync": sync,
             "action_offset": warp(pieces, at) if action else None, "instruction": instruction,
             "effect": effect, "effect_offset": warp(pieces, ce + EFFECT_EPS) if ce is not None else None,
             "carry": carry_out}
@@ -532,8 +582,8 @@ def place_voices(items: list[tuple[float, float, float, float]]) -> list[float]:
     return starts
 
 
-def plan_card(name: str, vtype: str, voice: float) -> dict:
-    lo, hi = CARD_LIMITS[name][vtype]
+def plan_card(name: str, vtype: str, voice: float, kind: str = "normal") -> dict:
+    lo, hi = FAST_CARDS[name] if kind == "fast" and name in FAST_CARDS else CARD_LIMITS[name][vtype]
     lead = CARD_LEAD[name]
     need = voice + lead + CARD_TAIL
     duration = min(max(need, lo), hi)
@@ -541,8 +591,8 @@ def plan_card(name: str, vtype: str, voice: float) -> dict:
     # The tail gives way to the cap; only a voice that does not fit by itself overruns it (and warns).
     if voice + lead > hi + 1e-6:
         duration = need
-        warning = (f"{name} dura {duration:.1f} s y el máximo para {vtype} es {hi:.1f} s: "
-                   "acorta la narración")
+        warning = (f"{name} dura {duration:.1f} s y el máximo para {vtype}{' (pace: fast)' if kind == 'fast' else ''} "
+                   f"es {hi:.1f} s: acorta la narración")
     # Opening and requirements end close to the voice so the first step follows without a gap.
     start = lead if name == "closing" else max(lead, duration - CARD_TAIL - voice)
     return {"duration": duration, "voice_start": start, "warning": warning}
@@ -600,7 +650,9 @@ def _r(x: float) -> float:
 
 def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -> dict:
     vtype = video["type"]
-    pc = pace(vtype)
+    kind = video.get("pace", "normal")
+    fast = kind == "fast"
+    pc = pace(vtype, kind)
     captured = {s["id"]: s for s in actions["steps"]}
     warnings = []
 
@@ -609,7 +661,7 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         if not spec:
             return None
         voice = float(durations.get(name, 0.0))
-        plan = plan_card(name, vtype, voice)
+        plan = plan_card(name, vtype, voice, kind)
         if plan["warning"]:
             warnings.append(plan["warning"])
         return {"start": _r(start), "duration": _r(plan["duration"]), "text": spec.get("text", ""),
@@ -632,10 +684,12 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         captured_events = _capture_events(cap, step)
         events, omitted = omit_events(captured_events, video.get("omit"), cap["t0"])
         # The narration was written for the whole step: its main action is chosen before omit.
-        action = main_action(captured_events)
+        action = main_action(captured_events, fast)
         action = action if action is None or any(e is action for e in events) else None
         instruction = voice * instruction_share(step["narration"])
         share = effect_share(step["narration"])
+        if fast and action is not None and share is not None:
+            action = effect_event(action, events)
         plan = plan_step(cap["t0"], cap["t1"], events, list(blanks) + omitted, voice, pc, instruction, action,
                          carry, voice * share if share is not None else None)
         carry = plan["carry"]
@@ -669,7 +723,7 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             "voice_start": _r(t + plan["voice_offset"]) if voice > 0 else _r(t), "voice_duration": _r(voice),
             # N1: output time of the main action and how much of the voice asks for it.
             "action_t": _r(t + plan["action_offset"]) if plan["action_offset"] is not None else None,
-            "instruction_duration": _r(plan["instruction"]),
+            "instruction_duration": _r(plan["instruction"]), "sync_after": plan["sync"],
             # N14: seconds into the voice where the effect sentence starts, and when the effect shows.
             "effect_voice": _r(plan["effect"]) if plan["effect"] is not None else None,
             "effect_t": _r(t + plan["effect_offset"]) if plan["effect_offset"] is not None else None,
@@ -689,8 +743,7 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
             return b["voice_start"], b["voice_start"]
         hi = b["start"] + b["duration"] - b["voice_duration"]
         if b["action_t"] is not None:
-            sync = SYNC_AFTER if b["effect_voice"] is None else 0.0
-            hi = min(hi, b["action_t"] + sync - b["instruction_duration"])
+            hi = min(hi, b["action_t"] + b["sync_after"] - b["instruction_duration"])
         if b["effect_t"] is not None:
             hi = min(hi, b["effect_t"] - b["effect_voice"])
         return b["start"], max(hi, b["start"])
@@ -716,8 +769,14 @@ def plan_video(tut: dict, video: dict, actions: dict, blanks, durations: dict) -
         "total": _r(total), "product": tut.get("product", ""), "title": tut["title"],
         "opening": opening, "requirements": requirements, "closing": closing,
         "screen_start": _r(screen_start), "screen_end": _r(screen_end), "steps": steps,
-        "warnings": warnings,
+        "warnings": warnings, "pace": kind,
     }
+    cap = video.get("max_seconds")
+    if cap is not None:
+        timeline["max_seconds"] = cap      # P1: qa fails the video over it
+        if total > cap + 1e-6:
+            warnings.append(f"el video dura {total:.1f} s y el máximo es {cap:g} s (P1): acorta la narración o "
+                            "quita pasos")
     if tut.get("parts"):
         timeline["parts"] = [dict(p) for p in tut["parts"]]   # N16: compose draws separators and "Parte N · Paso M"
     surfaces = surface_specs(tut, actions, steps)

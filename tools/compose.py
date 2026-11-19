@@ -32,6 +32,11 @@ N20 (the source covers the viewport, no pillarbox; legible floor LEGIBLE; jumps 
 (timeline `censor_regions` blurred inside the camera), N27 (no closing card: the last frame is held).
 C4 on a sparse page: the establishing shot frames the populated part of the screen (timeline `screen_ink`,
 read from the recording by detect_screen_ink), up to the legible floor.
+
+Round 5 (§Parte 7, timeline `pace: fast`): P3 detail 1.15-1.4x, forms whole at 1.0-1.2x (legible floor at the
+base scale), the whole-form shot is the establishing shot of its screen (cut straight to it); P2 shorter
+establishing shot, part separators of 0.8 s and no framing frozen longer than 2.5 s (C8). layout.json records
+`pace` (and `legible_scale` under fast).
 """
 from __future__ import annotations
 
@@ -100,6 +105,12 @@ KEEP = {"click": 0.15, "hover": 0.3, "type": 0.0, "select": 0.2, "focus": 0.8, "
 R2_CLEAN = 0.8          # R2: result visible without caption or cursor over it
 HOLD_LIMIT = {"RED": 3.0}  # C8: identical framing at most 3 s in RED, 4 s otherwise
 HOLD_LIMIT_DEFAULT = 4.0
+# P2/P3 (pace: fast): zoom ranges of Stage, a shorter establishing shot, C8 at 2.5 s, 0.8 s part separators.
+FAST_ZOOM = {"detail_min": 1.15, "detail_max": 1.4, "detail_pref": 1.3, "form_min": 1.0, "form_pref": 1.2,
+             "legible": 1.0}
+FAST_ESTABLISH_WANT = 0.4
+FAST_HOLD_LIMIT = 2.5
+FAST_PART = 0.8
 PUSH = 0.1              # C8: slow push-in (scale +0.1 over a long hold)
 DRIFT = 8               # C8: output px of slow drift when no push-in keeps the target whole
 
@@ -685,8 +696,9 @@ def plan_surfaces(timeline: dict, camera: list[dict], stage: "Stage") -> list[di
 class Stage:
     """Output geometry of one format: UI viewport, caption band, safe area for the action, framings."""
 
-    def __init__(self, fmt: str, chip_w: float = 0):
-        """`chip_w`: width of what sits left of the captions in the band (chip, plus the context badge)."""
+    def __init__(self, fmt: str, chip_w: float = 0, pace: str = "normal"):
+        """`chip_w`: width of what sits left of the captions in the band (chip, plus the context badge); `pace`:
+        the video's (P3: `fast` frames with FAST_ZOOM)."""
         if fmt not in FORMATS:
             raise PipelineError(f"timeline.json: formato desconocido '{fmt}' (usa 16:9 o 9:16)")
         self.fmt = fmt
@@ -709,9 +721,16 @@ class Stage:
         self.safe = (MARGIN, top, self.W - 2 * MARGIN, self.VH - MARGIN - top)
         fits = (self.W / SRC_W, self.VH / SRC_H)
         self.base = min(fits) if spec["fit"] == "contain" else max(fits)
-        self.legible = max(spec.get("legible") or 0, self.base)     # N20
-        self.detail_min = max(DETAIL_MIN, self.base)
-        self.form_min = max(FORM_MIN, self.legible)
+        self.fast = pace == "fast"
+        zoom = FAST_ZOOM if self.fast else {"detail_min": DETAIL_MIN, "detail_max": DETAIL_MAX, "detail_pref": DETAIL_PREF,
+                                            "form_min": FORM_MIN, "form_pref": FORM_PREF, "legible": spec.get("legible")}
+        self.legible = max(zoom["legible"] or 0, self.base)     # N20
+        self.detail_min = max(zoom["detail_min"], self.base)
+        self.detail_max = max(zoom["detail_max"], self.base)
+        self.detail_pref = zoom["detail_pref"]
+        self.form_min = max(zoom["form_min"], self.legible)
+        self.form_pref = zoom["form_pref"]
+        self.establish_want = FAST_ESTABLISH_WANT if self.fast else ESTABLISH_WANT
 
     def cap_rect(self, lines: int) -> list[float]:
         bx, by, bw, bh = self.band
@@ -824,7 +843,7 @@ class Stage:
         else:
             fit_w = self.safe[2] / (box["w"] + 2 * BOX_PAD)
         fit = min(fit_w, self.safe[3] / (box["h"] + 2 * BOX_PAD))
-        return max(min(fit, FORM_PREF), self.form_min)
+        return max(min(fit, self.form_pref), self.form_min)
 
     def holds(self, fr: dict, boxes: list[dict]) -> bool:
         """V2/C9: every box whole and FIELD_EDGE px inside the viewport."""
@@ -851,23 +870,26 @@ class Stage:
         if shot["events"][0]["type"] == "result":
             s = max(min(self.detail_min, fit), self.base)     # N6: the toast with the UI around it
         elif shot["field"]:
-            s = max(min(DETAIL_PREF, fit), self.base)          # C9 wins over C1 for very wide fields
+            s = max(min(self.detail_pref, fit), self.base)          # C9 wins over C1 for very wide fields
         else:
-            s = max(min(DETAIL_PREF, fit), self.detail_min)
+            s = max(min(self.detail_pref, fit), self.detail_min)
         return self.frame(*center(box), s)
 
     def contains(self, fr: dict, box: dict) -> bool:
         return p_range(fr, fr, box, self.view) is not None
 
-    def push(self, fr: dict, box: dict, boxes: list[dict] | None = None, top: float = DETAIL_MAX) -> dict | None:
-        """C8: the framing at the end of a slow push-in on `box` (scale +0.1, at most `top`), keeping it (and
-        `boxes`) whole; when no scale does, a slow drift of DRIFT px at the same scale (source still covering).
-        N20: a push-out never goes below the legible floor."""
+    def push(self, fr: dict, box: dict, boxes: list[dict] | None = None, top: float | None = None,
+             floor: float | None = None) -> dict | None:
+        """C8: the framing at the end of a slow push-in on `box` (scale +0.1, at most `top`, default the detail
+        ceiling), keeping it (and `boxes`) whole; when no scale does, a slow drift of DRIFT px at the same scale
+        (source still covering). N20: a push-out never goes below `floor` (default the legible floor)."""
+        top = self.detail_max if top is None else top
+        floor = self.legible if floor is None else floor
         whole = (lambda to: self.holds(to, boxes)) if boxes else (lambda to: self.contains(to, box))
         boxes = boxes or [box]
         for d in (PUSH, PUSH / 2, -PUSH):
             s = fr["s"] + d
-            if not min(fr["s"], self.legible) <= s <= max(top, fr["s"]) + 1e-9:
+            if not min(fr["s"], floor) <= s <= max(top, fr["s"]) + 1e-9:
                 continue
             to = self.frame(*center(box), s)
             if to != fr and whole(to):
@@ -892,11 +914,17 @@ def lead(ev: dict) -> float:
     return LEAD_BY_TYPE.get(ev["type"], LEAD)
 
 
-def establish_room(kind: str | None) -> float:
+def establish_room(kind: str | None, fast: bool = False, form: bool = False) -> float:
     """C7/N6 contract with edit: output seconds a new screen needs before its first target of type `kind`
-    so the establishing shot (ESTABLISH_WANT) and the zoom (MOVE) fit, plus the C3 lead of a pointer target.
-    For a toast/row (`kind` not a pointer action) it is when the camera lands on it at the latest."""
-    return ESTABLISH_WANT + MOVE + (LEAD_BY_TYPE.get(kind, LEAD) if kind in POINTER else 0.0)
+    so the establishing shot (ESTABLISH_WANT, FAST_ESTABLISH_WANT under P2) and the zoom (MOVE) fit, plus the C3
+    lead of a pointer target. For a toast/row (`kind` not a pointer action) it is when the camera lands on it at
+    the latest. P3: under `fast` a target inside a form (`form`) only needs its lead: the form shot is the
+    establishing shot (camera_shots cuts straight to it)."""
+    lead_in = LEAD_BY_TYPE.get(kind, LEAD) if kind in POINTER else 0.0
+    if fast and form:
+        return lead_in
+    want = FAST_ESTABLISH_WANT if fast else ESTABLISH_WANT
+    return want + MOVE + lead_in
 
 
 def ease(p: float) -> float:
@@ -1306,7 +1334,7 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
     shots = shots_of(timeline, stage)
     starts = [ss] + screen_bounds(timeline)
     areas = surface_areas(timeline)
-    limit = HOLD_LIMIT.get(timeline.get("type", "TUT"), HOLD_LIMIT_DEFAULT)
+    limit = FAST_HOLD_LIMIT if stage.fast else HOLD_LIMIT.get(timeline.get("type", "TUT"), HOLD_LIMIT_DEFAULT)
 
     def after_surface(start: float, dur: float, frm: dict, shot: dict) -> tuple[float, float]:
         """N22: a pan away from a whole open panel waits until it closes (then a short pan, or a cut)."""
@@ -1327,8 +1355,11 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
         return any(b - a > limit + 1e-6 for a, b in static_runs(t0, t1, shot.get("moves", [])))
 
     def pushed(shot) -> dict | None:
-        # N10: a form shot stays at most FORM_PREF (1.5x) while it pushes in.
-        return stage.push(shot["frame"], shot["keep"], shot.get("boxes"), FORM_PREF if shot.get("form") else DETAIL_MAX)
+        # N10: a form shot stays at most its preferred scale (1.5x; 1.2x under P3) while it pushes in. P3: the legible
+        # floor is the base scale, so a detail shot never pushes out of the detail range (R1).
+        floor = (stage.form_min if shot.get("form") else stage.detail_min) if stage.fast else None
+        return stage.push(shot["frame"], shot["keep"], shot.get("boxes"),
+                          stage.form_pref if shot.get("form") else stage.detail_max, floor)
 
     def hold(shot, t0, t1, end):
         if shot.get("form"):
@@ -1357,10 +1388,12 @@ def camera_shots(timeline: dict, stage: Stage) -> tuple[list[dict], list[dict]]:
         first = group[0]
         need = first["t"] - first["lead"]
         if not first["pointer"]:
-            need = max(need, a + ESTABLISH_WANT + MOVE)
+            need = max(need, a + stage.establish_want + MOVE)
         est = min(a + CONTEXT_MAX, need - MOVE)
         if k > 0 and first["events"][0]["type"] == "result":
             first["arrive"] = a       # S1(a)/C4: the click's new screen opens on the toast: cut straight to it
+        elif stage.fast and first.get("form") and same_box(first["frame_box"], first["form"]):
+            first["arrive"] = a       # P3: the whole form is the establishing shot of its screen (C10 cut to it)
         elif est - a >= ESTABLISH_MIN - 1e-9:
             # C7: the whole new screen first (C4: its populated part), then an ease-in-out zoom to the first target.
             ink = next((i for i in timeline.get("screen_ink") or [] if abs(i["t"] - a) < 1e-3), None)
@@ -1581,7 +1614,7 @@ def plan(timeline: dict, brand: dict) -> dict:
         pal = {**pal, "brand_chip": pal["chip"], "chip": pal["neutral"]}
         texts = {context_label(timeline, c) for s in timeline["steps"] for _, _, c in step_contexts(timeline, s)}
         chip_w += BADGE_GAP + max(text_width(t, BADGE_FONT) + 2 * BADGE_PAD_X for t in texts)
-    stage = Stage(fmt, chip_w)
+    stage = Stage(fmt, chip_w, timeline.get("pace", "normal"))
     camera, shots = camera_shots(timeline, stage)
     arrival = {id(ev): shot["arrive"] for shot in shots for ev in shot["events"]}
     ss, se = timeline["screen_start"], timeline["screen_end"]
@@ -1671,7 +1704,9 @@ def plan(timeline: dict, brand: dict) -> dict:
 
     items.extend(plan_cards(timeline, stage, product, kind, pal))
     items.sort(key=lambda i: (i["t0"], i["kind"]))
+    extra = {"legible_scale": round(stage.legible, 4)} if stage.fast else {}   # N20 floor of P3 for qa
     return {"video": timeline.get("video"), "type": kind, "format": fmt, "total": timeline["total"],
+            "pace": timeline.get("pace", "normal"), **extra,
             "output": [stage.W, stage.H], "viewport": stage.view, "band": rnd(stage.band),
             "base_scale": round(stage.base, 4),
             "safe": {"top": stage.spec["safe_top"], "bottom": stage.spec["safe_bottom"], "action": rnd(stage.safe)},
@@ -1717,7 +1752,8 @@ def plan_spotlights(shots: list[dict], camera: list[dict], stage: Stage, pal: di
 
 def plan_cards(timeline: dict, stage: Stage, product: str | None, kind: str, pal: dict) -> list[dict]:
     """E1 cards. N2: the TUT opening shows the title, plus opening.text only when it adds something. N16: a
-    "Parte N: título" separator card (<= 1.5 s) opens every part. N27: no closing card when there is none."""
+    "Parte N: título" separator card (<= 1.5 s; 0.8 s under P2) opens every part. N27: no closing card when there
+    is none."""
     spec = stage.spec
     width = stage.W - 2 * spec["card_pad"]
     mid = (spec["safe_top"] + spec["safe_bottom"]) / 2
@@ -1729,8 +1765,9 @@ def plan_cards(timeline: dict, stage: Stage, product: str | None, kind: str, pal
         if start is None:
             continue
         text = f"Parte {part['n']}: {part['title']}" if part.get("title") else f"Parte {part['n']}"
+        default, cap = (FAST_PART, FAST_PART) if stage.fast else (PART_DEFAULT, PART_MAX)
         parts.append((f"part-{part['n']}", {"start": start, "text": text,
-                                            "duration": min(part.get("duration") or PART_DEFAULT, PART_MAX)}))
+                                            "duration": min(part.get("duration") or default, cap)}))
     parts.append(("closing", timeline.get("closing")))
     for name, card in parts:
         if not card:
@@ -1936,19 +1973,26 @@ def build(timeline: dict, brand: dict, logo_src: str | None = None,
         script.append(f'tl.set("#censor-{i}", {{opacity: 1}}, {num(item["t0"])});')
         script.append(f'tl.set("#censor-{i}", {{opacity: 0}}, {num(item["t1"])});')
 
-    # Chip, context badge (N17) + captions: absolute rects in the band; at 100 % opacity at once (O1).
+    # Chip, context badge (N17) + captions: absolute rects in the band; at 100 % opacity at once (O1). A part
+    # separator (N16) covers the start of its part's first step by design: those layers allow the occlusion.
+    seps = [(i["t0"], i["t1"]) for i in items if str(i.get("card") or "").startswith("part-") and i["kind"] == "card"]
+
+    def layer(item) -> str:
+        under = any(item["t0"] < b and a < item["t1"] for a, b in seps)
+        return f'class="clip ov-layer"{" data-layout-allow-occlusion" if under else ""}'
+
     overlays = []
     for i, item in enumerate(i for i in items if i["kind"] == "chip"):
-        overlays.append(f'      <div id="chip-{i}" class="clip ov-layer" data-start="{num(item["t0"])}" '
+        overlays.append(f'      <div id="chip-{i}" {layer(item)} data-start="{num(item["t0"])}" '
                         f'data-duration="{num(item["t1"] - item["t0"])}"><div class="ov chip" '
                         f'style="{box_style(item["rect"])}">{esc(item["text"])}</div></div>')
     for i, item in enumerate(i for i in items if i["kind"] == "badge"):
-        overlays.append(f'      <div id="badge-{i}" class="clip ov-layer" data-start="{num(item["t0"])}" '
+        overlays.append(f'      <div id="badge-{i}" {layer(item)} data-start="{num(item["t0"])}" '
                         f'data-duration="{num(item["t1"] - item["t0"])}"><div class="ov badge" '
                         f'style="{box_style(item["rect"])}; background: {item["color"]}; color: {item["text_color"]}">'
                         f'{esc(item["text"])}</div></div>')
     for i, item in enumerate(i for i in items if i["kind"] == "caption"):
-        overlays.append(f'      <div id="cap-{i}" class="clip ov-layer" data-start="{num(item["t0"])}" '
+        overlays.append(f'      <div id="cap-{i}" {layer(item)} data-start="{num(item["t0"])}" '
                         f'data-duration="{num(item["t1"] - item["t0"])}"><div class="ov cap" '
                         f'style="{box_style(item["rect"])}">{lines_html(item["lines"])}</div></div>')
 

@@ -8,6 +8,8 @@ text+voice+style hash, so the same text in two videos is synthesized once and ed
 narration only re-synthesizes that clip. Every clip is trimmed of its leading/trailing silence
 (keeping TRIM_PAD) into _cache/trim-v<TRIM_VERSION>/ before it is measured, so edit and lint work
 with the real speech length; a new trim version re-derives from the raw cache, never re-billing.
+P2 (`pace: fast`): the trimmed clip is sped up by the video's tempo (ffmpeg atempo, no pitch change; default
+common.FAST_TEMPO) into _cache/tempo-<factor>/ before it is measured; the raw API audio stays shared.
 --offline writes silent clips of estimated length (smoke tests without an API key; not trimmed).
 """
 from __future__ import annotations
@@ -35,6 +37,13 @@ def trim_silence(raw: Path, out: Path) -> Path:
     ffmpeg("-i", str(raw), "-af", f"{edge},areverse,{edge},areverse", "-c:a", "pcm_s16le", str(out))
     if media_duration(out) < 0.1:
         shutil.copyfile(raw, out)
+    return out
+
+
+def with_tempo(src: Path, out: Path, tempo: float) -> Path:
+    """P2: `src` played `tempo` times faster without changing the pitch (ffmpeg atempo)."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg("-i", str(src), "-af", f"atempo={tempo:g}", "-c:a", "pcm_s16le", str(out))
     return out
 
 
@@ -93,6 +102,7 @@ def tts(slug: str, offline: bool = False) -> dict:
     for video in videos(tut):
         vdir = voice_root / video["id"]
         vdir.mkdir(parents=True, exist_ok=True)
+        tempo = video["tempo"]
         durations = {}
         for name, text in clips(video):
             if not text:
@@ -114,16 +124,22 @@ def tts(slug: str, offline: bool = False) -> dict:
                 clip = cache_dir / f"trim-v{TRIM_VERSION}" / cached.name
                 if not clip.exists():
                     trim_silence(cached, clip)
+            if tempo != 1.0:
+                # The tempo is part of the derived clip's key: same text, other tempo = another file, same raw audio.
+                sped = cache_dir / f"tempo-{tempo:g}" / f"{clip.parent.name}-{clip.name}"
+                if not sped.exists():
+                    with_tempo(clip, sped, tempo)
+                clip = sped
             out = vdir / f"{name}.wav"
             if not out.exists() or out.read_bytes() != clip.read_bytes():
                 shutil.copyfile(clip, out)
-            if key not in seconds:
-                seconds[key] = media_duration(clip)
-            durations[name] = seconds[key]
+            if (key, tempo) not in seconds:
+                seconds[(key, tempo)] = media_duration(clip)
+            durations[name] = seconds[(key, tempo)]
         write_json(vdir / "durations.json", durations)
         result[video["id"]] = durations
         print(f"[tts] {video['id']}: {len(durations)} clips, {sum(durations.values()):.1f} s de voz"
-              f"{' (offline: silencio)' if offline else ''}")
+              f"{f' (tempo x{tempo:g})' if tempo != 1.0 else ''}{' (offline: silencio)' if offline else ''}")
     return result
 
 

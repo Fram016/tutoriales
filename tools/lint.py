@@ -12,7 +12,11 @@ Errors (exit 1, PipelineError) and warnings, each tagged with the rule ID it enf
   (two flows without parts warn; declared parts cover every step, contiguous), N19 one sentence
   = ≤ 2 caption lines and one instruction, N25 every highlighted table censored by column, N27
   closing optional in TUT, requirements say what you need («Necesitas…»).
-Voice estimate: 1.9 words/s + 0.5 s per clip (RED hook length: 2.6 words/s, no fixed part).
+  Round five (Parte 7): P1 the estimated length over videos[].max_seconds is an error, P2 videos[].pace is
+  normal or fast; under fast the opening warns over 2 s and the requirements over 2.5 s.
+Voice estimate: 1.9 words/s + 0.5 s per clip (RED hook length: 2.6 words/s, no fixed part), divided by the
+video's voice tempo (P2: 1.12 under pace fast, common.video_tempo). P1 is an error, so its budget is a lower
+bound: BUDGET_WPS (the fastest trimmed read measured), no fixed part, the same tempo and floors.
 """
 from __future__ import annotations
 
@@ -25,12 +29,15 @@ import unicodedata
 
 import yaml
 
-from common import PipelineError, main_guard, project_dir
+from common import PACES, TEMPO_RANGE, PipelineError, main_guard, project_dir, video_tempo
 
 TYPES = ("TUT", "RED", "PRO", "NOV")
 FORMATS = ("16:9", "9:16")
 WORDS_PER_SECOND, CLIP_SECONDS = 1.9, 0.5
 HOOK_WORDS_PER_SECOND = 2.6
+# P1: trimmed Gemini clips of perseo-xml-v2 read 2.0-3.1 words/s ("En el SRI, abre el menú.": 6 words, 2.15 s), where
+# the estimate above says 3.66 s; the max_seconds error only fires when even the fastest read does not fit.
+BUDGET_WPS = 3.0
 CAPTION_CHARS = 42
 # Estimated duration ranges per type (seconds). Post-render errors are qa.py's job.
 DURATION_RANGES = {"RED": (15, 35), "PRO": (20, 60), "NOV": (15, 30)}
@@ -38,6 +45,7 @@ TUT_CHAPTERS_AFTER = 300
 # Minimum on-screen time of each block when it has little or no narration (cards, actions).
 STEP_FLOOR, CARD_FLOOR = 1.5, 1.5
 OPENING_MAX, CLOSING_MAX, HOOK_RANGE = 3.0, 2.5, (1.0, 2.0)
+FAST_OPENING_MAX, FAST_REQUIREMENTS_MAX = 2.0, 2.5   # P2
 
 WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 
@@ -467,6 +475,28 @@ def block_text(block) -> tuple[str, str]:
     return "", ""
 
 
+def estimate(data: dict, video: dict, budget: bool = False) -> float:
+    """Estimated length of a video in seconds: its voice clips at the video's tempo (P2) with the minimum time of
+    cards and steps (the actions of a step may take longer than its voice). `budget` (P1): the lower bound, every
+    clip at BUDGET_WPS."""
+    vtype = video.get("type")
+    tempo = video_tempo(video)
+    voice = (lambda text: words(text) / BUDGET_WPS) if budget else seconds   # noqa: E731
+    hook = (lambda text: words(text) / BUDGET_WPS) if budget else hook_seconds   # noqa: E731
+    overrides = video.get("narration") or {}
+    blocks = {name: block_text(video.get(name)) for name in ("opening", "requirements", "closing")}
+    if vtype == "RED":
+        total = max(hook(blocks["opening"][0]) / tempo, 1.0)
+    else:
+        total = max(voice(blocks["opening"][0]) / tempo, CARD_FLOOR)
+    if " ".join(blocks["closing"]).strip():
+        total += max(voice(blocks["closing"][0]) / tempo, CARD_FLOOR)
+    total += voice(blocks["requirements"][0]) / tempo
+    for step in video_steps(video, data.get("steps") or []):
+        total += max(voice(overrides.get(step.get("id")) or step.get("narration")) / tempo, STEP_FLOOR)
+    return total
+
+
 def lint_data(data: dict) -> tuple[list[str], list[str]]:
     """(errors, warnings) for a parsed tutorial.yaml v2."""
     errors: list[str] = []
@@ -531,6 +561,20 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
             errors.append(f"[S3] {where}.type: '{vtype}' ({' | '.join(TYPES)})")
         if fmt not in FORMATS:
             errors.append(f"[S3] {where}.format: '{fmt}' ({' | '.join(FORMATS)})")
+        pace = video.get("pace", "normal")
+        if pace not in PACES:
+            errors.append(f"[P2] {where}.pace: '{pace}' ({' | '.join(PACES)})")
+        fast = pace == "fast"
+        cap = video.get("max_seconds")
+        if cap is not None and (isinstance(cap, bool) or not isinstance(cap, (int, float)) or cap <= 0):
+            errors.append(f"[P1] {where}.max_seconds: tiene que ser un número de segundos mayor que 0")
+            cap = None
+        tempo = video.get("tempo")
+        if tempo is not None and (isinstance(tempo, bool) or not isinstance(tempo, (int, float))
+                                  or not TEMPO_RANGE[0] <= tempo <= TEMPO_RANGE[1]):
+            errors.append(f"[P2] {where}.tempo: tiene que ser un número entre {TEMPO_RANGE[0]:g} y {TEMPO_RANGE[1]:g}")
+            tempo = None
+        tempo = video_tempo({**video, "tempo": tempo})
 
         wanted = video.get("steps", "all")
         if wanted not in (None, "all"):
@@ -605,8 +649,12 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
         if blocks["requirements"][0] or blocks["requirements"][1]:
             if vtype != "TUT":
                 warnings.append(f"[TUT1] {where}.requirements: solo para TUT")
-            if seconds(blocks["requirements"][0]) > 5:
-                warnings.append(f"[TUT1] {where}.requirements: ~{seconds(blocks['requirements'][0]):.1f} s (máximo 5 s)")
+            req_s = seconds(blocks["requirements"][0]) / tempo
+            if fast and req_s > FAST_REQUIREMENTS_MAX:
+                warnings.append(f"[P2] {where}.requirements: ~{req_s:.1f} s (máximo {FAST_REQUIREMENTS_MAX:g} s con "
+                                "pace: fast; o pásalo al texto de la apertura)")
+            elif req_s > 5:
+                warnings.append(f"[TUT1] {where}.requirements: ~{req_s:.1f} s (máximo 5 s)")
             if blocks["requirements"][1] and not NEED.search(blocks["requirements"][1]):
                 warnings.append(f"[TUT1] {where}.requirements.text: di qué necesitas, con un verbo («Necesitas la "
                                 "extensión Perseo XML instalada y tu sesión del SRI abierta»)")
@@ -635,11 +683,14 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
                 errors.append(f"[E2] {where}.omit: selectores que no están en las acciones de sus pasos: "
                               f"{', '.join(unknown)}")
 
-        # Estimated timing (A2, E1, RED1).
-        open_s, close_s = seconds(blocks["opening"][0]), seconds(blocks["closing"][0])
-        hook_s = hook_seconds(blocks["opening"][0])
+        # Estimated timing (A2, E1, RED1, P1, P2).
+        open_s, close_s = seconds(blocks["opening"][0]) / tempo, seconds(blocks["closing"][0]) / tempo
+        hook_s = hook_seconds(blocks["opening"][0]) / tempo
         if vtype == "RED" and not HOOK_RANGE[0] <= hook_s <= HOOK_RANGE[1]:
             warnings.append(f"[RED1] {where}.opening: gancho de ~{hook_s:.1f} s (1–2 s)")
+        elif vtype != "RED" and fast and open_s > FAST_OPENING_MAX:
+            warnings.append(f"[P2] {where}.opening: ~{open_s:.1f} s de narración (máximo {FAST_OPENING_MAX:g} s con "
+                            "pace: fast)")
         elif vtype != "RED" and open_s > OPENING_MAX:
             warnings.append(f"[E1] {where}.opening: ~{open_s:.1f} s de narración (máximo {OPENING_MAX:g} s)")
         if close_s > CLOSING_MAX:
@@ -677,18 +728,18 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
         if vtype == "NOV" and len(chosen) > 3:
             warnings.append(f"[NOV3] {where}.steps: {len(chosen)} pasos; un solo cambio por video")
 
-        estimate = max(hook_s if vtype == "RED" else open_s, 1.0 if vtype == "RED" else CARD_FLOOR)
-        estimate += max(close_s, CARD_FLOOR) if close_all else 0.0
-        estimate += seconds(blocks["requirements"][0])
-        for step in chosen:
-            estimate += max(seconds(overrides.get(step.get("id")) or step.get("narration")), STEP_FLOOR)
+        total = estimate(data, {**video, "tempo": tempo})
+        least = estimate(data, {**video, "tempo": tempo}, budget=True)
+        if cap is not None and least > cap:
+            errors.append(f"[P1] {where}: duración estimada ~{least:.0f} s y el máximo es {cap:g} s (max_seconds); "
+                          "acorta la narración o quita pasos")
         if vtype in DURATION_RANGES:
             low, high = DURATION_RANGES[vtype]
-            if not low <= estimate <= high:
+            if not low <= total <= high:
                 warnings.append(f"[{'RED2' if vtype == 'RED' else vtype}] {where}: duración estimada "
-                                f"~{estimate:.0f} s ({low}–{high} s)")
-        if vtype == "TUT" and estimate > TUT_CHAPTERS_AFTER and not any(s.get("chapter") for s in chosen):
-            warnings.append(f"[E3] {where}: ~{estimate / 60:.1f} min sin capítulos (TUT3)")
+                                f"~{total:.0f} s ({low}–{high} s)")
+        if vtype == "TUT" and total > TUT_CHAPTERS_AFTER and not any(s.get("chapter") for s in chosen):
+            warnings.append(f"[E3] {where}: ~{total / 60:.1f} min sin capítulos (TUT3)")
     return errors, warnings
 
 

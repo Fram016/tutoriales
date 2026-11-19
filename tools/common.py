@@ -114,6 +114,11 @@ REMOVED_KEYS = {"intro": "videos[].opening", "outro": "videos[].closing"}
 VIDEO_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 # N17: where a step happens (the context indicator of compose).
 CONTEXTS = ("sri", "extension", "page")
+# P2 (§Parte 7): videos[].pace. `fast` replaces TUT4 (short holds, waits cut, shorter cards, less zoom) and speeds
+# the voice up by videos[].tempo (atempo, no pitch change), FAST_TEMPO by default.
+PACES = ("normal", "fast")
+FAST_TEMPO = 1.12
+TEMPO_RANGE = (1.0, 1.25)
 # N25: JS flags of the censor patterns (the recorder always adds g); default case-insensitive.
 REGEX_FLAGS = "imsu"
 PY_FLAGS = {"i": re.I, "m": re.M, "s": re.S, "u": 0}
@@ -354,6 +359,15 @@ def _validate_videos(videos, step_ids: list[str]) -> None:
         omit = video.get("omit", [])
         if not isinstance(omit, list) or not all(isinstance(s, str) and s.strip() for s in omit):
             _fail(where, "'omit' tiene que ser una lista de selectores (los campos que este video no muestra)")
+        if video.get("pace", "normal") not in PACES:
+            _fail(where, "'pace' tiene que ser normal o fast (P2)")
+        cap = video.get("max_seconds")
+        if cap is not None and (isinstance(cap, bool) or not isinstance(cap, (int, float)) or cap <= 0):
+            _fail(where, "'max_seconds' tiene que ser un número mayor que 0 (P1)")
+        tempo = video.get("tempo")
+        if tempo is not None and (isinstance(tempo, bool) or not isinstance(tempo, (int, float))
+                                  or not TEMPO_RANGE[0] <= tempo <= TEMPO_RANGE[1]):
+            _fail(where, f"'tempo' tiene que ser un número entre {TEMPO_RANGE[0]:g} y {TEMPO_RANGE[1]:g} (P2)")
 
 
 BRAND_COLORS = ("primary", "accent", "background", "text", "surface", "on_surface")
@@ -375,6 +389,14 @@ def brand_defaults(brand: dict) -> dict:
         out["accent"] = out["primary"]
     out.setdefault("on_surface", "#ffffff")
     return out
+
+
+def video_tempo(video: dict) -> float:
+    """P2: voice tempo factor of a video (raw tutorial.yaml or videos() item): its `tempo`, else FAST_TEMPO when
+    `pace: fast`, else 1.0 (the voice as synthesized)."""
+    if video.get("tempo") is not None:
+        return float(video["tempo"])
+    return FAST_TEMPO if video.get("pace") == "fast" else 1.0
 
 
 def validate_tutorial(data) -> None:
@@ -442,6 +464,9 @@ def videos(tut: dict, only: str | None = None) -> list[dict]:
             "closing": dict(video["closing"]) if video.get("closing") else None,
             "music": dict(video.get("music") or {}),
             "omit": list(video.get("omit") or []),
+            "pace": video.get("pace", "normal"),          # P2
+            "max_seconds": video.get("max_seconds"),      # P1
+            "tempo": video_tempo(video),
         })
     if only and not out:
         known = ", ".join(v["id"] for v in tut["videos"])

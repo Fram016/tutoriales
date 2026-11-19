@@ -22,7 +22,11 @@ For each video of tutorial.yaml (or only --video ID) it reads proyectos/<slug>/:
                            names is on screen, N16 part separators and «Parte N · Paso M», N17 context
                            badge per step, N18 summary after each download, N19 one sentence per
                            caption, N20 no pillarbox / legible scale / no zoom jumps, N21 band ≤ 1/8,
-                           N22 surfaces inside the frame, N24 logo contrast, N27 closing optional (TUT).
+                           N22 surfaces inside the frame, N24 logo contrast, N27 closing optional (TUT);
+                           round five (Parte 7, timeline `pace: fast`): P3 detail 1.15–1.4× (C1/R1),
+                           form shots usually 1.0–1.2×, a whole-form shot opens its screen (C7), C8
+                           at 2.5 s, a form wider than the viewport may be cropped beyond the used
+                           fields (N12); P1 timeline total ≤ videos[].max_seconds.
                            Surface events (`surface`) are moved onto their panel (layout `surface` box)
                            before C9/C10 and the other geometric checks
   out/<slug>-<video>.mp4   (not with --pre) resolution by format, duration vs timeline total (±0.3 s),
@@ -65,6 +69,7 @@ SAMPLE_FPS, SAMPLE_DIV, TILE, TILE_STD, BG_DIST, EMPTY_LIMIT = 4, 4, 8, 3.0, 10.
 # C1/R1: detail zoom 1.4–1.8× (Parte 5); when the format's base scale (the 9:16 crop) is above it, the
 # base is the floor/ceiling, as compose's Stage.detail_min.
 DETAIL_MIN, DETAIL_MAX = 1.4, 1.8
+FAST_DETAIL, FAST_FORM_USUAL, FAST_STATIC = (1.15, 1.4), (1.0, 1.2), 2.5   # P3/P2 (timeline pace: fast)
 CONTEXT_MAX, MIN_RESULT, MIN_CAPTION = 1.0, R2_CLEAN, 1.2
 LINE_CHARS, MAX_LINES, MIN_FONT, MIN_CONTRAST = 42, 2, 40, 4.5
 TITLE_MAX, SAFE_TOP, SAFE_BOTTOM, VIEWPORT_MIN = 3.0, 0.15, 0.20, 0.70
@@ -218,6 +223,10 @@ def check_timeline(timeline: dict) -> list[dict]:
     long = vtype == "TUT" and total > TUT_CHAPTERS_AFTER
     rows.append(check("E3.chapters", "E3/TUT3", chapters or not long,
                       f"{total / 60:.1f} min, {'con' if chapters else 'sin'} capítulos"))
+    cap = timeline.get("max_seconds")
+    if cap is not None:
+        rows.append(check("P1.max_seconds", "P1", total <= float(cap) + EPS,
+                          f"{total:.1f} s (máximo {float(cap):g} s, max_seconds)"))
 
     spans = voice_spans(timeline)
     gaps = []
@@ -414,7 +423,8 @@ def check_layout(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
     # R1 / R2: result in detail and clear for ≥ 0.8 s. Only what is drawn over the UI viewport covers it:
     # a caption in the band never does (S1 b).
     base = base_scale(layout, fmt)
-    detail, detail_max = detail_range(base)
+    fast = is_fast(timeline)
+    detail, detail_max = detail_range(base, fast)
     vp = list(layout.get("viewport") or [0, 0, out_w, out_h])
     results = by_kind.get("result", [])
     r1, r2 = [], []
@@ -479,7 +489,7 @@ def check_layout(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
                      for a, b in runs if b - a > CONTEXT_MAX + EPS]
         rows.append(problems("C1.context", "C1", long_runs, f"planos generales ≤ {CONTEXT_MAX:g} s"))
         zoom, usual = [], []
-        lo, hi = max(FORM_USUAL[0], base), max(FORM_USUAL[1], base)
+        lo, hi = (max(v, base) for v in (FAST_FORM_USUAL if fast else FORM_USUAL))
         for s in camera:
             sc, t0, t1 = float(s["scale"]), float(s["t0"]), float(s["t1"])
             if not subtract([(t0, t1)], excluded):
@@ -539,9 +549,14 @@ def base_scale(layout: dict, fmt: str) -> float:
     return float(layout.get("base_scale") or (1920 / 1080 if fmt == "9:16" else 1.0))
 
 
-def detail_range(base: float) -> tuple[float, float]:
-    """C1 revised: (floor, ceiling) of the detail zoom for a format whose base scale is `base`."""
-    return max(DETAIL_MIN, base), max(DETAIL_MAX, base)
+def is_fast(timeline: dict) -> bool:
+    return timeline.get("pace") == "fast"
+
+
+def detail_range(base: float, fast: bool = False) -> tuple[float, float]:
+    """C1 revised: (floor, ceiling) of the detail zoom for a format whose base scale is `base` (P3: 1.15–1.4×)."""
+    low, high = FAST_DETAIL if fast else (DETAIL_MIN, DETAIL_MAX)
+    return max(low, base), max(high, base)
 
 
 def establishing(seg: dict, base: float) -> bool:
@@ -620,7 +635,8 @@ def screen_changes(timeline: dict) -> list[float]:
 
 def check_establishing(camera, timeline, base, fmt, excluded, results=()) -> dict:
     """C7: every screen (first step + each screen_at) opens with a ≤ 1.0 s establishing shot. A screen whose
-    toast (`result` item) starts within ESTABLISH_WINDOW opens on the toast shot instead (S1 a, N6 > C7)."""
+    toast (`result` item) starts within ESTABLISH_WINDOW opens on the toast shot instead (S1 a, N6 > C7); under
+    pace fast a whole-form shot within that window is the establishing shot (P3), however long."""
     steps = timeline.get("steps", [])
     if not camera or not steps:
         return check("C7.establishing", "C7", "WARN", "sin cámara o sin pasos")
@@ -628,9 +644,12 @@ def check_establishing(camera, timeline, base, fmt, excluded, results=()) -> dic
     starts = [float(steps[0]["start"])] + [t for t in screen_changes(timeline) if t < end and not in_cards(t, excluded)]
     wide = merge([(float(s["t0"]), float(s["t1"])) for s in camera
                   if s.get("kind") != "move" and establishing(s, base)])
+    forms = [float(s["t0"]) for s in camera if s.get("kind") == "form"] if is_fast(timeline) else []
     found = []
     for ts in sorted(set(starts)):
         if any(ts - TIME_RES <= float(r["t0"]) <= ts + ESTABLISH_WINDOW + TIME_RES for r in results):
+            continue
+        if any(ts - TIME_RES <= t <= ts + ESTABLISH_WINDOW + TIME_RES for t in forms):
             continue
         window = (ts, ts + ESTABLISH_WINDOW)
         span = next((w for w in wide if overlap(w[0], w[1], *window) > EPS), None)
@@ -692,11 +711,20 @@ def spot_moves(spots) -> list[tuple[float, float]]:
     return out
 
 
-def check_static(camera, vtype, excluded, spots=()) -> dict:
-    """C8: no identical framing (same scale and center) longer than 4 s in TUT, 3 s otherwise; a spotlight
-    moving to the next field inside it (N11) is a visual change."""
-    limit = STATIC_MAX.get(vtype, STATIC_DEFAULT)
-    changes = merge(excluded + spot_moves(spots), gap=0)
+def spot_jumps(spots) -> list[tuple[float, float]]:
+    """Instants where the spotlight appears on another target without a move (N13 waits for the click that
+    reveals it): zero-length changes."""
+    ordered = sorted(spots, key=lambda s: float(s["t0"]))
+    return [(float(b["t0"]), float(b["t0"])) for a, b in zip(ordered, ordered[1:])
+            if not b.get("move") and [round(v) for v in a["rect"]] != [round(v) for v in b["rect"]]]
+
+
+def check_static(camera, vtype, excluded, spots=(), fast: bool = False) -> dict:
+    """C8: no identical framing (same scale and center) longer than 4 s in TUT, 3 s otherwise (2.5 s under pace
+    fast, P2); a spotlight moving to the next field inside it (N11) is a visual change, and under fast also one
+    jumping to another target."""
+    limit = FAST_STATIC if fast else STATIC_MAX.get(vtype, STATIC_DEFAULT)
+    changes = merge(excluded + spot_moves(spots) + (spot_jumps(spots) if fast else []), gap=0)
     found = [f"{fmt_t(a)}–{fmt_t(b)} ({b - a:.1f} s) con el mismo encuadre"
              for run in framings(camera) for a, b in subtract([(run["t0"], run["t1"])], changes)
              if b - a > limit + EPS]
@@ -1054,9 +1082,10 @@ def outlines(spot: dict, box: dict, camera) -> bool:
     return fr is None or inside(map_box(box, fr), spot["rect"])
 
 
-def check_form_fields(camera, timeline, vp, excluded) -> dict:
+def check_form_fields(camera, timeline, vp, excluded, base: float = 1.0) -> dict:
     """N12/V2: while a form is framed, every field of it (neighbors too, not only the active one) and the
-    form's width are inside the viewport; a field may only be left out above/below in a split form."""
+    form's width are inside the viewport; a field may only be left out above/below in a split form. Under pace
+    fast a form wider than the viewport at the base scale is cropped beyond its used fields (P3)."""
     runs = form_runs(timeline, excluded)
     if not runs:
         return check("N12.form_fields", "N12/V2", True, "sin formularios")
@@ -1073,8 +1102,9 @@ def check_form_fields(camera, timeline, vp, excluded) -> dict:
             ends = [seg_frame(seg) for seg in shot["segs"]] + [
                 {k: float(seg["from"][k]) for k in ("x", "y", "s")} for seg in shot["segs"] if seg.get("push")]
             when = f"{fmt_t(shot['t0'])}–{fmt_t(shot['t1'])}"
+            wide = is_fast(timeline) and float(run["form_box"]["w"]) * base > vp[2] + FRAME_TOL
             for fr in ends:
-                found += fields_cut(run, boxes, fr, vp, split, when)
+                found += fields_cut(run, boxes, fr, vp, split, when, wide)
     if found:
         return problems("N12.form_fields", "N12/V2", list(dict.fromkeys(found)), "")
     if blind:
@@ -1082,12 +1112,13 @@ def check_form_fields(camera, timeline, vp, excluded) -> dict:
     return check("N12.form_fields", "N12/V2", True, f"{len(runs)} formularios con todos sus campos dentro")
 
 
-def fields_cut(run, boxes, fr, vp, split, when) -> list[str]:
-    """N12/V2 at one framing: the form fits across the width and no field of it is cut."""
+def fields_cut(run, boxes, fr, vp, split, when, wide: bool = False) -> list[str]:
+    """N12/V2 at one framing: the form fits across the width (unless it is `wide`: wider than the viewport, P3)
+    and no field of it is cut."""
     found = []
     vx, vy, vw, vh = vp
     form = map_box(run["form_box"], fr)
-    if form[0] < vx - FRAME_TOL or form[0] + form[2] > vx + vw + FRAME_TOL:
+    if not wide and (form[0] < vx - FRAME_TOL or form[0] + form[2] > vx + vw + FRAME_TOL):
         found.append(f"{when}: el formulario {fmt_rect(form)} no entra a lo ancho en {fmt_rect(vp)}")
     for selector, box in boxes:
         if not box:
@@ -1135,7 +1166,7 @@ def check_round_two(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
     actives, captions = by_kind.get("active", []), by_kind.get("caption", [])
     spots = by_kind.get("spotlight", [])
     rows = [check_establishing(camera, timeline, base_scale(layout, fmt), fmt, excluded, by_kind.get("result", [])),
-            check_static(camera, timeline.get("type", "TUT"), excluded, spots),
+            check_static(camera, timeline.get("type", "TUT"), excluded, spots, is_fast(timeline)),
             check_in_frame(actives, camera, timeline, vp, excluded)]
     rows += check_clicks(actives, camera, timeline, vp, excluded)
     rows.append(check_sync(captions, timeline))
@@ -1147,7 +1178,7 @@ def check_round_two(layout: dict, timeline: dict, tutorial: dict) -> list[dict]:
         rows.append(check_vertical(camera, timeline, layout, vp, excluded))
     rows += [check_form_shot(camera, timeline, vp, excluded),
              check_spotlight(spots, camera, timeline, tutorial, excluded),
-             check_form_fields(camera, timeline, vp, excluded)]
+             check_form_fields(camera, timeline, vp, excluded, base_scale(layout, fmt))]
     return rows
 
 

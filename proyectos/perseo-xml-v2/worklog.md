@@ -182,3 +182,24 @@ Evidencia: snapshots `qa-01` (toma 1) y `qa-02` (toma 3); ya no hay MP4. "Correg
 7. Ensayo: medir la altura del popup con datos reales (después de una descarga), no vacío.
 8. ego-browser: hay una actualización de Ego Lite pendiente (0.6.3.14); no se instaló.
 
+
+## 2026-11-18 — Ronda 5: ritmo ágil y menos zoom (odd/tasks/ritmo-perseo.md T1–T2, S1–S3, P1–P3)
+
+- Sin recaptura: se reutiliza `capture/` (toma válida, censura verificada). Herramientas: `pace: fast` + `max_seconds` (edit, tts, compose, lint, qa; tests/test_pace.py).
+- tutorial.yaml: `pace: fast`, `max_seconds: 45`, `tempo: 1.15`; una oración corta por paso; el requisito pasa al texto de la tarjeta de apertura (sin tarjeta de requisitos); "Revisa el resumen." en las dos descargas (empieza con el resumen: N14, A2); "Con Change cambias la carpeta." (se mantiene la pantalla de configuración con Change resaltado).
+- `tools/lint.py perseo-xml-v2` → exit 0, 2 avisos: [N4] «sesión» del texto literal del requisito; [P2] apertura ~2,7 s por la estimación de lint (la real es 2,2 s).
+- `pipeline.py perseo-xml-v2 --from tts --to compose` (1) 20:59:30–21:01:19 → exit 1: TUT 48,9 s (P1 > 45) y `hyperframes check` text_occluded del chip/insignia del primer paso bajo el separador de 0,8 s (corregido en compose: `data-layout-allow-occlusion` en esas capas).
+- (2) 21:04:33–21:05:53 → exit 0, 79,5 s: tts 7 clips nuevos (34,2 s de voz, tempo ×1,15), edit 43,4 s, música reutilizada, mix -14,0 LUFS / -1,8 dBTP, compose check OK (55 avisos).
+- `qa.py --pre` (1) → exit 1: C8 3,1 s (menú: dos planos de formulario con el mismo encuadre; el recuadro salta a FACTURACIÓN al abrirse el menú). Corregido en qa (pace fast: el salto del recuadro a otro objetivo cuenta como cambio). (2) 21:08:37–21:09:03 → exit 0, 29 capturas revisadas.
+- `pipeline.py --only render --quality delivery` 21:09:46–21:12:10 → exit 0, 143,6 s: `out/perseo-xml-v2-tutorial.mp4`, 1920x1080, 43,40 s.
+- `qa.py perseo-xml-v2` 21:12:15–21:12:44 → exit 1: todo PASS (P1 43,4 ≤ 45 s, A1 -14,0 LUFS / -1,9 dBTP, A2, R1, R2, C1 1,15–1,4×, C7, C8 2,5 s, N10–N12, N14, N16–N22, N24) salvo **C4.empty_frames** (50 muestras a 71–77 % vacío): páginas reales escasas (configuración de Chrome, página de Consultas, formularios de emitidos y recibidos con la página vacía a la derecha). Conflicto P3 ↔ C4: con los formularios enteros a 1,0–1,2× se ve más página vacía; la entrega anterior también fallaba C4 (44 muestras).
+
+### Cuadros revisados del MP4 final
+- 1,3 s apertura: logo claro legible, título, "Necesitas la extensión instalada y tu sesión del SRI abierta".
+- Separadores "Parte 1: Configurar la carpeta" (2,9 s), "Parte 2: Comprobantes emitidos" (8,6 s), "Parte 3: Comprobantes recibidos" (28,6 s).
+- 8,0 s configuración: "Change" resaltado, ruta difuminada (solo `\Downloads`), "Con Change cambias la carpeta."
+- 21,5 s formulario de emitidos entero a 1,2×, legible, campo RUC difuminado; 36,6 s formulario de recibidos entero, RUC difuminado.
+- 23,9 s tabla de emitidos (clave, valor, IVA, importe difuminados); 39,5 s tabla de recibidos (clave y montos difuminados; RUC/razón social difuminados en la captura `at-38.549s`).
+- 27,4 s popup entero "12 Descargados / 0 Con error" + "Revisa el resumen."; 43,2 s cierre en el popup "6 Descargados / 0 Con error" (N27).
+
+Costo: Gemini TTS 13 + 7 clips nuevos; sin Lyria (música reutilizada).
