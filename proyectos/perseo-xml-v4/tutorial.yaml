@@ -6,6 +6,7 @@
 # proyectos/perseo-xml-v3/capture and takes/resultado (I3). Ronda 8 (odd/tasks/perseo-resultado.md, F1-F3): Parte 5
 # "Resultado final" = the user's video imported with tools/import_video_take.py (resultado.yaml, censored before it is
 # written); "Por último" moves to its first sentence. D5: one TTS read of every narration below.
+voice: {voice: es-419-commercial-11}     # user: "es-419-commercial-11 usa esa voz" (Gemini Extended Voice Library, es-419)
 title: "Perseo XML: instala y descarga tus comprobantes"
 product: "Perseo XML"
 app_url: "https://www.google.com/?hl=es-419"   # first screen of the merged take (install.yaml)
