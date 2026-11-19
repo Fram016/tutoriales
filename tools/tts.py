@@ -139,11 +139,101 @@ def split_points(found: list[tuple[float, float]], total: float, texts: list[str
     return cuts
 
 
-def split_batch(raw: Path, texts: list[str], outs: list[Path]) -> bool:
+ALIGN_MIN_MATCH = 0.5   # share of a line's words that must be recognized in the batch to trust its cut
+
+
+def _tokens(text: str) -> list[str]:
+    import unicodedata
+    text = unicodedata.normalize("NFKD", text.lower())
+    text = "".join(c for c in text if not unicodedata.combining(c)).replace("-", "")
+    return re.findall(r"[a-z0-9]+", text)
+
+
+def align_cuts(texts: list[str], words: list[tuple[str, float, float]], found: list[tuple[float, float]],
+               snap: float = 0.4) -> list[float] | None:
+    """D5: where to cut a batch by its recognized words (`words`: (word, start, end) in order). Each cut goes after
+    the last recognized word of its line, snapped to the pause it falls in (or near). None when a line is not
+    recognized well enough (an energetic read pauses inside lines, so pauses alone mislead)."""
+    import difflib
+    lines = [_tokens(t) for t in texts]
+    exp = [w for line in lines for w in line]
+    got = [(_tokens(w)[0] if _tokens(w) else "", a, b) for w, a, b in words]
+    m = difflib.SequenceMatcher(None, exp, [g[0] for g in got], autojunk=False)
+    to_got = {}
+    for blk in m.get_matching_blocks():
+        for k in range(blk.size):
+            to_got[blk.a + k] = blk.b + k
+    spans, start = [], 0
+    for line in lines:
+        idx = [to_got[j] for j in range(start, start + len(line)) if j in to_got]
+        if not line or len(idx) < ALIGN_MIN_MATCH * len(line):
+            return None
+        spans.append((min(idx), max(idx)))
+        start += len(line)
+    cuts = []
+    for i in range(len(lines) - 1):
+        # The next line starts at its first recognized word; words of this line whisper did not recognize at
+        # its end ("XML" read as letters) stay before the cut. Cut in the last pause before that word.
+        first_next = spans[i + 1][0]
+        if first_next <= spans[i][1]:
+            return None
+        prev_end = got[first_next - 1][2]
+        nxt = got[first_next][1]
+        cut = nxt - 0.08
+        near = [(a, b) for a, b in found if b <= nxt + 0.05 and b >= prev_end - 0.05 and a >= prev_end - snap]
+        if near:
+            a, b = max(near, key=lambda p: p[1])
+            cut = min((a + b) / 2, nxt - 0.03)
+        if cuts and cut <= cuts[-1]:
+            return None
+        cuts.append(cut)
+    return cuts
+
+
+ALIGN_USEFUL = 0.3   # below this share of recognized words, whisper says nothing about the cut
+
+
+def recognized_share(texts: list[str], words: list[tuple[str, float, float]]) -> float:
+    import difflib
+    exp = [w for t in texts for w in _tokens(t)]
+    got = [t for w, _, _ in words for t in _tokens(w)]
+    if not exp:
+        return 0.0
+    m = difflib.SequenceMatcher(None, exp, got, autojunk=False)
+    return sum(b.size for b in m.get_matching_blocks()) / len(exp)
+
+
+_whisper = {}
+
+
+def batch_words(raw: Path) -> list[tuple[str, float, float]] | None:
+    """Recognized words of a batch with their times (faster-whisper, CPU); None when it is not available."""
+    try:
+        import tempfile
+        import transcribe
+        from faster_whisper import WhisperModel
+    except Exception:   # noqa: BLE001 - alignment is optional; split_points is the fallback
+        return None
+    if "model" not in _whisper:
+        _whisper["model"] = WhisperModel(env("WHISPER_MODEL", "small"), device="cpu",
+                                         compute_type=env("WHISPER_COMPUTE", "int8"))
+    with tempfile.TemporaryDirectory() as tmp:
+        a16 = Path(tmp) / "a16.wav"
+        transcribe.extract_audio(raw, a16)
+        segs, _ = _whisper["model"].transcribe(transcribe.load_samples(a16), language="es", word_timestamps=True)
+        return [(w.word, w.start, w.end) for s in segs for w in (s.words or [])]
+
+
+def split_batch(raw: Path, texts: list[str], outs: list[Path], spoken: list[str] | None = None) -> bool:
     """D5: cuts the batch audio `raw` into one file per text (outs, in order). False when the cut is not trustworthy
-    (nothing is written then)."""
+    (nothing is written then). Cuts come from the recognized words when possible (align_cuts)."""
     total = media_duration(raw)
-    cuts = split_points(pauses(raw), total, texts)
+    found = pauses(raw)
+    words = batch_words(raw) if len(texts) > 1 else []
+    cuts = align_cuts(spoken or texts, words, found) if words else None
+    if cuts is None and recognized_share(spoken or texts, words or []) < ALIGN_USEFUL:
+        # Whisper heard (almost) none of the speech (synthetic tones, no model): fall back to the pauses.
+        cuts = split_points(found, total, texts)
     if cuts is None:
         return False
     edges = [0.0] + cuts + [total]
