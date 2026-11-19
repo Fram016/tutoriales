@@ -122,3 +122,14 @@ class AlignCutsTest(unittest.TestCase):
         self.assertEqual(len(cuts), 1)
         self.assertGreaterEqual(cuts[0], 1.5)          # the spoken "XML" (1.1-1.5 s) stays in the first clip
         self.assertLess(cuts[0], 1.9)                  # and the cut is before "clic"
+
+    def test_pause_inside_a_spelled_acronym_is_not_a_cut(self):
+        # "Ahora ingresa a la plataforma del SRI." then "Luego abre Perseo XML.": a pause between "S-R" and "I"
+        texts = ["Ahora ingresa a la plataforma del SRI.", "Luego abre Perseo XML."]
+        words = [("Ahora", 0.0, 0.3), ("ingresa", 0.35, 0.8), ("a", 0.85, 0.9), ("la", 0.95, 1.05),
+                 ("plataforma", 1.1, 1.7), ("del", 1.75, 1.9), ("SRI.", 1.95, 2.3),
+                 ("Luego", 2.9, 3.2), ("abre", 3.25, 3.5), ("Perseo", 3.55, 3.9), ("XML.", 3.95, 4.5)]
+        found = [(2.25, 2.45)]          # inside the spelling: the "I" is spoken 2.45-2.75
+        cuts = tts.align_cuts(texts, words, found)
+        self.assertGreaterEqual(cuts[0], 2.75)
+        self.assertLess(cuts[0], 2.9)

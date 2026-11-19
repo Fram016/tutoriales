@@ -139,6 +139,7 @@ def split_points(found: list[tuple[float, float]], total: float, texts: list[str
     return cuts
 
 
+ALIGN_GAP = 0.25        # a cut pause must end within this of the next line's first word
 ALIGN_MIN_MATCH = 0.5   # share of a line's words that must be recognized in the batch to trust its cut
 
 
@@ -180,7 +181,9 @@ def align_cuts(texts: list[str], words: list[tuple[str, float, float]], found: l
         prev_end = got[first_next - 1][2]
         nxt = got[first_next][1]
         cut = nxt - 0.08
-        near = [(a, b) for a, b in found if b <= nxt + 0.05 and b >= prev_end - 0.05 and a >= prev_end - snap]
+        # Only a pause that ends right where the next line starts: a pause inside a spelled acronym ("S-R-I")
+        # ends well before it and would leave its last letter in the next clip.
+        near = [(a, b) for a, b in found if nxt - ALIGN_GAP <= b <= nxt + 0.05 and a >= prev_end - snap]
         if near:
             a, b = max(near, key=lambda p: p[1])
             cut = min((a + b) / 2, nxt - 0.03)
