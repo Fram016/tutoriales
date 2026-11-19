@@ -442,3 +442,14 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
 > “Algo adicional mantene un solo tono de voz hubieron cambios de tono de voz, eso añade como orden”
 
 - **[D5] Un solo tono de voz.** Todo el video usa la misma voz, el mismo estilo y el mismo tempo en todos los clips. Las frases de un video se generan juntas en una misma tanda (nunca se mezclan clips de corridas anteriores con otro estilo o tempo), y cada clip se nivela al mismo volumen antes de la mezcla. El QA compara el tono medio (frecuencia fundamental) y el volumen de cada clip contra la mediana del video y marca los que se desvían.
+
+## Parte 9: Instalación de la extensión (texto del usuario)
+
+> “Ahora algo extra que se me paso por alto, simula la instalacion del plugin, el video quedo perfecto pero toca indicar como instalar tambien, esto ya hace que supere el minuto asi que no apliques restricciones de tiempo, solo manten el tono coherente el estilo de voz y habla de igual forma. Que necesito que enseñes, a buscar la tienda de extensiones y como se instala despues el tutorial que ya tenemos”
+
+### Reglas derivadas (ronda 7)
+
+- **[I1] Instalación primero.** Cuando el producto es una extensión, el tutorial empieza mostrando cómo buscar la tienda de extensiones (Chrome Web Store), encontrar la extensión e instalarla; después sigue el uso.
+- **[I2] Simulación honesta.** Lo que el navegador no deja grabar o hacer por programa (el botón “Agregar a Chrome” en otro navegador, la ventana nativa de confirmación, el estado instalado) se simula dentro de la página con el mismo texto y aspecto que verá el usuario en Chrome; no se instala nada de verdad.
+- **[I3] Tomas unidas.** Un tutorial puede armarse con varias tomas (`tools/merge_takes.py`) cuando una parte no necesita repetir las demás; la narración completa se sigue generando en una sola lectura (D5).
+- **[P1 revisada 2] Sin tope de duración** para este tutorial (“no apliques restricciones de tiempo”); se mantienen P4 (lectura), D1-D5 y la misma voz, estilo y tempo de la v3.
