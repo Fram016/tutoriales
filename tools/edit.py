@@ -106,7 +106,8 @@ EFFECT_EPS = 0.001   # the hold before the effect shows the frame just before it
 # smaller change (a scroll shifts everything, so most of what changed matches neither).
 MIXED_SHARE, MIXED_WINDOW, MIXED_NEITHER = 0.1, 0.3, 0.2
 # Carried to the timeline as they are (target_ok / target_text: N13; censor: the N25 path of a followed tab).
-EVENT_KEYS = ("key", "dy", "frame_box", "form_box", "surface", "tab", "target_ok", "target_text", "censor")
+EVENT_KEYS = ("key", "dy", "frame_box", "form_box", "surface", "tab", "target_ok", "target_text", "censor",
+              "visual", "download_dir")   # D4: a click shown without dispatching it; the new download folder row
 SYNC_AFTER = 0.3   # N1: the instruction ends at most this long after its action
 ACTION_EVENTS = ("click", "select", "type", "hover", "press")   # a step's single action (N1)
 OMIT_BEFORE = 0.5  # omit: the pointer reaching an omitted field is cut too

@@ -30,6 +30,7 @@ Use after tutorial.yaml passes `tools/lint.py` and before tts/edit. Two phases: 
 - N10, N12: for type/select/click/focus it also logs `form_box` = the closest form container (`form`, `fieldset`, `[role=dialog]`, `dialog`, `.modal`/card-like element with ≥ 2 fields), viewport-clamped. compose builds the form shot from it.
 - Long commands: run `capture.py` with the harness background runner (`bash_background`) or a timeout ≥ 900 s, never a short shell timeout; check the exit code and the log tail.
 - Recapture only when the take itself is wrong (selector, missing `wait:`/`result:`/`highlight:`, wrong screen, private data); voice, `omit` and composition fixes never need a new take.
+- D4: Chromium refuses `chrome.settingsPrivate.setPref('download.default_directory', ...)` (only the native picker changes it, and the picker is not recorded). So the folder is shown, not changed: `press_visual` on "Change" (cursor + ripple, never clicked) and `show_download_dir` on the followed chrome://settings tab (writes the folder into the Location row, DOM only). Downloads keep going to the user's current folder; say so in the worklog. Paths are never printed; the censor keeps blurring `C:\Users\<user>` while the folder names stay visible (check a frame).
 - C4, N26: the take must not show long blank loads or two pages mixed; add `wait: SEL` for the loaded content instead of `pause:` (edit cuts blank/mixed frames, but a missing wait shows the spinner).
 
 ## Execution Steps

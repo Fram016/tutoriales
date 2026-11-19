@@ -1,0 +1,236 @@
+# Perseo XML v3 (odd/tasks/perseo-ronda6.md T2, S1–S5; reglas §Parte 8: D1–D5, P1 revisada < 60 s).
+# Base: proyectos/perseo-xml-v2/tutorial.yaml (selectors from its takes of 2026-11-18, censor, popup, P3/P4 pace).
+# D1: one route told in sequence (Ingresa… Luego… Después… Ahora… Por último…). D2: what each download option does.
+# D3: RIDE is read "ri de" (pronunciation; captions keep RIDE). D4: "Change" shown with press_visual and the new
+# folder written into the settings row with show_download_dir (display only: Chromium refuses settingsPrivate for the
+# download folder; parent decision B). The SRI session comes from the profile; nothing here types credentials.
+title: "Perseo XML: tus comprobantes del SRI"
+product: "Perseo XML"
+app_url: https://srienlinea.sri.gob.ec/sri-en-linea/contribuyente/perfil
+viewport: [1920, 1080]
+language: es-EC
+device: desktop                      # L2: "haz clic"
+brand:                               # N5: popup.html CSS variables; accent = primary
+  dir: brand
+  primary: "#ca4100"
+  background: "#09090b"
+  surface: "#09090b"
+  on_surface: "#ffffff"
+  text: "#ffffff"
+  font: "Segoe UI"
+glossary:                            # L3
+  comprobante: [documento, archivo]
+  extensión: [complemento, plugin]
+  descargar: [bajar]
+  carpeta de descargas: [directorio, ruta]
+pronunciation:                       # D3
+  RIDE: "ri de"
+music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}
+parts:                               # N16
+  - {n: 1, title: "Configurar la carpeta"}
+  - {n: 2, title: "Comprobantes emitidos"}
+  - {n: 3, title: "Comprobantes recibidos"}
+censor:                              # N25: one criterion, blurred everywhere (values only in acceso.local.yaml)
+  text:
+    - env:PERSEO_XML_RUC
+    - env:PERSEO_XML_NOMBRE
+    - env:PERSEO_XML_EMAIL
+    - env:PERSEO_XML_TELEFONO
+    - '[A-Za-z]:\\Users\\[^\\]+'     # chrome://settings/downloads: the Windows user of the folder path
+  selectors:
+    # emitidos: 3 clave de acceso, 6 valor sin impuestos, 7 IVA, 8 importe total
+    - '[id="frmPrincipal:tablaCompEmitidos_data"] td:nth-child(3)'
+    - '[id="frmPrincipal:tablaCompEmitidos_data"] td:nth-child(6)'
+    - '[id="frmPrincipal:tablaCompEmitidos_data"] td:nth-child(7)'
+    - '[id="frmPrincipal:tablaCompEmitidos_data"] td:nth-child(8)'
+    # recibidos: 2 RUC y razón social emisor, 4 clave de acceso, 7 valor sin impuestos, 8 IVA, 9 importe total
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(2)'
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(4)'
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(7)'
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(8)'
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(9)'
+surfaces:
+  popup:                             # the real extension popup, composited under the toolbar icon
+    url: "chrome-extension://jakigokhcbfpebeiolidapdkeooiapeb/popup.html"
+    size: [460, 660]
+    dpr: 2
+    anchor: top-right
+    target_tab: "https://srienlinea.sri.gob.ec/*"
+    icon: brand/ext-icon48.png
+    hide: ["#publicidad-perseo", "#company-info"]   # N23
+
+steps:
+  # Parte 1: Configurar la carpeta
+  - id: sri
+    title: "Ingresa al SRI en línea"
+    part: 1
+    context: sri
+    narration: "Ingresa a la plataforma del SRI."   # D1 (the user's words); the take starts logged in
+    actions:
+      - wait: "img.app-name"
+      - hover: "img.app-name"        # "SRI en línea" logo of the header (rehearsal: visible, 78,18 106x25)
+  - id: abrir-perseo
+    title: "Abre Perseo XML"
+    part: 1
+    context: extension
+    narration: "Luego abre Perseo XML."
+    actions:
+      - open: popup
+      - focus: {in: popup, sel: ".cabecera"}
+  - id: carpeta
+    title: "Abre la carpeta de descargas"
+    part: 1
+    context: extension
+    narration: "Haz clic en Carpeta de descargas."
+    actions:
+      - click: {in: popup, sel: "#configure-folder"}
+      - close: popup
+      - follow: tab                  # chrome://settings/downloads opened by the extension
+      - wait: "#changeDownloadsPath"
+  - id: cambiar-emitidos
+    title: "Elige la carpeta de emitidos"
+    part: 1
+    context: extension
+    narration: "En Change, elige la carpeta Emitidos."
+    actions:
+      - press_visual: "#changeDownloadsPath"   # D4: shown, never clicked (native picker)
+      - show_download_dir: {path: '%USERPROFILE%\Downloads\Perseo XML\Emitidos'}
+      - pause: 1200
+      - back: main
+  # Parte 2: Comprobantes emitidos
+  - id: consultas-emitidos
+    title: "Abre Consultas"
+    part: 2
+    context: sri
+    narration: "Después entra a Facturación, Producción y Consultas."   # D1; menu FACTURACIÓN ELECTRÓNICA
+    actions:
+      - click: "#sri-menu"
+      - wait: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
+      - pause: 800                   # the side menu slides in
+      - click: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
+      - wait: "xpath=//a[normalize-space()='Producción']"
+      - pause: 600
+      - click: "xpath=//a[normalize-space()='Producción']"
+      - wait: "xpath=//a[normalize-space()='Producción']/following-sibling::*//a[normalize-space()='Consultas']"
+      - pause: 600
+      - click: "xpath=//a[normalize-space()='Producción']/following-sibling::*//a[normalize-space()='Consultas']"
+      - wait: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos emitidos']"
+  - id: emitidos
+    title: "Abre los emitidos"
+    part: 2
+    context: sri
+    narration: "Abre los emitidos."   # P4/P1: the link name is on screen
+    actions:
+      - click: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos emitidos']"
+      - wait: '[id="frmPrincipal:calendarFechaDesde_input"]'
+  - id: datos-emitidos
+    title: "Completa la consulta"
+    part: 2
+    context: sri
+    narration: "Llena fecha, establecimiento y punto."   # P1: the labels are on screen
+    actions:
+      - type: {into: '[id="frmPrincipal:calendarFechaDesde_input"]', text: "13/11/2026", clear: true}
+      - press: "Tab"                 # closes the calendar overlay
+      - select: {in: '[id="frmPrincipal:cmbEstablecimiento"]', option: "001"}
+      - type: {into: '[id="frmPrincipal:txtPuntoEmision"]', text: "901", clear: true}   # 12 facturas
+  - id: consultar-emitidos
+    title: "Consulta los emitidos"
+    part: 2
+    context: sri
+    narration: "Haz clic en Consultar."
+    actions:
+      - click: '[id="frmPrincipal:btnConsultar"]'
+      - wait: '[id="frmPrincipal:tablaCompEmitidos_data"] tr'
+      - highlight: '[id="frmPrincipal:tablaCompEmitidos_data"]'
+  - id: descargar-emitidos
+    title: "Descarga los XML emitidos"
+    part: 2
+    context: extension
+    narration: "Haz clic en XML desde el RIDE. Transforma los RIDE en XML."   # D2 as the effect sentence (said over the download, N14); D3 voice "ri de"
+    actions:
+      - open: popup
+      - click: {in: popup, sel: "#boton4"}
+      - wait: {in: popup, sel: "#boton4 b"}   # the button gets <b>XML</b> back when the download ends
+      - pause: 2100                           # the summary refreshes every 2 s
+      - wait: {in: popup, sel: ".estadisticas"}
+      - result: {in: popup, sel: ".estadisticas"}   # N18
+      - close: popup
+  # Parte 3: Comprobantes recibidos
+  - id: carpeta-recibidos
+    title: "Cambia la carpeta a Recibidos"
+    part: 3
+    context: extension
+    narration: "Ahora cambia la carpeta a Recibidos."   # D4: one folder per type, set before the download
+    actions:
+      - open: popup
+      - click: {in: popup, sel: "#configure-folder"}
+      - close: popup
+      - follow: tab
+      - wait: "#changeDownloadsPath"
+      - press_visual: "#changeDownloadsPath"
+      - show_download_dir: {path: '%USERPROFILE%\Downloads\Perseo XML\Recibidos'}
+      - pause: 1200
+      - back: main
+  - id: anterior
+    title: "Vuelve a Consultas"
+    part: 3
+    context: sri
+    narration: "Luego vuelve con Anterior."
+    actions:
+      - click: '[id="frmPrincipal:btnAnterior"]'
+      - wait: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos recibidos']"
+  - id: recibidos
+    title: "Abre los recibidos"
+    part: 3
+    context: sri
+    narration: "Abre los recibidos."   # P4/P1: the link name is on screen
+    actions:
+      - click: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos recibidos']"
+      - wait: '[id="frmPrincipal:ano"]'
+  - id: periodo-recibidos
+    title: "Elige el periodo"
+    part: 3
+    context: sri
+    narration: "Elige año, mes y día."
+    actions:
+      - select: {in: '[id="frmPrincipal:ano"]', option: "2026"}
+      - select: {in: '[id="frmPrincipal:mes"]', option: "Noviembre"}
+      - select: {in: '[id="frmPrincipal:dia"]', option: "1"}     # 01/11/2026 Factura: 6 comprobantes
+  - id: consultar-recibidos
+    title: "Consulta los recibidos"
+    part: 3
+    context: sri
+    narration: "Haz clic en Consultar."
+    actions:
+      - pause: 1500                  # invisible reCAPTCHA: no instant submit after the selects
+      - click: '[id="frmPrincipal:btnBuscar"]'
+      - manual_fallback: {until: '[id="frmPrincipal:tablaCompRecibidos_data"] tr', blocked: "Captcha incorrecta"}
+      - wait: '[id="frmPrincipal:tablaCompRecibidos_data"] tr'
+      - highlight: '[id="frmPrincipal:tablaCompRecibidos_data"]'
+  - id: descargar-recibidos
+    title: "Descarga los XML recibidos"
+    part: 3
+    context: extension
+    hold_ms: 1500
+    narration: "Por último, haz clic en XML para importar. Quedan listos para Perseo."   # D2 as the effect sentence   # D2
+    actions:
+      - open: popup
+      - click: {in: popup, sel: "#boton1"}
+      - wait: {in: popup, sel: "#boton1 b"}
+      - pause: 2100
+      - wait: {in: popup, sel: ".estadisticas"}
+      - result: {in: popup, sel: ".estadisticas"}   # N18; the video ends here (N27)
+
+videos:
+  - id: tutorial
+    type: TUT
+    format: "16:9"
+    steps: all
+    pace: fast                       # P2: short holds, waits cut, P3 zoom
+    max_seconds: 58                  # P1 revisada: clear but under a minute
+    tempo: 1.05                      # P4: at most x1.05 under fast
+    opening:
+      narration: "Aprendes a descargar tus XML."
+      text: "Necesitas la extensión instalada y tu sesión del SRI abierta"
+    # no closing (N27): the video ends on the last download summary
+    music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}

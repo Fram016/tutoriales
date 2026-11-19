@@ -11,6 +11,14 @@ with the real speech length; a new trim version re-derives from the raw cache, n
 P2 (`pace: fast`): the trimmed clip is sped up by the video's tempo (ffmpeg atempo, no pitch change; default
 common.FAST_TEMPO, x1.05, also the most P4 allows under fast) into _cache/tempo-<factor>/ before it is measured;
 the raw API audio stays shared.
+D3: the API reads common.spoken_text(narration, tutorial.yaml `pronunciation`) (RIDE -> "ri de"); captions keep the
+written text. D5 (one voice tone): the clips of a video are one batch: every cache key carries the batch signature
+(model + voice + style + tempo + pronunciation map + the video's ordered narrations), so changing one narration
+re-synthesizes the whole video and clips of earlier runs are never mixed in. The batch is ONE request (one line per
+clip, _cache/batch-<signature>.wav) cut at its pauses into the clips (split_batch: the pauses nearest to where each
+clip should end by its characters); only when the cut is not trustworthy each clip is asked for alone (warned).
+Every clip is then leveled to VOICE_LUFS (one gain per clip, ffmpeg volume) into _cache/level-v<LEVEL_VERSION>/
+before it is measured.
 --offline writes silent clips of estimated length (smoke tests without an API key; not trimmed).
 """
 from __future__ import annotations
@@ -18,16 +26,22 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import json
+import re
 import shutil
 from pathlib import Path
 
-from common import (env, ffmpeg, load_tutorial, main_guard, media_duration, project_dir,
-                    require_env, videos, write_json)
+from common import (env, ffmpeg, load_tutorial, main_guard, measure_loudness, media_duration, project_dir,
+                    require_env, run, spoken_text, videos, which, write_json)
 
 
 TRIM_VERSION = 1
 TRIM_DB = -45       # below this a sample is silence
 TRIM_PAD = 0.06     # silence kept before and after the speech
+LEVEL_VERSION = 1
+BATCH_VERSION = 1   # D5: one request per video, cut at its pauses (a new version never reuses older clips)
+VOICE_LUFS = -20.0  # D5: every clip of a video at the same loudness (mix normalizes the whole track after)
+LEVEL_PEAK = -1.5   # dBTP a leveled clip never goes over
 
 
 def trim_silence(raw: Path, out: Path) -> Path:
@@ -46,6 +60,96 @@ def with_tempo(src: Path, out: Path, tempo: float) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg("-i", str(src), "-af", f"atempo={tempo:g}", "-c:a", "pcm_s16le", str(out))
     return out
+
+
+def level_clip(src: Path, out: Path, target: float = VOICE_LUFS) -> Path:
+    """D5: `src` with one gain so its integrated loudness is `target` (its true peak kept under LEVEL_PEAK). A
+    silent clip is copied as it is."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    lufs, peak = measure_loudness(src)
+    if not lufs > -70:
+        shutil.copyfile(src, out)
+        return out
+    gain = min(target - lufs, LEVEL_PEAK - peak)
+    ffmpeg("-i", str(src), "-af", f"volume={gain:.2f}dB", "-c:a", "pcm_s16le", str(out))
+    return out
+
+
+def batch_signature(model: str, voice: str, style: str, tempo: float, pronunciation: dict | None,
+                    texts: list[str]) -> str:
+    """D5: what makes a video's clips one batch; any change re-synthesizes all of them together."""
+    data = [BATCH_VERSION, model, voice, style, f"{tempo:g}", sorted((pronunciation or {}).items()), texts]
+    return hashlib.sha256(json.dumps(data, ensure_ascii=False).encode()).hexdigest()
+
+
+SPLIT_DB, SPLIT_MIN = -40, 0.12   # D5: a pause between two clips of the batch (dB, seconds)
+SPLIT_RATIO = 3.0                  # a cut clip lasts between 1/3 and 3 times its share of the batch by characters
+
+
+def pauses(path: Path) -> list[tuple[float, float]]:
+    """(start, end) of the silences inside an audio file (ffmpeg silencedetect)."""
+    res = run([which("ffmpeg"), "-hide_banner", "-nostats", "-i", str(path), "-af",
+               f"silencedetect=noise={SPLIT_DB}dB:d={SPLIT_MIN}", "-f", "null", "-"], quiet=True)
+    starts = [float(x) for x in re.findall(r"silence_start: (-?[\d.]+)", res.stderr)]
+    ends = [float(x) for x in re.findall(r"silence_end: (-?[\d.]+)", res.stderr)]
+    return list(zip(starts, ends))
+
+
+def split_points(found: list[tuple[float, float]], total: float, texts: list[str]) -> list[float] | None:
+    """D5: where to cut a batch of `texts` (one line each) lasting `total` s: one pause per boundary, in order, each
+    nearest to where its clip ends by characters (dynamic programming). None when there are not enough pauses or a
+    cut clip would be far from its share."""
+    k = len(texts) - 1
+    if k <= 0:
+        return []
+    inner = [(a, b) for a, b in found if a > 0.05 and b < total - 0.05]
+    if len(inner) < k:
+        return None
+    chars = [max(1, len(t)) for t in texts]
+    want = [total * sum(chars[:i + 1]) / sum(chars) for i in range(k)]
+    mids = [(a + b) / 2 for a, b in inner]
+    inf = float("inf")
+    cost = [[inf] * len(mids) for _ in range(k)]
+    back = [[-1] * len(mids) for _ in range(k)]
+    for j, m in enumerate(mids):
+        cost[0][j] = abs(m - want[0])
+    for i in range(1, k):
+        best, arg = inf, -1
+        for j in range(len(mids)):
+            if j > 0 and cost[i - 1][j - 1] < best:
+                best, arg = cost[i - 1][j - 1], j - 1
+            if arg >= 0:
+                cost[i][j] = best + abs(mids[j] - want[i])
+                back[i][j] = arg
+    j = min(range(len(mids)), key=lambda x: cost[k - 1][x])
+    if cost[k - 1][j] == inf:
+        return None
+    picks = [j]
+    for i in range(k - 1, 0, -1):
+        j = back[i][j]
+        picks.append(j)
+    cuts = [mids[x] for x in reversed(picks)]
+    edges = [0.0] + cuts + [total]
+    for i, text in enumerate(texts):
+        share = total * chars[i] / sum(chars)
+        got = edges[i + 1] - edges[i]
+        if not share / SPLIT_RATIO <= got <= share * SPLIT_RATIO:
+            return None
+    return cuts
+
+
+def split_batch(raw: Path, texts: list[str], outs: list[Path]) -> bool:
+    """D5: cuts the batch audio `raw` into one file per text (outs, in order). False when the cut is not trustworthy
+    (nothing is written then)."""
+    total = media_duration(raw)
+    cuts = split_points(pauses(raw), total, texts)
+    if cuts is None:
+        return False
+    edges = [0.0] + cuts + [total]
+    for i, out in enumerate(outs):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        ffmpeg("-i", str(raw), "-ss", f"{edges[i]:.3f}", "-to", f"{edges[i + 1]:.3f}", "-c:a", "pcm_s16le", str(out))
+    return True
 
 
 def make_client():
@@ -97,19 +201,37 @@ def tts(slug: str, offline: bool = False) -> dict:
     model = cfg.get("model", env("TTS_MODEL", "gemini-3.8-flash-tts"))
     voice = cfg.get("voice", env("TTS_VOICE", "Kore"))
     style = cfg.get("style", env("TTS_STYLE", "voz comercial cálida, español latinoamericano neutro"))
+    pronunciation = tut.get("pronunciation") or {}
     client = None
-    seconds = {}  # cache key -> clip length, shared by every video
+    seconds = {}  # cache key -> clip length
     result = {}
     for video in videos(tut):
         vdir = voice_root / video["id"]
         vdir.mkdir(parents=True, exist_ok=True)
         tempo = video["tempo"]
         durations = {}
-        for name, text in clips(video):
+        spoken = [(name, spoken_text(text, pronunciation)) for name, text in clips(video)]
+        batch = batch_signature("offline" if offline else model, voice, style, tempo, pronunciation,
+                                [text for _, text in spoken])
+        keys = {name: hashlib.sha256(f"{batch}|{text}".encode()).hexdigest() for name, text in spoken if text}
+        voiced = [(name, text) for name, text in spoken if text]
+        missing = [(name, text) for name, text in voiced if not (cache_dir / f"{keys[name][:32]}.wav").exists()]
+        if missing and not offline:
+            # D5: the whole video in one request, cut at its pauses.
+            raw = cache_dir / f"batch-{batch[:32]}.wav"
+            if not raw.exists():
+                if client is None:
+                    client = make_client()
+                print(f"[tts] {video['id']}: una tanda de {len(voiced)} frases (D5)")
+                raw.write_bytes(synthesize(client, model, "\n\n".join(t.replace("\n", " ") for _, t in voiced),
+                                           voice, style))
+            if not split_batch(raw, [t for _, t in voiced], [cache_dir / f"{keys[n][:32]}.wav" for n, _ in voiced]):
+                print(f"[tts] aviso (D5) {video['id']}: no pude cortar la tanda en sus pausas; pido cada frase aparte")
+        for name, text in spoken:
             if not text:
                 durations[name] = 0.0
                 continue
-            key = hashlib.sha256(f"{'offline' if offline else model}|{voice}|{style}|{text}".encode()).hexdigest()
+            key = keys[name]
             cached = cache_dir / f"{key[:32]}.wav"
             if not cached.exists():
                 if offline:
@@ -131,6 +253,11 @@ def tts(slug: str, offline: bool = False) -> dict:
                 if not sped.exists():
                     with_tempo(clip, sped, tempo)
                 clip = sped
+            if not offline:
+                leveled = cache_dir / f"level-v{LEVEL_VERSION}" / f"{clip.parent.name}-{clip.name}"
+                if not leveled.exists():
+                    level_clip(clip, leveled)
+                clip = leveled
             out = vdir / f"{name}.wav"
             if not out.exists() or out.read_bytes() != clip.read_bytes():
                 shutil.copyfile(clip, out)

@@ -9,11 +9,16 @@ deleted right after the run, so secrets never stay on disk next to the project. 
 for censor patterns written as env:NAME (a person's name kept in acceso.local.yaml).
 A previous take is never wiped: it is moved to capture.prev-<timestamp>/ (the newest KEEP_PREVIOUS kept),
 so a failed take (e.g. a captcha) does not leave the project without a usable take.
+D4: `show_download_dir.path` may name environment variables (%USERPROFILE%); they are expanded here and the path is
+never printed (it carries the Windows user name). Display only: the recorder writes it into the settings row; the
+browser's download folder is never changed.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import shutil
 import time
 from pathlib import Path
@@ -22,6 +27,19 @@ from common import (PipelineError, ROOT, is_secret_ref, load_tutorial, main_guar
                     read_json, resolve_env_ref, run, which)
 
 RECORDER = ROOT / "tools" / "capture" / "recorder.mjs"
+
+
+ENV_VAR = re.compile(r"%([A-Za-z_][A-Za-z0-9_]*)%")
+
+
+def expand_path(path: str) -> str:
+    """D4: %NAME% replaced by the environment variable NAME. A missing one names only the variable."""
+    def value(m):
+        found = os.environ.get(m.group(1))
+        if not found:
+            raise PipelineError(f"show_download_dir: falta la variable de entorno {m.group(1)}")
+        return found
+    return ENV_VAR.sub(value, path)
 
 
 def resolve_actions(steps: list[dict]) -> list[dict]:
@@ -38,6 +56,8 @@ def resolve_actions(steps: list[dict]) -> list[dict]:
                 arg["text"] = resolve_env_ref(arg.get("text", ""))
             elif kind == "goto":
                 arg = resolve_env_ref(arg)
+            elif kind == "show_download_dir":
+                arg = {**arg, "path": expand_path(arg["path"])}
             actions.append({kind: arg})
         resolved.append({"id": step["id"], "actions": actions, "hold_ms": step.get("hold_ms", 600)})
     return resolved

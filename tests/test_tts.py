@@ -63,8 +63,8 @@ class TtsTest(unittest.TestCase):
         self.assertAlmostEqual(d["closing"], self.durations("redes")["closing"], places=3)
 
     def test_same_text_is_synthesized_once(self):
-        # 7 distinct texts across both videos; "Mira el tutorial completo." is shared.
-        self.assertEqual(len(list((self.voice / "_cache").glob("*.wav"))), 7)
+        # D5: one batch per video, so "Mira el tutorial completo." of both videos is two clips (5 + 3).
+        self.assertEqual(len(list((self.voice / "_cache").glob("*.wav"))), 8)
         before = {p.name: p.stat().st_mtime_ns for p in (self.voice / "_cache").glob("*.wav")}
         tts.tts("crm", offline=True)
         after = {p.name: p.stat().st_mtime_ns for p in (self.voice / "_cache").glob("*.wav")}
@@ -81,6 +81,25 @@ def padded_tone(path: Path, before=0.5, tone=1.0, after=0.7) -> bytes:
                   "-f", "lavfi", "-i", f"sine=f=440:r=24000:d={tone}",
                   "-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono:d={after}",
                   "-filter_complex", "[0][1][2]concat=n=3:v=0:a=1", "-c:a", "pcm_s16le", str(path))
+    return path.read_bytes()
+
+
+def batch_audio(path: Path, text: str, tone=1.0, pause=0.6, volume_db=lambda line: 0.0) -> bytes:
+    """D5: what the API returns for a batch (one line per clip, blank line between): a 1 s tone per line with a
+    pause after each; a single line is a padded tone."""
+    lines = text.split("\n\n")
+    if len(lines) == 1:
+        return padded_tone(path, tone=tone)
+    args, gains, order = [], "", "[0]"
+    for i, line in enumerate(lines):
+        # inputs: 0 lead silence, 2i+1 the tone of line i, 2i+2 the pause after it
+        args += ["-f", "lavfi", "-i", f"sine=f=220:r=24000:d={tone}", "-f", "lavfi", "-i",
+                 f"anullsrc=r=24000:cl=mono:d={pause}"]
+        gains += f"[{2 * i + 1}]volume={volume_db(line)}dB[t{i}];"
+        order += f"[t{i}][{2 * i + 2}]"
+    common.ffmpeg("-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono:d=0.3", *args,
+                  "-filter_complex", f"{gains}{order}concat=n={2 * len(lines) + 1}:v=0:a=1",
+                  "-ac", "1", "-c:a", "pcm_s16le", str(path))
     return path.read_bytes()
 
 
@@ -105,18 +124,17 @@ class TrimTest(unittest.TestCase):
         pdir = self.dir / "crm"
         pdir.mkdir()
         (pdir / "tutorial.yaml").write_text(yaml.safe_dump(TUTORIAL, allow_unicode=True), encoding="utf-8")
-        tone = padded_tone(self.dir / "tone.wav")
         calls = []
 
         def fake(client, model, text, voice, style):
             calls.append(text)
-            return tone
+            return batch_audio(self.dir / f"api{len(calls)}.wav", text)
 
         for name, value in (("synthesize", fake), ("make_client", lambda: object())):
             self.addCleanup(setattr, tts, name, getattr(tts, name))
             setattr(tts, name, value)
         first = tts.tts("crm")
-        self.assertEqual(len(calls), 7)
+        self.assertEqual(len(calls), 2)   # D5: one request per video, cut into its 5 + 3 clips
         for name, seconds in first["tutorial"].items():
             with self.subTest(clip=name):
                 self.assertAlmostEqual(seconds, 1.0 + 2 * tts.TRIM_PAD, delta=0.04)
@@ -125,7 +143,7 @@ class TrimTest(unittest.TestCase):
         self.addCleanup(setattr, tts, "TRIM_VERSION", tts.TRIM_VERSION)
         tts.TRIM_VERSION += 1
         tts.tts("crm")
-        self.assertEqual(len(calls), 7)   # a new trim re-derives from the raw API audio in the cache
+        self.assertEqual(len(calls), 2)   # a new trim re-derives from the raw API audio in the cache
         self.assertTrue(list((pdir / "audio" / "voice" / "_cache").glob(f"trim-v{tts.TRIM_VERSION}/*.wav")))
 
 

@@ -101,9 +101,9 @@ def load_access(slug: str) -> None:
 
 ACTION_KINDS = {"goto", "click", "hover", "press", "scroll", "wait", "pause", "type", "select",
                 "focus", "result", "highlight", "open", "close", "follow", "back",
-                "manual_fallback"}
+                "manual_fallback", "press_visual", "show_download_dir"}
 # Actions that may run inside an open surface: {in: SURFACE, sel: SELECTOR} ({in, px} for scroll).
-SURFACE_ACTIONS = {"click", "hover", "scroll", "wait", "focus", "result", "highlight"}
+SURFACE_ACTIONS = {"click", "hover", "scroll", "wait", "focus", "result", "highlight", "press_visual"}
 ANCHORS = ("top-right", "top-left")
 # The surface hangs under a toolbar strip: 16 px from the sides, 64 px of strip and gaps (compose).
 SURFACE_EDGE, SURFACE_TOP = 16, 64
@@ -226,6 +226,19 @@ def _validate_steps(steps, surfaces=(), parts=None) -> list[str]:
                                                  and isinstance(arg.get("blocked"), str)):
                 _fail(f"paso {sid}", "'manual_fallback' necesita {until: SELECTOR, blocked: TEXTO}")
             where = f"paso {sid}"
+            # D4: a click shown without dispatching it (the native folder picker cannot be recorded).
+            if kind == "press_visual" and not isinstance(arg, dict) and not (isinstance(arg, str) and arg.strip()):
+                _fail(where, "'press_visual' necesita un selector (el clic se muestra, no se hace)")
+            # D4, display only: the folder the native picker would leave, written into the settings row.
+            if kind == "show_download_dir":
+                good = (isinstance(arg, dict) and isinstance(arg.get("path"), str) and arg["path"].strip()
+                        and set(arg) <= {"path", "result"}
+                        and (arg.get("result") is None or isinstance(arg["result"], str) and arg["result"].strip()))
+                if not good:
+                    _fail(where, "'show_download_dir' necesita {path: CARPETA, result?: SELECTOR} (D4)")
+                if not followed:
+                    _fail(where, "'show_download_dir' va en la pestaña seguida (follow: tab antes), la configuración "
+                                 "de descargas (D4)")
             if kind in SURFACE_ACTIONS and isinstance(arg, dict):
                 _validate_surface_action(where, kind, arg, surfaces, opened)
             elif kind in ("open", "close"):
@@ -399,6 +412,43 @@ def brand_defaults(brand: dict) -> dict:
     return out
 
 
+def pronunciation_problems(pronunciation) -> list[str]:
+    """D3: what is wrong with tutorial.yaml `pronunciation` {TÉRMINO: lectura} (empty list when it is fine)."""
+    if not isinstance(pronunciation, dict):
+        return ["tiene que ser un mapa {TÉRMINO: lectura}, p.ej. {RIDE: \"ri de\"}"]
+    found = []
+    for term, reading in pronunciation.items():
+        if not isinstance(term, str) or not term.strip():
+            found.append("cada término tiene que ser un texto no vacío")
+        elif not isinstance(reading, str) or not reading.strip():
+            found.append(f"'{term}' necesita su lectura (texto no vacío)")
+        elif reading.strip() == term.strip():
+            found.append(f"'{term}' se lee igual que se escribe; quítalo")
+    return found
+
+
+def spoken_text(text: str, pronunciation: dict | None) -> str:
+    """D3: the narration as the voice reads it. Whole words, case-sensitive, longer terms first ("RIDE" -> "ri de",
+    "RIDES" or "ride" stay). Captions and subtitles keep the original text."""
+    if not pronunciation:
+        return text
+    terms = sorted(pronunciation, key=len, reverse=True)
+    pattern = re.compile(r"(?<!\w)(?:" + "|".join(re.escape(t) for t in terms) + r")(?!\w)")
+    return pattern.sub(lambda m: pronunciation[m.group(0)], text)
+
+
+def measure_loudness(path: Path) -> tuple[float, float]:
+    """(integrated LUFS, true peak dBTP) with ffmpeg ebur128; -inf for silence."""
+    res = run([which("ffmpeg"), "-hide_banner", "-nostats", "-i", str(path), "-map", "0:a:0",
+               "-af", "ebur128=peak=true:framelog=verbose", "-f", "null", "-"], quiet=True)
+    summary = res.stderr[res.stderr.rfind("Summary:"):]
+    lufs = re.search(r"I:\s+(-?(?:[\d.]+|inf)) LUFS", summary)
+    peak = re.search(r"Peak:\s+(-?(?:[\d.]+|inf)) dBFS", summary)
+    if not lufs or not peak:
+        raise PipelineError(f"No pude medir la sonoridad de {Path(path).name} (ebur128)")
+    return float(lufs.group(1)), float(peak.group(1))
+
+
 def reading_seconds(text: str) -> float:
     """P4: seconds a caption block `text` has to stay on screen to be read."""
     return max(READ_MIN, len(text or "") / READ_CPS + READ_PAD)
@@ -430,6 +480,10 @@ def validate_tutorial(data) -> None:
         _validate_brand(data["brand"])
     if data.get("censor") is not None:
         _validate_censor(data["censor"])
+    if data.get("pronunciation") is not None:
+        found = pronunciation_problems(data["pronunciation"])
+        if found:
+            raise PipelineError(f"tutorial.yaml: 'pronunciation' {found[0]} (D3)")
     surfaces = []
     if data.get("surfaces") is not None:
         surfaces = _validate_surfaces(data["surfaces"], data.get("viewport") or [1920, 1080])

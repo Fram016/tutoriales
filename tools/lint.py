@@ -15,6 +15,7 @@ Errors (exit 1, PipelineError) and warnings, each tagged with the rule ID it enf
   Round five (Parte 7): P1 the estimated length over videos[].max_seconds is an error, P2 videos[].pace is
   normal or fast; under fast the opening warns over 2 s and the requirements over 2.5 s. P4 under fast the voice
   tempo is at most x1.05 (error).
+  Round six (Parte 8): D3 `pronunciation` is a map {TÉRMINO: lectura} (error otherwise).
 Voice estimate: 1.9 words/s + 0.5 s per clip (RED hook length: 2.6 words/s, no fixed part), divided by the
 video's voice tempo (P2: 1.12 under pace fast, common.video_tempo). P1 is an error, so its budget is a lower
 bound: BUDGET_WPS (the fastest trimmed read measured), no fixed part, the same tempo and floors.
@@ -33,7 +34,7 @@ import unicodedata
 import yaml
 
 from common import (FAST_TEMPO_MAX, PACES, PART_SECONDS, TEMPO_RANGE, PipelineError, main_guard, project_dir,
-                    reading_seconds, video_tempo)
+                    pronunciation_problems, reading_seconds, video_tempo)
 from compose import FORMATS as CAPTION_FORMATS, caption_blocks
 from edit import FAST_PACE, LEAD
 
@@ -136,12 +137,13 @@ solo sola menu campo campos
 LISTO = re.compile(r"^\W*(?:listo|eso es todo|fin|gracias|terminamos)\W*$", re.I)
 
 PASSWORD = re.compile(r"pass|contrase|clave", re.I)
-INTERACTIONS = {"click", "type", "select", "press", "scroll", "goto"}
+INTERACTIONS = {"click", "type", "select", "press", "scroll", "goto", "press_visual"}
 QUIET = {"wait", "pause", "hover", "focus"}
 
 # Round four (Parte 6).
 # N15: what the user does (pointer, typing, choosing, opening a surface); waits, focus, results are not.
-USER_ACTIONS = {"click", "type", "select", "press", "scroll", "hover", "open"}
+# press_visual (D4) is a click the viewer sees, even if it is not dispatched (the native folder picker).
+USER_ACTIONS = {"click", "type", "select", "press", "scroll", "hover", "open", "press_visual"}
 HAPPENS = re.compile(r"^\W*(?:se abre|aparece)\b|\bya viene\b", re.I)
 # N19: imperatives that ask for one action; they count at a sentence start or after a comma or connector
 # («Abre Perseo XML y haz clic…» = 2), never as a 3rd person («el resumen muestra», «se abre»).
@@ -539,6 +541,10 @@ def lint_data(data: dict) -> tuple[list[str], list[str]]:
         errors.append(f"[L2] device: '{device}' (desktop | mobile)")
 
     lang("title", title)
+    # D3: the voice reads `pronunciation` (RIDE -> "ri de"); captions keep the written term.
+    if data.get("pronunciation") is not None:
+        for problem in pronunciation_problems(data["pronunciation"]):
+            errors.append(f"[D3] pronunciation: {problem}")
     # N5: the accent comes from the app (default = primary), never an invented hue.
     brand = data.get("brand") or {}
     h_primary, h_accent = hue(brand.get("primary")), hue(brand.get("accent"))

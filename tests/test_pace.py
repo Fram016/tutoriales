@@ -82,12 +82,11 @@ class TtsTempoTest(unittest.TestCase):
         common.PROJECTS = Path(self.tmp.name)
         self.pdir = common.PROJECTS / "crm"
         self.pdir.mkdir()
-        self.tone = test_tts.padded_tone(Path(self.tmp.name) / "tone.wav")
         self.calls = []
 
         def fake(client, model, text, voice, style):
             self.calls.append(text)
-            return self.tone
+            return test_tts.batch_audio(Path(self.tmp.name) / f"api{len(self.calls)}.wav", text)
 
         for name, value in (("synthesize", fake), ("make_client", lambda: object())):
             self.addCleanup(setattr, tts, name, getattr(tts, name))
@@ -107,16 +106,16 @@ class TtsTempoTest(unittest.TestCase):
                 self.assertAlmostEqual(seconds, trimmed / common.FAST_TEMPO, delta=0.05)
                 wav = self.pdir / "audio" / "voice" / "tutorial" / f"{name}.wav"
                 self.assertAlmostEqual(common.media_duration(wav), seconds, delta=0.01)
-        # PRESERVE: the normal video keeps the trimmed length, and a text in both videos is billed once.
+        # PRESERVE: the normal video keeps the trimmed length. D5: each video is its own batch (5 + 3 clips).
         self.assertAlmostEqual(result["redes"]["closing"], trimmed, delta=0.04)
-        self.assertEqual(len(self.calls), 7)
+        self.assertEqual(len(self.calls), 2)      # D5: one request per video
 
     def test_tempo_is_part_of_the_clip_cache_key(self):
         self.write(pace="fast")
         tts.tts("crm")
         self.write(pace="fast", tempo=1.02)
         again = tts.tts("crm")
-        self.assertEqual(len(self.calls), 7)          # a new tempo re-derives from the raw cache, no API call
+        self.assertEqual(len(self.calls), 2 + 1)      # D5: the tempo is part of the batch: one new request
         self.assertAlmostEqual(again["tutorial"]["opening"], (1.0 + 2 * tts.TRIM_PAD) / 1.02, delta=0.05)
 
     def test_offline_fast_clips_follow_the_tempo(self):

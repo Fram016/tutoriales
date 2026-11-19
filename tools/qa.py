@@ -56,8 +56,8 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from common import (CHIP_MIN, PART_SECONDS, PipelineError, main_guard, project_dir, read_json, reading_seconds,
-                    run, which, write_json)
+from common import (CHIP_MIN, PART_SECONDS, PipelineError, main_guard, measure_loudness, project_dir, read_json,
+                    reading_seconds, run, which, write_json)
 from compose import FORMATS as FRAMES, R2_CLEAN
 from edit import INSTRUCTION, instruction_share
 from lint import DESTINATION, language_issues, norm, similarity, wrap
@@ -1581,15 +1581,8 @@ def probe(path: Path) -> dict:
 
 
 def loudness(path: Path) -> tuple[float, float]:
-    """(integrated LUFS, true peak dBTP) with ffmpeg ebur128."""
-    res = run([which("ffmpeg"), "-hide_banner", "-nostats", "-i", str(path), "-map", "0:a:0",
-               "-af", "ebur128=peak=true:framelog=verbose", "-f", "null", "-"], quiet=True)
-    summary = res.stderr[res.stderr.rfind("Summary:"):]
-    lufs = re.search(r"I:\s+(-?(?:[\d.]+|inf)) LUFS", summary)
-    peak = re.search(r"Peak:\s+(-?(?:[\d.]+|inf)) dBFS", summary)
-    if not lufs or not peak:
-        raise PipelineError(f"No pude medir la sonoridad de {Path(path).name} (ebur128)")
-    return float(lufs.group(1)), float(peak.group(1))
+    """(integrated LUFS, true peak dBTP) with ffmpeg ebur128 (common.measure_loudness, shared with tts D5)."""
+    return measure_loudness(path)
 
 
 def check_loudness(path: Path) -> list[dict]:
@@ -1597,6 +1590,101 @@ def check_loudness(path: Path) -> list[dict]:
     return [check("A1.loudness", "A1", abs(lufs - LOUDNESS_TARGET) <= LOUDNESS_TOLERANCE,
                   f"{lufs:.1f} LUFS (objetivo {LOUDNESS_TARGET:g} ±{LOUDNESS_TOLERANCE:g})"),
             check("A1.true_peak", "A1", peak < TRUE_PEAK_MAX, f"pico {peak:.1f} dBTP (< {TRUE_PEAK_MAX:g} dBTP)")]
+
+
+# D5: one voice tone. Each clip's mean F0 and loudness against the video median. A clip over TONE_SEMITONES warns
+# (listen to it); over TONE_FAIL fails: one Gemini request read in one go (perseo-xml-v3, 16 clips) already spans
+# -2.6..+3.3 st by intonation alone (short phrases sit higher), so only a jump beyond that is another tone.
+TONE_SEMITONES, TONE_FAIL, TONE_LU = 2.0, 4.0, 3.0
+PITCH_RATE, PITCH_FRAME, PITCH_HOP, PITCH_RANGE = 16000, 0.04, 0.01, (70.0, 400.0)
+
+
+def clip_samples(path: Path, rate: int = PITCH_RATE) -> np.ndarray:
+    """Mono float samples of an audio file at `rate` (ffmpeg decodes any clip format)."""
+    out = subprocess.run([which("ffmpeg"), "-hide_banner", "-loglevel", "error", "-i", str(path), "-ac", "1",
+                          "-ar", str(rate), "-f", "f32le", "-"], capture_output=True, check=False)
+    if out.returncode != 0:
+        raise PipelineError(f"No pude leer {Path(path).name} (ffmpeg)")
+    return np.frombuffer(out.stdout, dtype=np.float32)
+
+
+def clip_pitch(path: Path) -> float | None:
+    """Median F0 (Hz) of the voiced frames of a clip (autocorrelation per frame), None when nothing is voiced."""
+    x = clip_samples(path)
+    n, hop = int(PITCH_FRAME * PITCH_RATE), int(PITCH_HOP * PITCH_RATE)
+    if len(x) < n:
+        return None
+    frames = np.lib.stride_tricks.sliding_window_view(x, n)[::hop]
+    rms = np.sqrt((frames ** 2).mean(axis=1))
+    loud = frames[rms > max(rms.max() * 0.25, 1e-4)]
+    lo, hi = int(PITCH_RATE / PITCH_RANGE[1]), int(PITCH_RATE / PITCH_RANGE[0])
+    f0 = []
+    window = np.hanning(n)
+    for frame in loud:
+        f = (frame - frame.mean()) * window
+        spec = np.fft.rfft(f, 2 * n)
+        acf = np.fft.irfft(spec * np.conj(spec))[:n]
+        if acf[0] <= 0:
+            continue
+        acf = acf / acf[0]
+        part = acf[lo:hi]
+        best = part.max()
+        if best < 0.5:
+            continue   # unvoiced
+        # The first local peak close to the best one: multiples of the period peak as high (octave errors).
+        peaks = [i for i in range(1, len(part) - 1) if part[i] >= part[i - 1] and part[i] >= part[i + 1]
+                 and part[i] >= 0.9 * best]
+        lag = lo + (peaks[0] if peaks else int(part.argmax()))
+        if 0 < lag < n - 1:   # parabolic refinement
+            a, b, c = acf[lag - 1], acf[lag], acf[lag + 1]
+            den = a - 2 * b + c
+            lag = lag + (0.5 * (a - c) / den if den else 0.0)
+        f0.append(PITCH_RATE / lag)
+    return float(np.median(f0)) if f0 else None
+
+
+def voice_clips(pdir: Path, vid: str) -> list[tuple[str, Path]]:
+    """(name, wav) of every narrated clip of a video, in durations.json order (tts writes it)."""
+    vdir = pdir / "audio" / "voice" / vid
+    path = vdir / "durations.json"
+    if not path.exists():
+        return []
+    return [(name, vdir / f"{name}.wav") for name, seconds in read_json(path).items()
+            if seconds and (vdir / f"{name}.wav").exists()]
+
+
+def check_voice_tone(clips: list[tuple[str, Path]]) -> list[dict]:
+    """D5: each clip's mean F0 within TONE_SEMITONES and its loudness within TONE_LU of the video median."""
+    if not clips:
+        return [check("D5.pitch", "D5", "WARN", "sin clips de voz (corre tts)")]
+    pitch = {name: clip_pitch(path) for name, path in clips}
+    level = {name: measure_loudness(path)[0] for name, path in clips}
+    rows = []
+    voiced = {k: v for k, v in pitch.items() if v}
+    if voiced:
+        mid = float(np.median(list(voiced.values())))
+        dev = {k: 12 * np.log2(v / mid) for k, v in voiced.items()}
+        off = [f"{k} {d:+.1f} st" for k, d in dev.items() if abs(d) > TONE_SEMITONES]
+        worst = max(abs(d) for d in dev.values())
+        spread = f"mediana {mid:.0f} Hz, {min(dev.values()):+.1f}..{max(dev.values()):+.1f} st en {len(dev)} clips"
+        mute = [k for k, v in pitch.items() if not v]
+        detail = spread + (f"; sin tono medible: {', '.join(mute)}" if mute else "")
+        status = "FAIL" if worst > TONE_FAIL else "WARN" if off else "PASS"
+        rows.append(check("D5.pitch", "D5", status, ("; ".join(off) + f" (aviso > ±{TONE_SEMITONES:g} st, falla > "
+                                                     f"±{TONE_FAIL:g} st; {spread})") if off else detail))
+    else:
+        rows.append(check("D5.pitch", "D5", "WARN", "ningún clip con tono medible"))
+    finite = {k: v for k, v in level.items() if np.isfinite(v) and v > -70}
+    if finite:
+        mid = float(np.median(list(finite.values())))
+        dev = {k: v - mid for k, v in finite.items()}
+        off = [f"{k} {d:+.1f} LU" for k, d in dev.items() if abs(d) > TONE_LU]
+        spread = f"mediana {mid:.1f} LUFS, {min(dev.values()):+.1f}..{max(dev.values()):+.1f} LU"
+        rows.append(check("D5.loudness", "D5", not off, ("; ".join(off) + f" (máximo ±{TONE_LU:g} LU; {spread})")
+                          if off else spread))
+    else:
+        rows.append(check("D5.loudness", "D5", "WARN", "clips en silencio (tts --offline)"))
+    return rows
 
 
 def silences(path: Path) -> list[tuple[float, float]]:
@@ -1745,6 +1833,7 @@ def check_video(slug: str, pdir: Path, tutorial: dict, video: dict,
         else:
             rows.append(check("tech.file", "S3", False, f"falta out/{out.name}: corre render.py"))
     rows += check_timeline(timeline)
+    rows += check_voice_tone(voice_clips(pdir, vid))
     if layout is not None:
         rows.append(check("layout", "L5", True, f"hf-{vid}/layout.json"))
         rows += check_layout(layout, timeline, tutorial)

@@ -13,6 +13,11 @@
 // hit at its point; `target_ok` / `target_text`, the take fails otherwise); surfaces may `hide` promotions
 // (N23); the censor walks open shadow roots, and on a followed tab where no script runs (chrome://) the
 // matching text is logged as `censor_regions` for compose to blur (N25).
+//
+// Round 6 (odd/tasks/perseo-ronda6.md T1, D4): `press_visual: SEL` logs a click without dispatching it (the native
+// folder picker cannot be recorded); `show_download_dir: {path}` on the followed chrome://settings tab writes the
+// folder into the "Location" row (display only: the browser's folder is never changed) and logs a `result` on it.
+// No path ever reaches a log or actions.json (it carries the Windows user name).
 
 const fs = await import("node:fs/promises");
 
@@ -651,6 +656,56 @@ function shownSource(sel) {
   return `(() => {\n${TARGET_FNS.join("\n")}\nreturn shownTargets(${JSON.stringify(sel)});\n})()`;
 }
 
+// --- download folder shown (D4, display only) --------------------------------------------------------
+// Chromium only changes download.default_directory through the native picker (settingsPrivate.setPref refuses it,
+// rehearsal 2026-11-18) and that picker cannot be recorded. `show_download_dir` writes the folder into the settings
+// row (DOM only): the video shows the result of the picker; the browser's real folder never changes.
+export const DOWNLOAD_ROW = "#defaultDownloadPath";   // the "Location" value of chrome://settings/downloads
+
+// In the page: writes `path` as the text of the first match of `sel` (document, then nested open shadow roots).
+// True when found.
+export function showDownloadDirSource(sel, path) {
+  return `(() => {
+  const sel = ${JSON.stringify(sel)};
+  const roots = [document];
+  while (roots.length) {
+    const root = roots.shift();
+    const el = root.querySelector ? root.querySelector(sel) : null;
+    if (el) {
+      el.textContent = ${JSON.stringify(path)};
+      return true;
+    }
+    for (const host of root.querySelectorAll ? root.querySelectorAll("*") : []) if (host.shadowRoot) roots.push(host.shadowRoot);
+  }
+  return false;
+})()`;
+}
+
+// In the page: whether `path` is shown as text in the document or any open shadow root.
+export function downloadShownSource(path) {
+  return `(() => {
+  const want = ${JSON.stringify(path)};
+  const roots = [document.documentElement];
+  while (roots.length) {
+    const root = roots.pop();
+    if (!root) continue;
+    if ((root.textContent || "").includes(want)) return true;
+    for (const el of root.querySelectorAll ? root.querySelectorAll("*") : []) if (el.shadowRoot) roots.push(el.shadowRoot);
+  }
+  return false;
+})()`;
+}
+
+async function showDownloadDir(page, sel, path) {
+  const found = await evaluate(page, showDownloadDirSource(sel, path)).catch(() => false);
+  if (!found) throw new Error(`no encontré la fila de la carpeta de descargas '${sel}' (show_download_dir; D4)`);
+  const end = Date.now() + 5000;
+  while (!(await evaluate(page, downloadShownSource(path)).catch(() => false))) {
+    if (Date.now() > end) throw new Error("la configuración no muestra la carpeta de descargas (D4)");
+    await sleep(150);
+  }
+}
+
 // The tab a click opened: one not in `known` (target ids), the active one first.
 export function pickNewTab(tabs, known) {
   const seen = new Set(known);
@@ -929,6 +984,27 @@ export async function runSteps(target, rec, steps, { typeDelay = 10 } = {}) {
           ev.at(-1).t = rec.now();
           if (at.surface) await front(ctx);
           await sleep(350);
+          break;
+        }
+        case "press_visual": {
+          // D4: cursor and click ripple on the target, no click (it would open the native folder picker).
+          const at = where(ctx, arg);
+          await pointAt(at.page, rec, ev, "click", at.sel, `press ${at.sel}`.slice(0, 40), cfg);
+          tag(at);
+          verify();
+          ev.at(-1).visual = true;
+          ev.at(-1).t = rec.now();
+          await sleep(350);
+          break;
+        }
+        case "show_download_dir": {
+          await showDownloadDir(page, arg.result || DOWNLOAD_ROW, arg.path);
+          await sleep(200);   // the censor re-wraps the user part of the new text
+          await markAt(page, rec, ev, "result", arg.result || DOWNLOAD_ROW, cfg);
+          delete ev.at(-1).target_text;   // the row shows the path
+          ev.at(-1).download_dir = true;
+          verify();
+          await sleep(300);
           break;
         }
         case "manual_fallback": {
