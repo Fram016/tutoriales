@@ -1259,22 +1259,27 @@ export async function runSteps(target, rec, steps, { typeDelay = 10 } = {}) {
           break;
         }
         case "type": {
-          const p = await pointAt(page, rec, ev, "type", arg.into, `type into field`, cfg);
+          // {in: SURFACE, into, text} types into a surface form (e.g. an extension side panel).
+          const at = arg.in ? where(ctx, arg, "into") : { page, sel: arg.into, surface: null };
+          const tp = at.page;
+          const p = await pointAt(tp, rec, ev, "type", at.sel, `type into field`, cfg);
+          tag(at);
           verify();
-          await page.mouse.click(p.x, p.y, { label: "focus field" });
+          await tp.mouse.click(p.x, p.y, { label: "focus field" });
           if (arg.clear) {
-            await page.keyboard.press("ControlOrMeta+a");
-            await page.keyboard.press("Backspace");
+            await tp.keyboard.press("ControlOrMeta+a");
+            await tp.keyboard.press("Backspace");
           }
           const text = [...String(arg.text)];
           // Length only: the text itself (it may be a secret) never reaches the log.
           ev.at(-1).chars = text.length;
           ev.at(-1).ts = rec.now();
           for (const ch of text) {
-            await page.keyboard.type(ch);
+            await tp.keyboard.type(ch);
             await sleep(typeDelay);
           }
           ev.at(-1).t_end = rec.now();
+          if (at.surface) await front(ctx);
           if (arg.secret) ev.at(-1).secret = true;
           await sleep(200);
           break;

@@ -270,6 +270,18 @@ class SurfaceSchemaTest(YamlCase):
         self.assertEqual(tut["surfaces"]["popup"]["size"], [420, 640])
         self.assertEqual(tut["steps"][1]["actions"][1], {"follow": "tab"})
 
+    def test_type_into_an_open_surface(self):
+        # perseo-xml-v5: the side panel has its own login and client forms.
+        flow = {"login": [{"open": "popup"},
+                           {"type": {"in": "popup", "into": "#usuario", "text": "Prueba"}},
+                           {"type": {"into": "#a", "text": "x"}}]}
+        tut = self.load(with_popup(flow))
+        self.assertEqual(tut["steps"][0]["actions"][1]["type"]["in"], "popup")
+        self.assertRejects(with_popup({"login": [{"type": {"in": "popup", "into": "#u", "text": "a"}}]}),
+                           "paso login: 'type' en 'popup' pero no está abierta (usa open: popup antes)")
+        self.assertRejects(with_popup({"login": [{"open": "popup"}, {"type": {"in": "popup", "text": "a"}}]}),
+                           "paso login: 'type' necesita {into: SELECTOR, text: TEXTO}")
+
     def test_surface_definition(self):
         cases = [({"url": None}, "surfaces.popup: falta 'url' (p.ej. chrome-extension://<id>/popup.html)"),
                  ({"size": [420]}, "surfaces.popup: 'size' tiene que ser [ancho, alto] en píxeles"),

@@ -106,7 +106,7 @@ ACTION_KINDS = {"goto", "click", "hover", "press", "scroll", "wait", "pause", "t
 # I2 (§Parte 9): simulate_dialog {title, body?, buttons, primary?, anchor?, icon?}.
 DIALOG_KEYS = {"title", "body", "buttons", "primary", "anchor", "icon"}
 # Actions that may run inside an open surface: {in: SURFACE, sel: SELECTOR} ({in, px} for scroll).
-SURFACE_ACTIONS = {"click", "hover", "scroll", "wait", "focus", "result", "highlight", "press_visual"}
+SURFACE_ACTIONS = {"click", "hover", "scroll", "wait", "focus", "result", "highlight", "press_visual", "type"}
 ANCHORS = ("top-right", "top-left")
 # The surface hangs under a toolbar strip: 16 px from the sides, 64 px of strip and gaps (compose).
 SURFACE_EDGE, SURFACE_TOP = 16, 64
@@ -153,7 +153,8 @@ def _validate_card(where: str, card, text_optional: bool = False) -> None:
 
 def _validate_surface_action(where: str, kind: str, arg, surfaces, opened: set) -> None:
     """{in: SURFACE, sel: SELECTOR} (scroll: {in, px}) on a declared surface that is open."""
-    key, shape = ("px", "{in: SUPERFICIE, px: PÍXELES}") if kind == "scroll" else ("sel", "{in: SUPERFICIE, sel: SELECTOR}")
+    key, shape = ("px", "{in: SUPERFICIE, px: PÍXELES}") if kind == "scroll" else \
+        ("into", "{in: SUPERFICIE, into: SELECTOR, text: TEXTO}") if kind == "type" else ("sel", "{in: SUPERFICIE, sel: SELECTOR}")
     value = arg.get(key)
     good = isinstance(value, (int, float)) and not isinstance(value, bool) if key == "px" else \
         isinstance(value, str) and value.strip()
@@ -281,7 +282,7 @@ def _validate_steps(steps, surfaces=(), parts=None) -> list[str]:
                 if not dialog:
                     _fail(where, "'remove_dialog' sin un 'simulate_dialog' antes (I2)")
                 dialog = False
-            if kind in SURFACE_ACTIONS and isinstance(arg, dict):
+            if kind in SURFACE_ACTIONS and isinstance(arg, dict) and (kind != "type" or "in" in arg):
                 _validate_surface_action(where, kind, arg, surfaces, opened)
             elif kind in ("open", "close"):
                 if arg not in surfaces:
