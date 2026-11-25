@@ -308,7 +308,13 @@ export function censorSource(cfg = {}) {
 
 // Inside an extension page opened as a tab, {active: true, currentWindow: true} would be that tab itself:
 // answer it with the most recent tab matching `target` (the page the popup acts on). Idempotent.
+// window.close() (a side panel closing itself, e.g. after filling a form) is a no-op: the step closes the surface.
 export function patchTabs(g, target) {
+  if (g && typeof g.close === "function" && !g.close.__tutorialPatched) {
+    const keep = () => {};
+    keep.__tutorialPatched = true;
+    g.close = keep;
+  }
   const tabs = g && g.chrome && g.chrome.tabs;
   if (!tabs || typeof tabs.query !== "function" || tabs.query.__tutorialPatched) return false;
   const original = tabs.query.bind(tabs);

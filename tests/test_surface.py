@@ -172,6 +172,16 @@ const g = { chrome: { tabs: { query(q, cb) { asked.push(q); const r = match(q); 
                              "out(p.map((t) => t.id));")
         self.assertEqual(res, [2])
 
+    def test_window_close_keeps_the_surface_open(self):
+        # Perseo XML 1.2.1 closes its side panel with window.close() after "Llenar en el SRI": the recorded
+        # surface page must survive it (the step closes the panel with `close: popup`).
+        res = self.run_patch("let closed = 0;\n"
+                             "g.close = () => { closed++; };\n"
+                             "patchTabs(g, 'https://srienlinea.sri.gob.ec/*');\n"
+                             "g.close();\n"
+                             "out({ closed });")
+        self.assertEqual(res, {"closed": 0})
+
 
 class NewTabTest(NodeCase):
     """follow: tab adopts the tab the click opened (not the main tab, not a surface)."""
