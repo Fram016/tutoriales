@@ -1,0 +1,395 @@
+# Perseo XML v5 (odd/tasks/perseo-xml-v5.md T2, S1, S3; D-a..D-h). Flow: the user's usage video (brief.md).
+# Base: proyectos/perseo-xml-v4/tutorial.yaml for voice, style, brand, glossary, pronunciation, music, pace and tempo
+# (D-f, D5); Parte 1 (install) is v4's with the same actions and narration. Partes 2-5 are new (D-d).
+# The capture is not recorded from this file (I3): capture/ = tools/merge_takes.py of the two takes, in order:
+#   .venv/Scripts/python.exe tools/merge_takes.py proyectos/perseo-xml-v5 \
+#       proyectos/perseo-xml-v5/takes/install proyectos/perseo-xml-v5/takes/uso
+# takes/install = copy of proyectos/perseo-xml-v4/takes/install (D-c); takes/uso = uso.yaml (same actions as below).
+# No takes/resultado: the folder segment of the usage video is not imported (brief.md, Preguntas abiertas).
+# D5: one TTS read of every narration below.
+voice:
+  voice: es-419-commercial-11          # user: "es-419-commercial-11 usa esa voz"
+  # user: "cambia la euforia y animo que hable mejor mas vendedor y con energia ahorita se escucha muy sozo y aburrido"
+  style: "vendedor entusiasta y con mucha energía, sonriente y convincente, ritmo ágil y dinámico, español latinoamericano, trato de tú"     # D6, same as v4
+title: "Perseo XML: instala y descarga tus comprobantes"
+product: "Perseo XML"
+app_url: "https://www.google.com/?hl=es-419"   # first screen of the merged take (takes/install)
+viewport: [1920, 1080]
+language: es-EC
+device: desktop                      # L2: "haz clic"
+brand:                               # N5: popup.html CSS variables; accent = primary
+  dir: brand
+  primary: "#ca4100"
+  background: "#09090b"
+  surface: "#09090b"
+  on_surface: "#ffffff"
+  text: "#ffffff"
+  font: "Segoe UI"
+glossary:                            # L3
+  comprobante: [documento, archivo]
+  extensión: [complemento, plugin]
+  descargar: [bajar]
+  carpeta de descargas: [directorio, ruta]
+  cliente: [contribuyente]           # the vault entry with the SRI credentials of a RUC
+pronunciation:                       # D3: "se pronuncia como se lee RIDE no RAID ni R I D E"
+  RIDE: "ri-de"                      # es-419-commercial-11 spells "ri de" and says "raid" for "ride"; Whisper hears "ri-de" as ride
+music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}
+parts:                               # N16; D-f
+  - {n: 1, title: "Instalar la extensión"}
+  - {n: 2, title: "Iniciar sesión y agregar cliente"}
+  - {n: 3, title: "Configurar la carpeta y entrar al SRI"}
+  - {n: 4, title: "Comprobantes emitidos"}
+  - {n: 5, title: "Comprobantes recibidos"}
+hide:                                # I2: ego's notice on the store listing (as recorded by install.yaml of v4)
+  - ".gSrP5d"
+  - '[jsname="UUbT9"]'               # Google: the search box dropdown (it lists the profile's search history)
+censor:                              # N25, D-e: one criterion, blurred everywhere (values only in acceso.local.yaml)
+  text:
+    - env:PERSEO_XML_RUC
+    - env:PERSEO_XML_NOMBRE
+    - env:PERSEO_XML_EMAIL
+    - env:PERSEO_XML_TELEFONO
+    - env:PERSEO_XML_EXT_USER
+    - env:PERSEO_XML_SRI_USER
+    - '[A-Za-z]:\\Users\\[^\\]+'     # chrome://settings/downloads: the Windows user of the folder path
+  selectors:
+    - 'a[href*="accounts.google.com/SignOutOptions"]'   # Parte 1: the Google account of the recording profile
+    - 'h2.tCQDwe'                    # Parte 1: store home greeting with the profile's name
+    - '#acceso-usuario'              # panel: the Contafacil account name
+    - '#acceso-avatar'
+    - '#acceso-login-identificacion'
+    - '#acceso-identificacion'
+    - '.acceso-opcion-detalle'
+    - 'input[type="password"]'
+    # emitidos: 3 clave de acceso, 6 valor sin impuestos, 7 IVA, 8 importe total
+    - '[id="frmPrincipal:tablaCompEmitidos_data"] td:nth-child(3)'
+    - '[id="frmPrincipal:tablaCompEmitidos_data"] td:nth-child(6)'
+    - '[id="frmPrincipal:tablaCompEmitidos_data"] td:nth-child(7)'
+    - '[id="frmPrincipal:tablaCompEmitidos_data"] td:nth-child(8)'
+    # recibidos: 2 RUC y razón social emisor, 4 clave de acceso, 7 valor sin impuestos, 8 IVA, 9 importe total
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(2)'
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(4)'
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(7)'
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(8)'
+    - '[id="frmPrincipal:tablaCompRecibidos_data"] td:nth-child(9)'
+surfaces:
+  panel:                             # D-b: the side panel (popup.html of the store build 1.2.1), docked on the left
+    url: "chrome-extension://nggkmolkfkhfdjgbclinjcojpikldbhp/popup.html"
+    size: [420, 860]
+    dpr: 2
+    anchor: top-left
+    target_tab: "https://srienlinea.sri.gob.ec/*"
+    icon: brand/ext-icon48.png
+    hide: ["#publicidad-perseo"]     # N23
+
+steps:
+  # Parte 1: Instalar la extensión (take: proyectos/perseo-xml-v4/install.yaml, copied; I2 display only)
+  - id: buscar-tienda
+    title: "Busca la tienda en Google"
+    part: 1
+    context: chrome
+    narration: "Primero, busca Chrome Web Store en Google."   # D1 sequence starts here
+    actions:
+      - wait: "textarea[name=q]"
+      - type: {into: "textarea[name=q]", text: "Chrome Web Store"}
+      - click: 'input[name="btnK"]'     # "Buscar con Google": a click, so the camera cuts to the results (C10)
+      - wait: 'a[href="https://chromewebstore.google.com/"] h3'
+  - id: abrir-tienda
+    title: "Entra a la tienda"
+    part: 1
+    context: chrome
+    narration: "Luego entra a la Chrome Web Store."
+    actions:
+      - click: 'a[href="https://chromewebstore.google.com/"] h3'
+      - wait: 'input[aria-label="Buscar en Chrome Web Store"]'
+  - id: buscar-perseo
+    title: "Busca Perseo XML"
+    part: 1
+    context: chrome
+    narration: "Después busca Perseo XML."
+    actions:
+      - type: {into: 'input[aria-label="Buscar en Chrome Web Store"]', text: "Perseo XML"}
+      - press: "Enter"
+      - wait: 'a[href*="nggkmolkfkhfdjgbclinjcojpikldbhp"]'
+  - id: abrir-ficha
+    title: "Abre la extensión"
+    part: 1
+    context: chrome
+    narration: "Elige Perseo XML en los resultados."
+    actions:
+      - show_text: {sel: "xpath=//button[contains(normalize-space(.),' a ego')]", text: "Agregar a Chrome", watch: true}   # I2: relabeled as the listing paints (same document)
+      - click: 'a[href*="nggkmolkfkhfdjgbclinjcojpikldbhp"]'
+      - wait: "xpath=//h1[normalize-space()='Perseo XML']"
+  - id: agregar
+    title: "Agrega la extensión"
+    part: 1
+    context: chrome
+    narration: "Haz clic en Agregar a Chrome."
+    actions:
+      - wait: "button:has([data-tutorial-text])"   # the button state loads after the title
+      - show_text: {sel: "button:has([data-tutorial-text])", text: "Agregar a Chrome"}
+      - press_visual: "button:has([data-tutorial-text])"   # the relabeled button (the original label is hidden)
+  - id: confirmar
+    title: "Confirma la instalación"
+    part: 1
+    context: chrome
+    narration: "Confirma con Agregar extensión. La extensión queda instalada."   # effect sentence over "Quitar de Chrome"
+    actions:
+      - simulate_dialog:
+          title: '¿Quieres agregar "Perseo XML"?'
+          body: ["Puede:", "Leer y cambiar tus datos en srienlinea.sri.gob.ec"]
+          buttons: ["Agregar extensión", "Cancelar"]
+          icon: brand/ext-icon48.png
+      - press_visual: "#sim-btn-0"
+      - pause: 900                      # the press ripple ends on the dialog, not on the page behind it
+      - remove_dialog: true
+      - show_text: {sel: "button:has([data-tutorial-text])", text: "Quitar de Chrome"}
+  # Parte 2: Iniciar sesión y agregar cliente (take: uso.yaml, same actions)
+  - id: abrir-perseo
+    title: "Abre Perseo XML"
+    part: 2
+    context: extension
+    narration: "Ahora abre Perseo XML en Claves SRI. Sin cuenta de Contafacil, créala en Crear cuenta."   # video 00:23-00:36
+    actions:
+      - open: panel
+      - click: {in: panel, sel: "#tab-claves"}
+      - wait: {in: panel, sel: "#acceso-seg-registro"}
+      - hover: {in: panel, sel: "#acceso-seg-registro"}   # "Crear cuenta": shown, no account is created
+  - id: iniciar-sesion
+    title: "Inicia sesión"
+    part: 2
+    context: extension
+    narration: "Si ya tienes cuenta, llena tu usuario y contraseña. Luego haz clic en Iniciar sesión."
+    actions:
+      - type: {in: panel, into: "#acceso-login-identificacion", text: "env:PERSEO_XML_EXT_USER"}   # TOOL GAP: see uso.yaml
+      - type: {in: panel, into: "#acceso-login-clave", text: "env:PERSEO_XML_EXT_PASSWORD"}
+      - click: {in: panel, sel: "#acceso-login-accion"}
+      - wait: {in: panel, sel: "#acceso-abierta"}
+      - result: {in: panel, sel: "#acceso-abierta"}
+  - id: agregar-cliente
+    title: "Agrega un cliente"
+    part: 2
+    context: extension
+    narration: "Después haz clic en + Agregar. Un cliente guarda sus claves del SRI en una bóveda."   # video 00:57-01:07
+    actions:
+      - click: {in: panel, sel: "xpath=//*[self::button or self::a][contains(normalize-space(.),'Agregar')]"}
+      - wait: {in: panel, sel: "#acceso-form-cuenta"}
+  - id: guardar-cliente
+    title: "Guarda el cliente"
+    part: 2
+    context: extension
+    narration: "Llena la identificación, el nombre Prueba y la clave. Haz clic en Guardar cliente."   # user: "Voy a ponerle prueba"
+    actions:
+      - type: {in: panel, into: "#acceso-identificacion", text: "env:PERSEO_XML_SRI_USER"}
+      - type: {in: panel, into: "#acceso-alias", text: "Prueba"}
+      - type: {in: panel, into: "#acceso-clave", text: "env:PERSEO_XML_SRI_PASSWORD"}
+      - click: {in: panel, sel: "xpath=//*[@id='acceso-form-cuenta']//button[normalize-space()='Guardar cliente']"}
+      - wait: {in: panel, sel: "label.acceso-opcion"}
+      - highlight: {in: panel, sel: "label.acceso-opcion"}
+  # Parte 3: Configurar la carpeta y entrar al SRI
+  - id: carpeta-emitidos
+    title: "Abre la carpeta de descargas"
+    part: 3
+    context: extension
+    narration: "Ahora, en Descargas, haz clic en Carpeta de descargas."
+    actions:
+      - click: {in: panel, sel: "#tab-descargas"}
+      - wait: {in: panel, sel: "#configure-folder"}
+      - click: {in: panel, sel: "#configure-folder"}
+      - close: panel
+      - follow: tab                  # chrome://settings/downloads opened by the extension
+      - wait: "#changeDownloadsPath"
+  - id: cambiar-emitidos
+    title: "Elige la carpeta de emitidos"
+    part: 3
+    context: extension
+    narration: "En Change, elige la carpeta Emitidos."
+    actions:
+      - press_visual: "#changeDownloadsPath"   # D4: shown, never clicked (native picker)
+      - show_download_dir: {path: '%USERPROFILE%\Downloads\Perseo XML\Emitidos'}
+      - pause: 1200
+      - back: main
+  - id: acceder-sri
+    title: "Entra al SRI desde Perseo XML"
+    part: 3
+    context: extension
+    narration: "Luego, en Claves SRI, haz clic en Acceder al SRI."   # video 02:11
+    actions:
+      - open: panel
+      - click: {in: panel, sel: "#tab-claves"}
+      - wait: {in: panel, sel: "#acceso-ir-sri"}
+      - click: {in: panel, sel: "#acceso-ir-sri"}
+      - wait: "#kc-login"
+  - id: elegir-cliente
+    title: "Elige el cliente"
+    part: 3
+    context: extension
+    narration: "Elige el cliente Prueba."
+    actions:
+      - click: {in: panel, sel: "#tab-claves"}      # on an SRI tab the panel switches to Descargas by itself
+      - wait: {in: panel, sel: "label.acceso-opcion"}
+      - click: {in: panel, sel: "label.acceso-opcion"}
+  - id: llenar-sri
+    title: "Llena el login del SRI"
+    part: 3
+    context: extension
+    narration: "Haz clic en Llenar en el SRI. Tu usuario y tu clave se llenan solos."   # video 02:19
+    actions:
+      - click: {in: panel, sel: "#acceso-llenar"}
+      - wait: {in: panel, sel: "text=Datos llenados"}
+      - result: {in: panel, sel: "text=Datos llenados"}
+      - close: panel
+  - id: ingresar-sri
+    title: "Ingresa al SRI"
+    part: 3
+    context: sri
+    narration: "Después, en el SRI, haz clic en Ingresar."
+    actions:
+      - click: "#kc-login"
+      - wait: "#sri-menu"
+  # Parte 4: Comprobantes emitidos
+  - id: consultas-emitidos
+    title: "Abre Consultas"
+    part: 4
+    context: sri
+    narration: "Luego entra a Facturación, Producción y Consultas."   # D1; menu FACTURACIÓN ELECTRÓNICA (video 02:48)
+    actions:
+      - click: "#sri-menu"
+      - wait: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
+      - pause: 800                   # the side menu slides in
+      - click: "xpath=//a[contains(@class,'ui-panelmenu-header-link')][normalize-space()='FACTURACIÓN ELECTRÓNICA']"
+      - wait: "xpath=//a[normalize-space()='Producción']"
+      - pause: 600
+      - click: "xpath=//a[normalize-space()='Producción']"
+      - wait: "xpath=//a[normalize-space()='Producción']/following-sibling::*//a[normalize-space()='Consultas']"
+      - pause: 600
+      - click: "xpath=//a[normalize-space()='Producción']/following-sibling::*//a[normalize-space()='Consultas']"
+      - wait: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos emitidos']"
+  - id: emitidos
+    title: "Abre los emitidos"
+    part: 4
+    context: sri
+    narration: "Abre los emitidos."
+    actions:
+      - click: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos emitidos']"
+      - wait: '[id="frmPrincipal:calendarFechaDesde_input"]'
+  - id: fecha-emitidos
+    title: "Escribe la fecha"
+    part: 4
+    context: sri
+    narration: "Escribe la fecha 21 de noviembre."   # user: "Para el ejemplo vas a colocar la fecha 21"
+    actions:
+      - type: {into: '[id="frmPrincipal:calendarFechaDesde_input"]', text: "21/11/2026", clear: true}
+      - press: "Tab"                 # closes the calendar overlay
+  - id: consultar-emitidos
+    title: "Consulta los emitidos"
+    part: 4
+    context: sri
+    narration: "Haz clic en Consultar."
+    actions:
+      - click: '[id="frmPrincipal:btnConsultar"]'
+      - wait: '[id="frmPrincipal:tablaCompEmitidos_data"] tr'
+      - highlight: '[id="frmPrincipal:tablaCompEmitidos_data"]'
+  - id: descargar-emitidos
+    title: "Descarga los XML emitidos"
+    part: 4
+    context: extension
+    narration: "Después, en Perseo XML, haz clic en XML Desde el RIDE. Perseo XML transforma los RIDE en XML."   # D2 (video 03:38-03:57); D3 voice "ri de"
+    actions:
+      - open: panel
+      - click: {in: panel, sel: "#boton4"}
+      - wait: {in: panel, sel: "#boton4 b"}   # the button gets <b>XML</b> back when the download ends
+      - pause: 2100                           # the summary refreshes every 2 s
+      - wait: {in: panel, sel: "#texto_correctos"}
+      - result: {in: panel, sel: "#texto_correctos"}   # N18
+  - id: revisar-emitidos
+    title: "Revisa el resumen"
+    part: 4
+    context: extension
+    narration: "Revisa los procesados, descargados y con error. Abre Detalle de registros para ver cada uno."   # video 03:57-04:17
+    actions:
+      - focus: {in: panel, sel: "#texto"}
+      - focus: {in: panel, sel: "#texto_error"}
+      - click: {in: panel, sel: "xpath=//summary[contains(normalize-space(.),'Detalle de registros')]"}
+      - wait: {in: panel, sel: "#registros-container"}
+      - result: {in: panel, sel: "#registros-container"}
+      - close: panel
+  # Parte 5: Comprobantes recibidos
+  - id: carpeta-recibidos
+    title: "Cambia la carpeta a Recibidos"
+    part: 5
+    context: extension
+    narration: "Ahora cambia la carpeta a Recibidos."   # D4: one folder per type, set before the download (video 05:25)
+    actions:
+      - open: panel
+      - click: {in: panel, sel: "#configure-folder"}
+      - close: panel
+      - follow: tab
+      - wait: "#changeDownloadsPath"
+      - press_visual: "#changeDownloadsPath"
+      - show_download_dir: {path: '%USERPROFILE%\Downloads\Perseo XML\Recibidos'}
+      - pause: 1200
+      - back: main
+  - id: anterior
+    title: "Vuelve a Consultas"
+    part: 5
+    context: sri
+    narration: "Luego vuelve con Anterior."
+    actions:
+      - click: '[id="frmPrincipal:btnAnterior"]'
+      - wait: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos recibidos']"
+  - id: recibidos
+    title: "Abre los recibidos"
+    part: 5
+    context: sri
+    narration: "Abre los recibidos."
+    actions:
+      - click: "xpath=//li[contains(@class,'sri-listaLinks')]/a[normalize-space()='Comprobantes electrónicos recibidos']"
+      - wait: '[id="frmPrincipal:ano"]'
+  - id: periodo-recibidos
+    title: "Elige el periodo"
+    part: 5
+    context: sri
+    narration: "Elige 2026, Noviembre y el día 24."   # user: "voy a consultar desde 24"
+    actions:
+      - select: {in: '[id="frmPrincipal:ano"]', option: "2026"}
+      - select: {in: '[id="frmPrincipal:mes"]', option: "Noviembre"}
+      - select: {in: '[id="frmPrincipal:dia"]', option: "24"}
+  - id: consultar-recibidos
+    title: "Consulta los recibidos"
+    part: 5
+    context: sri
+    narration: "Haz clic en Consultar."
+    actions:
+      - pause: 1500                  # invisible reCAPTCHA: no instant submit after the selects
+      - click: '[id="frmPrincipal:btnBuscar"]'
+      - manual_fallback: {until: '[id="frmPrincipal:tablaCompRecibidos_data"] tr', blocked: "Captcha incorrecta"}
+      - wait: '[id="frmPrincipal:tablaCompRecibidos_data"] tr'
+      - highlight: '[id="frmPrincipal:tablaCompRecibidos_data"]'
+  - id: descargar-recibidos
+    title: "Descarga los XML recibidos"
+    part: 5
+    context: extension
+    hold_ms: 1500
+    narration: "Por último, haz clic en XML Para importar. Quedan listos para importar en Perseo."   # D1 last step; D2
+    actions:
+      - open: panel
+      - click: {in: panel, sel: "#boton1"}
+      - wait: {in: panel, sel: "#boton1 b"}
+      - pause: 2100
+      - wait: {in: panel, sel: "#texto_correctos"}
+      - result: {in: panel, sel: "#texto_correctos"}   # N18; the video ends here (N27)
+
+videos:
+  - id: tutorial
+    type: TUT
+    format: "16:9"
+    steps: all
+    pace: fast                       # P2: short holds, waits cut, P3 zoom (D-f)
+    tempo: 1.05                      # P4: at most x1.05 under fast
+    # no max_seconds (P1 revisada 2, D-f)
+    opening:
+      narration: "Aprendes a instalar y usar Perseo XML."
+      text: "Necesitas Google Chrome, tu cuenta de Contafacil y la del SRI."
+    # no closing (N27): the video ends on the recibidos download summary
+    music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}
