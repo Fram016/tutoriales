@@ -3,9 +3,7 @@
 # then merged after the install take with tools/merge_takes.py (I3). Steps and narration live in tutorial.yaml.
 # Before the take: SRI logged out, extension logged out, client "Prueba" removed (D-d).
 # The extension is a side panel docked on the left (D-b): surface `panel`, recorded as a page of popup.html.
-# TOOL GAP (T3): `type` does not take {in: SURFACE} yet. tools/capture/recorder.mjs always types into the main tab, and
-# common.SURFACE_ACTIONS leaves type out. The panel's login and client form below are written in the surface shape
-# ({in: panel, into, text}) and fail on the SRI page until the recorder supports it.
+# The panel's login and client form are typed into the surface with {in: panel, into, text} (recorder d995e5b).
 title: "Perseo XML: sesión, cliente y descargas"
 product: "Perseo XML"
 app_url: "https://srienlinea.sri.gob.ec/sri-en-linea/inicio/NAT"   # D-d: first screen of the take
@@ -64,16 +62,16 @@ steps:
       - click: {in: panel, sel: "#acceso-login-accion"}
       - wait: {in: panel, sel: "#acceso-abierta"}
       - result: {in: panel, sel: "#acceso-abierta"}
-  - id: agregar-cliente
-    actions:
-      - click: {in: panel, sel: "xpath=//*[self::button or self::a][contains(normalize-space(.),'Agregar')]"}   # "+ Agregar" (unverified)
-      - wait: {in: panel, sel: "#acceso-form-cuenta"}
   - id: guardar-cliente
     actions:
+      # With no client the form opens by itself ("Agrega tu primer cliente del SRI"); "+ Agregar" (#acceso-agregar)
+      # only shows once a client exists (rehearsal, 1.2.1).
+      - wait: {in: panel, sel: "#acceso-form-cuenta"}
+      - focus: {in: panel, sel: "#acceso-form-titulo"}
       - type: {in: panel, into: "#acceso-identificacion", text: "env:PERSEO_XML_SRI_USER"}
       - type: {in: panel, into: "#acceso-alias", text: "Prueba"}
       - type: {in: panel, into: "#acceso-clave", text: "env:PERSEO_XML_SRI_PASSWORD"}
-      - click: {in: panel, sel: "xpath=//*[@id='acceso-form-cuenta']//button[normalize-space()='Guardar cliente']"}
+      - click: {in: panel, sel: '#acceso-form-cuenta button[type="submit"]'}   # "Guardar cliente" (no id)
       - wait: {in: panel, sel: "label.acceso-opcion"}
       - highlight: {in: panel, sel: "label.acceso-opcion"}
   # Parte 3: Configurar la carpeta y entrar al SRI
@@ -106,7 +104,7 @@ steps:
   - id: llenar-sri
     actions:
       - click: {in: panel, sel: "#acceso-llenar"}
-      - wait: {in: panel, sel: "text=Datos llenados"}   # "Datos llenados. Revisa y pulsa Ingresar en el SRI." (unverified)
+      - wait: {in: panel, sel: "text=Datos llenados"}   # "Datos llenados. Revisa y pulsa Ingresar en el SRI." (shown 6 s)
       - result: {in: panel, sel: "text=Datos llenados"}
       - close: panel                 # D-h: the extension's window.close() is neutralized; the step closes it
   - id: ingresar-sri
@@ -144,7 +142,14 @@ steps:
     actions:
       - open: panel
       - click: {in: panel, sel: "#boton4"}     # "XML Desde el RIDE"
-      - wait: {in: panel, sel: "#boton4 b"}   # the button gets <b>XML</b> back when the download ends (v4; unverified on 1.2.1)
+      - pause: 2100                           # the summary resets on its next 2 s refresh
+      # 1.2.1: "En proceso..." until the end, then the button gets <b>XML</b> back (rehearsal: 152 in 49.5 s). wait
+      # gives up after 20 s: it waits in stages of the "N comprobantes procesados" count (or the end, if sooner)
+      - wait: {in: panel, sel: "xpath=//button[@id='boton4'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 50]"}
+      - wait: {in: panel, sel: "xpath=//button[@id='boton4'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 100]"}
+      - wait: {in: panel, sel: "xpath=//button[@id='boton4'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 150]"}
+      - wait: {in: panel, sel: "xpath=//button[@id='boton4'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 200]"}
+      - wait: {in: panel, sel: "#boton4 b"}
       - pause: 2100                           # the summary refreshes every 2 s
       - wait: {in: panel, sel: "#texto_correctos"}
       - result: {in: panel, sel: "#texto_correctos"}   # N18
@@ -193,6 +198,8 @@ steps:
     actions:
       - open: panel
       - click: {in: panel, sel: "#boton1"}     # "XML Para importar"
+      - pause: 2100
+      - wait: {in: panel, sel: "xpath=//button[@id='boton1'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 50]"}   # rehearsal: 18 in 11.7 s
       - wait: {in: panel, sel: "#boton1 b"}
       - pause: 2100
       - wait: {in: panel, sel: "#texto_correctos"}

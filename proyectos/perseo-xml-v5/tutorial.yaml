@@ -161,29 +161,26 @@ steps:
     context: extension
     narration: "Si ya tienes cuenta, llena tu usuario y contraseña. Luego haz clic en Iniciar sesión."
     actions:
-      - type: {in: panel, into: "#acceso-login-identificacion", text: "env:PERSEO_XML_EXT_USER"}   # TOOL GAP: see uso.yaml
+      - type: {in: panel, into: "#acceso-login-identificacion", text: "env:PERSEO_XML_EXT_USER"}
       - type: {in: panel, into: "#acceso-login-clave", text: "env:PERSEO_XML_EXT_PASSWORD"}
       - click: {in: panel, sel: "#acceso-login-accion"}
       - wait: {in: panel, sel: "#acceso-abierta"}
       - result: {in: panel, sel: "#acceso-abierta"}
-  - id: agregar-cliente
+  - id: guardar-cliente
     title: "Agrega un cliente"
     part: 2
     context: extension
-    narration: "Después haz clic en + Agregar. Un cliente guarda sus claves del SRI en una bóveda."   # video 00:57-01:07
+    # video 00:57-01:41; user: "Voy a ponerle prueba"
+    narration: "Después agrega un cliente: guarda sus claves del SRI en una bóveda. Llena la identificación, el nombre Prueba y la clave. Haz clic en Guardar cliente."
     actions:
-      - click: {in: panel, sel: "xpath=//*[self::button or self::a][contains(normalize-space(.),'Agregar')]"}
+      # With no client the form opens by itself ("Agrega tu primer cliente del SRI"); "+ Agregar" (#acceso-agregar)
+      # only shows once a client exists (rehearsal, 1.2.1).
       - wait: {in: panel, sel: "#acceso-form-cuenta"}
-  - id: guardar-cliente
-    title: "Guarda el cliente"
-    part: 2
-    context: extension
-    narration: "Llena la identificación, el nombre Prueba y la clave. Haz clic en Guardar cliente."   # user: "Voy a ponerle prueba"
-    actions:
+      - focus: {in: panel, sel: "#acceso-form-titulo"}
       - type: {in: panel, into: "#acceso-identificacion", text: "env:PERSEO_XML_SRI_USER"}
       - type: {in: panel, into: "#acceso-alias", text: "Prueba"}
       - type: {in: panel, into: "#acceso-clave", text: "env:PERSEO_XML_SRI_PASSWORD"}
-      - click: {in: panel, sel: "xpath=//*[@id='acceso-form-cuenta']//button[normalize-space()='Guardar cliente']"}
+      - click: {in: panel, sel: '#acceso-form-cuenta button[type="submit"]'}   # "Guardar cliente" (no id)
       - wait: {in: panel, sel: "label.acceso-opcion"}
       - highlight: {in: panel, sel: "label.acceso-opcion"}
   # Parte 3: Configurar la carpeta y entrar al SRI
@@ -298,7 +295,14 @@ steps:
     actions:
       - open: panel
       - click: {in: panel, sel: "#boton4"}
-      - wait: {in: panel, sel: "#boton4 b"}   # the button gets <b>XML</b> back when the download ends
+      - pause: 2100                           # the summary resets on its next 2 s refresh
+      # 1.2.1: "En proceso..." until the end, then the button gets <b>XML</b> back (rehearsal: 152 in 49.5 s). wait
+      # gives up after 20 s: it waits in stages of the "N comprobantes procesados" count (or the end, if sooner)
+      - wait: {in: panel, sel: "xpath=//button[@id='boton4'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 50]"}
+      - wait: {in: panel, sel: "xpath=//button[@id='boton4'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 100]"}
+      - wait: {in: panel, sel: "xpath=//button[@id='boton4'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 150]"}
+      - wait: {in: panel, sel: "xpath=//button[@id='boton4'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 200]"}
+      - wait: {in: panel, sel: "#boton4 b"}
       - pause: 2100                           # the summary refreshes every 2 s
       - wait: {in: panel, sel: "#texto_correctos"}
       - result: {in: panel, sel: "#texto_correctos"}   # N18
@@ -375,6 +379,8 @@ steps:
     actions:
       - open: panel
       - click: {in: panel, sel: "#boton1"}
+      - pause: 2100
+      - wait: {in: panel, sel: "xpath=//button[@id='boton1'][.//b] | //p[@id='texto'][number(substring-before(normalize-space(.),' ')) >= 50]"}   # rehearsal: 18 in 11.7 s
       - wait: {in: panel, sel: "#boton1 b"}
       - pause: 2100
       - wait: {in: panel, sel: "#texto_correctos"}
