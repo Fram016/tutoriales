@@ -182,6 +182,18 @@ const g = { chrome: { tabs: { query(q, cb) { asked.push(q); const r = match(q); 
                              "out({ closed });")
         self.assertEqual(res, {"closed": 0})
 
+    def test_tab_activation_listeners_are_inert(self):
+        # Perseo XML 1.2.1 switches Claves/Descargas on chrome.tabs.onActivated; the recorder's own tab switches
+        # (surface page <-> main tab) are not user tab switches. onUpdated stays live.
+        res = self.run_patch("const added = { activated: 0, updated: 0 };\n"
+                             "g.chrome.tabs.onActivated = { addListener() { added.activated++; } };\n"
+                             "g.chrome.tabs.onUpdated = { addListener() { added.updated++; } };\n"
+                             "patchTabs(g, 'https://srienlinea.sri.gob.ec/*');\n"
+                             "g.chrome.tabs.onActivated.addListener(() => {});\n"
+                             "g.chrome.tabs.onUpdated.addListener(() => {});\n"
+                             "out(added);")
+        self.assertEqual(res, {"activated": 0, "updated": 1})
+
 
 class NewTabTest(NodeCase):
     """follow: tab adopts the tab the click opened (not the main tab, not a surface)."""

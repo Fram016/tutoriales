@@ -317,6 +317,19 @@ export function patchTabs(g, target) {
   }
   const tabs = g && g.chrome && g.chrome.tabs;
   if (!tabs || typeof tabs.query !== "function" || tabs.query.__tutorialPatched) return false;
+  // A side panel is never the active tab, and the recorder's switches between the surface page and the main tab
+  // are not user tab switches: tab-activation listeners never fire (onUpdated stays live).
+  if (tabs.onActivated && typeof tabs.onActivated.addListener === "function") {
+    const inert = () => {};
+    try {
+      tabs.onActivated.addListener = inert;
+    } catch (e) {
+      // read-only binding: defined below
+    }
+    if (tabs.onActivated.addListener !== inert) {
+      Object.defineProperty(tabs.onActivated, "addListener", { value: inert, configurable: true, writable: true });
+    }
+  }
   const original = tabs.query.bind(tabs);
   const call = (q) => new Promise((resolve) => original(q, resolve));
   const active = (q) => !!q && q.active === true && (q.currentWindow === true || q.lastFocusedWindow === true) && !q.url;
