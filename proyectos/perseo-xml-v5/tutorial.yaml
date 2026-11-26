@@ -406,7 +406,7 @@ steps:
     part: 5
     context: extension
     hold_ms: 1500
-    narration: "Después, haz clic en XML Para importar. Quedan listos para importar en Perseo."   # D2; "Por último" is Parte 6
+    narration: "Después, haz clic en XML Para importar."   # user: quitar "listos para importar en Perseo"; "Por último" is Parte 6
     actions:
       - open: panel
       - click: {in: panel, sel: "#boton1"}
@@ -421,7 +421,7 @@ steps:
     title: "Revisa la carpeta"
     part: 6
     context: computer
-    narration: "Por último, abre tu carpeta: ahí están todos los XML descargados."   # D1: the true last step
+    narration: "Por último, abre tu carpeta. ¡Y ya tienes tus XML listos!"   # D1 last step; user: "y ya tienes tus xml listo"
     actions:
       - result: "manual:lista-recibidos"   # the video ends here (N27)
 
