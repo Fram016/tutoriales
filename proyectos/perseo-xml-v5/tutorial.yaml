@@ -10,7 +10,8 @@
 voice:
   voice: es-419-commercial-11          # user: "es-419-commercial-11 usa esa voz"
   # user: "cambia la euforia y animo que hable mejor mas vendedor y con energia ahorita se escucha muy sozo y aburrido"
-  style: "vendedor entusiasta y con mucha energía, sonriente y convincente, ritmo ágil y dinámico, español latinoamericano, trato de tú"     # D6, same as v4
+  # ronda 9: "la voz esta bien pero debe ser mas energica un poco mas animada" (D6 revisada)
+  style: "vendedor muy entusiasta y animado, con mucha energía y una gran sonrisa, ritmo ágil y dinámico, énfasis en los verbos de acción, español latinoamericano, trato de tú"
 title: "Perseo XML: instala y descarga tus comprobantes"
 product: "Perseo XML"
 app_url: "https://www.google.com/?hl=es-419"   # first screen of the merged take (takes/install)
@@ -149,19 +150,30 @@ steps:
     title: "Abre Perseo XML"
     part: 2
     context: extension
-    narration: "Ahora abre Perseo XML en Claves SRI. Sin cuenta de Contafacil, créala en Crear cuenta."   # video 00:23-00:36
+    narration: "Ahora abre Perseo XML en Claves SRI."   # video 00:23-00:36
     actions:
       - open: panel
       - click: {in: panel, sel: "#tab-claves"}
-      - wait: {in: panel, sel: "#acceso-seg-registro"}
-      - hover: {in: panel, sel: "#acceso-seg-registro"}   # "Crear cuenta": shown, no account is created
+      - wait: {in: panel, sel: "#acceso-login-identificacion"}
+  - id: registro
+    title: "Formulario de registro"
+    part: 2
+    context: extension
+    narration: "¿No tienes credenciales? Llena este formulario de registro para usar la extensión."   # G1
+    actions:
+      - click: {in: panel, sel: "#acceso-seg-registro"}   # G1: the sign-up form is shown, no account is created
+      - wait: {in: panel, sel: "#acceso-registro-identificacion"}
+      - result: {in: panel, sel: "#acceso-registro"}
+      - pause: 1500
   - id: iniciar-sesion
     title: "Inicia sesión"
     part: 2
     context: extension
-    # N1: one instruction sentence ending on the click; the effect sentence plays over "Sesión iniciada" (A2)
-    narration: "Con tu usuario y contraseña, haz clic en Iniciar sesión. Tu sesión de Contafacil queda abierta."
+    # G1 (user): "si eres usuario del sistema contafacil ingresa con tu contraseña y clave"
+    narration: "Si ya eres usuario de Contafacil, ingresa tu usuario y contraseña. Haz clic en Iniciar sesión. Tu sesión queda abierta."
     actions:
+      - click: {in: panel, sel: "#acceso-seg-login"}
+      - wait: {in: panel, sel: "#acceso-login-identificacion"}
       - type: {in: panel, into: "#acceso-login-identificacion", text: "env:PERSEO_XML_EXT_USER"}
       - type: {in: panel, into: "#acceso-login-clave", text: "env:PERSEO_XML_EXT_PASSWORD"}
       - click: {in: panel, sel: "#acceso-login-accion"}
@@ -190,7 +202,7 @@ steps:
     title: "Abre la carpeta de descargas"
     part: 3
     context: extension
-    narration: "Ahora, en Descargas, haz clic en Carpeta de descargas."
+    narration: "Ahora cambia la carpeta de descargas. Así, todos los XML del SRI irán a una carpeta específica. En Descargas, haz clic en Carpeta de descargas."   # G2
     actions:
       - click: {in: panel, sel: "#tab-descargas"}
       - wait: {in: panel, sel: "#configure-folder"}
@@ -202,7 +214,7 @@ steps:
     title: "Elige la carpeta de emitidos"
     part: 3
     context: extension
-    narration: "En Change, elige la carpeta Emitidos. Ahí se guardan los XML emitidos."   # effect: A2
+    narration: "Haz clic en Cambiar, o Change. Elige la carpeta adecuada, por ejemplo Emitidos."   # G3
     actions:
       - press_visual: "#changeDownloadsPath"   # D4: shown, never clicked (native picker)
       - show_download_dir: {path: '%USERPROFILE%\Downloads\Perseo XML\Emitidos'}
@@ -276,7 +288,7 @@ steps:
     title: "Escribe la fecha"
     part: 4
     context: sri
-    narration: "Escribe la fecha 21 de noviembre."   # user: "Para el ejemplo vas a colocar la fecha 21"
+    narration: "Selecciona la fecha de emisión."   # G4: the date is the exercise's, never dictated
     actions:
       - type: {into: '[id="frmPrincipal:calendarFechaDesde_input"]', text: "21/11/2026", clear: true}
       - press: "Tab"                 # closes the calendar overlay
@@ -338,7 +350,7 @@ steps:
     part: 5
     context: extension
     # one sentence (fast chain): the voice runs until the Change click instead of ending at Carpeta de descargas (A2)
-    narration: "Ahora, en Carpeta de descargas, cambia la carpeta a Recibidos con Change."   # D4: one folder per type, set before the download (video 05:25)
+    narration: "Antes de los recibidos, abre otra vez Carpeta de descargas. Haz clic en Cambiar, o Change. Elige la carpeta Recibidos."   # G2, G3   # D4: one folder per type, set before the download (video 05:25)
     actions:
       - open: panel
       - click: {in: panel, sel: "#configure-folder"}
@@ -369,7 +381,7 @@ steps:
     title: "Elige el periodo"
     part: 5
     context: sri
-    narration: "Elige 2026, Noviembre y el día 24."   # user: "voy a consultar desde 24"
+    narration: "Selecciona el año, el mes y el día."   # G4   # user: "voy a consultar desde 24"
     actions:
       - select: {in: '[id="frmPrincipal:ano"]', option: "2026"}
       - select: {in: '[id="frmPrincipal:mes"]', option: "Noviembre"}

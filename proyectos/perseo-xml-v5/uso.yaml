@@ -53,10 +53,17 @@ steps:
     actions:
       - open: panel
       - click: {in: panel, sel: "#tab-claves"}
-      - wait: {in: panel, sel: "#acceso-seg-registro"}
-      - hover: {in: panel, sel: "#acceso-seg-registro"}   # "Crear cuenta": shown, no account is created
+      - wait: {in: panel, sel: "#acceso-login-identificacion"}
+  - id: registro
+    actions:
+      - click: {in: panel, sel: "#acceso-seg-registro"}   # G1: the sign-up form is shown, no account is created
+      - wait: {in: panel, sel: "#acceso-registro-identificacion"}
+      - result: {in: panel, sel: "#acceso-registro"}
+      - pause: 1500
   - id: iniciar-sesion
     actions:
+      - click: {in: panel, sel: "#acceso-seg-login"}
+      - wait: {in: panel, sel: "#acceso-login-identificacion"}
       - type: {in: panel, into: "#acceso-login-identificacion", text: "env:PERSEO_XML_EXT_USER"}
       - type: {in: panel, into: "#acceso-login-clave", text: "env:PERSEO_XML_EXT_PASSWORD"}
       - click: {in: panel, sel: "#acceso-login-accion"}
