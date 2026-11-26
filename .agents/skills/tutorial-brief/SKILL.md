@@ -57,6 +57,7 @@ Use at the start of every video, whatever the input: live app URL, demo credenti
 5. Read the project source; record features, rules and selectors with source `(código <path>:<line>)`.
 6. Fill Objetivo, Audiencia, Tipo de video, Enfoque, Dispositivo, Glosario, Paleta (+ logo variant), Datos sensibles, Historia, Destino del CTA, Flujo propuesto, Datos de la serie and Datos de ejemplo.
 7. Verify access: rehearse the login in ego-browser (`tutorial-ensayo-captura` rehearsal rules). Mark "Login verificado"; note 2FA/CAPTCHA/SSO.
+7b. Series video (a sibling `proyectos/<base>-vN` exists): preflight before step 9. Compare the app/extension version (`chrome://extensions`) and its key screens with the previous brief; write "Cambios desde <vN>" (version, new screens, renamed labels). Any UI change: rehearse it before the script.
 8. Write remaining doubts under Preguntas abiertas; ask only those that block the script.
 9. Hand off to `tutorial-guion`.
 

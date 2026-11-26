@@ -23,6 +23,9 @@ Use when the user asks for a tutorial, social, promo or feature-announcement vid
 - Brand is per tutorial: `proyectos/<slug>/brand/` + `brand:` in tutorial.yaml, never global.
 - Lyria (≈ USD 0.08/track) and TTS (per character) are billed; both cache, so rerunning unchanged text costs nothing. Ask before `music.py --force`. Iterate on `qa.py --pre`, never on renders.
 - Long commands (capture, pipeline, render, anything that may exceed ~1 min): never under a short shell timeout. Use the harness background runner (`bash_background`) or an explicit timeout ≥ 900 s; then check the exit code and the log tail. Never assume a silent command is still running.
+- Run deterministic commands yourself (lint, capture, merge_takes, pipeline, qa, render) in the background and read their exit code and log tail; never delegate them to a worker. Delegate only writing (brief, tutorial.yaml, tool code) or a bounded visual review.
+- Preflight for a series video (a sibling `proyectos/<base>-vN` exists): before the script, compare the app or extension version (`chrome://extensions`) and its key screens with the previous brief; record "Cambios desde <vN>" in the brief. A changed UI means rehearsal first, before writing steps.
+- Demo data (dates, filters, records) is what the user indicates; long waits (downloads, searches) are cut in edit, never avoided by changing the user's data.
 - Music prompts describe mood, instruments and tempo only; never genres tied to commercial music (pop, reggaeton, rock…) or artists (Lyria blocks them as "recitation"; music.py retries once with a neutral prompt and logs it).
 
 ## Decide the video type (mandatory)
