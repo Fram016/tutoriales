@@ -43,3 +43,32 @@ Project: `proyectos/perseo-xml-v5/`. Credentials only in `acceso.local.yaml` (na
 ## Log
 
 - L1: Debes hacer tutorial en base a lo siguiente que te indico en el video "C:\Users\Francisco Lopez\Videos\2026-11-25 16-57-31.mp4" analiza el video mira el funcionamiento de la extensión "Perseo XML" luego recrea los pasos con ego lite censura datos delicados. Tus datos para esta prueba son SRI: <url login SRI> RUC <redacted> Contraseña: <redacted>. Credenciales para extensión Usuario: <redacted> Contraseña: <redacted>. Si en caso necesitas hacer el video y al extensión no te deja volver a recrear el login busca como reinstalalrla o limpiar los datos
+
+## Audit T5: where the time went (measured: file mtimes, commits, subagent stats)
+
+Total: ~17:03 (request) → 19:55 (MP4) = ~2 h 52 min for a 2:10 video.
+
+| Phase | Clock | Minutes | Machine time inside | Cause of the rest |
+|---|---|---|---|---|
+| Transcribe usage video (6:15) | 17:03–17:13 | 10 | Whisper CPU 4.8 min | none (ran in background) |
+| Analysis + live rehearsal + window.close fix | 17:13–17:34 | 21 | ~1 | extension changed (1.2.1: side panel, login, vault) → new tool gap |
+| brief + tutorial.yaml + uso.yaml (worker) | 17:34–17:44 | 10 | 0 | ok |
+| type-in-surface fix + rehearsal + onActivated fix | 17:44–18:08 | 24 | ~2 | two more recorder gaps found one at a time by rehearsal |
+| Takes (2) + censor check + merge | 18:08–18:27 | 19 | take 7.5 min ×2 (≈4 min of each is waiting on 152 downloads) | take 1 lost to a download-speed wait |
+| Pipeline + pre-QA + render (worker) | 18:27–19:55 | 88 | 3 pipeline runs ≈ 16 min, qa --pre 3 min, render ≈ 9 min | ~60 min of agent review: 1126 tool calls, 68 snapshots opened per round, 1 wasted run (lint skipped by --from tts) |
+
+Findings:
+- F1 The QA loop is the biggest sink (~60 of 172 min): the agent opens every snapshot one by one and iterates on rules that cannot pass without tool changes (A2, R1/C1 panel, N18 false positive).
+- F2 One-time tooling gaps of the new extension UI (side panel) cost ~45 min; reusable now (78945ae, d995e5b, 74c1f51).
+- F3 Real waiting inside takes: 152 emitidos download ≈ 2 min per take; demo data volume drives take time.
+- F4 Bug: `pipeline --from tts` skipped lint and ran 5 min on a broken yaml → fixed (26f630c).
+- F5 Chained delegation (explore → worker → worker → worker) adds startup + re-reading of skills/rules per worker.
+
+Optimizations (proposed, ordered by impact):
+- O1 qa --pre writes ONE contact sheet per part (not 68 PNGs); the agent reviews sheets; hard cap 2 rounds and 20 min; known tool-limited rules (list in the skill) are reported, never iterated.
+- O2 Small demo data: choose dates/filters giving ~10–20 documents so downloads take seconds.
+- O3 Takes per part (one take per Parte) so a failure re-records only that part; merge_takes already exists.
+- O4 Parent runs pipeline/render commands directly (no worker for deterministic commands); workers only for writing yaml.
+- O5 Pre-flight: compare extension version/UI with the previous video of the series before writing the script (catches F2 early).
+- O6 Narration fixes re-synthesize only changed lines (cache per line) instead of the whole one-batch read.
+Target: a 2-minute tutorial of an already-known app in ≤ 30–40 min.
