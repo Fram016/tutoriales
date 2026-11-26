@@ -75,6 +75,7 @@ steps:
       # only shows once a client exists (rehearsal, 1.2.1).
       - wait: {in: panel, sel: "#acceso-form-cuenta"}
       - focus: {in: panel, sel: "#acceso-form-titulo"}
+      - pause: 1500                     # the form is redrawn when the client list arrives (take T9-1 lost the typed ID)
       - type: {in: panel, into: "#acceso-identificacion", text: "env:PERSEO_XML_SRI_USER"}
       - type: {in: panel, into: "#acceso-alias", text: "Prueba"}
       - type: {in: panel, into: "#acceso-clave", text: "env:PERSEO_XML_SRI_PASSWORD"}
