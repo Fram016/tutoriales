@@ -187,7 +187,8 @@ steps:
     context: extension
     # video 00:57-01:41; user: "Voy a ponerle prueba"
     # N1: the instruction ends on Guardar cliente; the vault sentence plays over "Cliente guardado" (N14)
-    narration: "Con la cédula, el nombre y la clave del cliente, haz clic en Guardar cliente. El cliente y sus claves del SRI quedan en tu bóveda."
+    # user: "despues de hacer login vamos a agregar un cliente, esto nos permitira tener las credenciales en bobeda para hacer login en el SRI de forma mas rapida" (G2)
+    narration: "Después del login, agrega un cliente. Sus claves quedan en una bóveda para entrar al SRI más rápido. Con la cédula, el nombre y la clave, haz clic en Guardar cliente."
     actions:
       # With no client the form opens by itself ("Agrega tu primer cliente del SRI"); "+ Agregar" (#acceso-agregar)
       # only shows once a client exists (rehearsal, 1.2.1).
