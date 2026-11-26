@@ -4,7 +4,7 @@ Usage: python tools/pipeline.py <slug> [--from S] [--to S] [--only S] [--offline
                                        [--quality draft|looks|delivery] [--video ID]
 
 Stages: lint → capture → tts → edit → music → mix → compose → render.
-lint validates tutorial.yaml against reglas/reglas-video.md before anything is recorded.
+lint validates tutorial.yaml against reglas/reglas-video.md before anything else; it runs first on every run, partial ones included.
 capture and tts always cover every video (one take, shared voice cache);
 --video ID limits edit, music, mix, compose and render to that video.
 --offline applies to tts and music (silent voice + test pad, no API key needed).
@@ -34,15 +34,18 @@ STAGES = ["lint", "capture", "tts", "edit", "music", "mix", "compose", "render"]
 
 
 def select(start: str | None, stop: str | None, only: str | None) -> list[str]:
+    """The stages to run; lint always runs first (seconds) so a partial run never builds on a broken tutorial.yaml."""
     if only:
         if start or stop:
             raise PipelineError("--only no se combina con --from/--to")
-        return [only]
-    first = STAGES.index(start) if start else 0
-    last = STAGES.index(stop) if stop else len(STAGES) - 1
-    if first > last:
-        raise PipelineError(f"--from {start} va después de --to {stop}")
-    return STAGES[first:last + 1]
+        stages = [only]
+    else:
+        first = STAGES.index(start) if start else 0
+        last = STAGES.index(stop) if stop else len(STAGES) - 1
+        if first > last:
+            raise PipelineError(f"--from {start} va después de --to {stop}")
+        stages = STAGES[first:last + 1]
+    return stages if stages[0] == "lint" else ["lint", *stages]
 
 
 def run_lint(slug: str) -> list[str]:
