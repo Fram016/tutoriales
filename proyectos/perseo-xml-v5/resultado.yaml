@@ -1,0 +1,20 @@
+# Perseo XML v5 — take of the final part "Resultado final" (user: "al final muestra el resultado de la descarga de los
+# XML solo muestra la carpeta final y censura la data privada"; F1-F3). Source: the user's usage video (referencias/uso),
+# the File Explorer view of Descargas > Recibidos (06:06-06:09). Its audio is not used (D5):
+#   .venv/Scripts/python.exe tools/import_video_take.py "<video>" --spec proyectos/perseo-xml-v5/resultado.yaml \
+#       --out proyectos/perseo-xml-v5/takes/resultado
+# Times are seconds of the source video, boxes its pixels (= viewport). Steps and narration live in tutorial.yaml.
+fps: 15
+trim: [366.0, 369.4]       # Recibidos list only (365.5 is still Descargas; 370 returns to the browser)
+viewport: [1920, 1080]
+blur:                      # F3: readable = Descargas > Recibidos, type, size, "19 elementos"
+  - {box: [0, 1032, 1920, 48]}          # Windows taskbar (apps, weather, clock)
+  - {box: [0, 198, 232, 32]}            # left pane: "OneDrive - Personal"
+  - {box: [0, 455, 232, 95]}            # left pane: the user's pinned folders (out, Perseo Software, odd)
+  - {box: [244, 186, 330, 530]}         # file names: clave de acceso (with the RUC) and the CSV name
+steps:
+  - id: carpeta-final
+    t0: 366.0
+    t1: 369.4
+    events:
+      - {type: result, t: 366.3, box: {x: 244, y: 160, w: 760, h: 556}, selector: "manual:lista-recibidos", target_text: "Recibidos"}

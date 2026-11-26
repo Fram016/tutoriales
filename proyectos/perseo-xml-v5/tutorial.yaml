@@ -3,9 +3,10 @@
 # (D-f, D5); Parte 1 (install) is v4's with the same actions and narration. Partes 2-5 are new (D-d).
 # The capture is not recorded from this file (I3): capture/ = tools/merge_takes.py of the two takes, in order:
 #   .venv/Scripts/python.exe tools/merge_takes.py proyectos/perseo-xml-v5 \
-#       proyectos/perseo-xml-v5/takes/install proyectos/perseo-xml-v5/takes/uso
+#       proyectos/perseo-xml-v5/takes/install proyectos/perseo-xml-v5/takes/uso2 \
 # takes/install = copy of proyectos/perseo-xml-v4/takes/install (D-c); takes/uso = uso.yaml (same actions as below).
-# No takes/resultado: the folder segment of the usage video is not imported (brief.md, Preguntas abiertas).
+#       proyectos/perseo-xml-v5/takes/resultado
+# takes/resultado = resultado.yaml: the user's video (Descargas > Recibidos) imported and censored (F1-F3, ronda 10).
 # D5: one TTS read of every narration below.
 voice:
   voice: es-419-commercial-11          # user: "es-419-commercial-11 usa esa voz"
@@ -41,6 +42,7 @@ parts:                               # N16; D-f
   - {n: 3, title: "Configurar la carpeta y entrar al SRI"}
   - {n: 4, title: "Comprobantes emitidos"}
   - {n: 5, title: "Comprobantes recibidos"}
+  - {n: 6, title: "Resultado final"}       # F1: user "al final muestra el resultado de la descarga de los XML"
 hide:                                # I2: ego's notice on the store listing (as recorded by install.yaml of v4)
   - ".gSrP5d"
   - '[jsname="UUbT9"]'               # Google: the search box dropdown (it lists the profile's search history)
@@ -185,7 +187,7 @@ steps:
     context: extension
     # video 00:57-01:41; user: "Voy a ponerle prueba"
     # N1: the instruction ends on Guardar cliente; the vault sentence plays over "Cliente guardado" (N14)
-    narration: "Con la cédula, el nombre Prueba y la clave, haz clic en Guardar cliente. El cliente y sus claves del SRI quedan en tu bóveda."
+    narration: "Con la cédula, el nombre y la clave del cliente, haz clic en Guardar cliente. El cliente y sus claves del SRI quedan en tu bóveda."
     actions:
       # With no client the form opens by itself ("Agrega tu primer cliente del SRI"); "+ Agregar" (#acceso-agregar)
       # only shows once a client exists (rehearsal, 1.2.1).
@@ -236,7 +238,7 @@ steps:
     title: "Elige el cliente"
     part: 3
     context: extension
-    narration: "Elige el cliente Prueba."
+    narration: "Elige el cliente que guardaste."   # G4: the client name is the exercise's
     actions:
       - click: {in: panel, sel: "#tab-claves"}      # on an SRI tab the panel switches to Descargas by itself
       - wait: {in: panel, sel: "label.acceso-opcion"}
@@ -403,7 +405,7 @@ steps:
     part: 5
     context: extension
     hold_ms: 1500
-    narration: "Por último, haz clic en XML Para importar. Quedan listos para importar en Perseo."   # D1 last step; D2
+    narration: "Después, haz clic en XML Para importar. Quedan listos para importar en Perseo."   # D2; "Por último" is Parte 6
     actions:
       - open: panel
       - click: {in: panel, sel: "#boton1"}
@@ -413,6 +415,14 @@ steps:
       - pause: 2100
       - wait: {in: panel, sel: "#texto_correctos"}
       - result: {in: panel, sel: "#texto_correctos"}   # N18; the video ends here (N27)
+  # Parte 6: Resultado final (take: resultado.yaml, the user's video, censored on import; F2, F3)
+  - id: carpeta-final
+    title: "Revisa la carpeta"
+    part: 6
+    context: computer
+    narration: "Por último, abre tu carpeta: ahí están todos los XML descargados."   # D1: the true last step
+    actions:
+      - result: "manual:lista-recibidos"   # the video ends here (N27)
 
 videos:
   - id: tutorial
