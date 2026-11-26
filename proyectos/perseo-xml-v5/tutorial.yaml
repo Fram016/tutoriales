@@ -159,7 +159,8 @@ steps:
     title: "Inicia sesión"
     part: 2
     context: extension
-    narration: "Si ya tienes cuenta, llena tu usuario y contraseña. Luego haz clic en Iniciar sesión."
+    # N1: one instruction sentence ending on the click; the effect sentence plays over "Sesión iniciada" (A2)
+    narration: "Con tu usuario y contraseña, haz clic en Iniciar sesión. Tu sesión de Contafacil queda abierta."
     actions:
       - type: {in: panel, into: "#acceso-login-identificacion", text: "env:PERSEO_XML_EXT_USER"}
       - type: {in: panel, into: "#acceso-login-clave", text: "env:PERSEO_XML_EXT_PASSWORD"}
@@ -171,7 +172,8 @@ steps:
     part: 2
     context: extension
     # video 00:57-01:41; user: "Voy a ponerle prueba"
-    narration: "Después agrega un cliente: guarda sus claves del SRI en una bóveda. Llena la identificación, el nombre Prueba y la clave. Haz clic en Guardar cliente."
+    # N1: the instruction ends on Guardar cliente; the vault sentence plays over "Cliente guardado" (N14)
+    narration: "Con la cédula, el nombre Prueba y la clave, haz clic en Guardar cliente. El cliente y sus claves del SRI quedan en tu bóveda."
     actions:
       # With no client the form opens by itself ("Agrega tu primer cliente del SRI"); "+ Agregar" (#acceso-agregar)
       # only shows once a client exists (rehearsal, 1.2.1).
@@ -200,7 +202,7 @@ steps:
     title: "Elige la carpeta de emitidos"
     part: 3
     context: extension
-    narration: "En Change, elige la carpeta Emitidos."
+    narration: "En Change, elige la carpeta Emitidos. Ahí se guardan los XML emitidos."   # effect: A2
     actions:
       - press_visual: "#changeDownloadsPath"   # D4: shown, never clicked (native picker)
       - show_download_dir: {path: '%USERPROFILE%\Downloads\Perseo XML\Emitidos'}
@@ -322,7 +324,7 @@ steps:
     title: "Revisa el resumen"
     part: 4
     context: extension
-    narration: "Revisa los procesados, descargados y con error. Abre Detalle de registros para ver cada uno."   # video 03:57-04:17
+    narration: "Revisa los procesados, descargados y con error. Abre Detalle de registros para ver cada uno. Cada XML queda en tu carpeta Emitidos."   # video 03:57-04:17; effect: A2
     actions:
       - focus: {in: panel, sel: "#texto"}
       - focus: {in: panel, sel: "#texto_error"}
@@ -335,7 +337,8 @@ steps:
     title: "Cambia la carpeta a Recibidos"
     part: 5
     context: extension
-    narration: "Ahora cambia la carpeta a Recibidos."   # D4: one folder per type, set before the download (video 05:25)
+    # one sentence (fast chain): the voice runs until the Change click instead of ending at Carpeta de descargas (A2)
+    narration: "Ahora, en Carpeta de descargas, cambia la carpeta a Recibidos con Change."   # D4: one folder per type, set before the download (video 05:25)
     actions:
       - open: panel
       - click: {in: panel, sel: "#configure-folder"}
