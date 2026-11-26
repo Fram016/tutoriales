@@ -35,7 +35,7 @@ glossary:                            # L3
   cliente: [contribuyente]           # the vault entry with the SRI credentials of a RUC
 pronunciation:                       # D3: "se pronuncia como se lee RIDE no RAID ni R I D E"
   RIDE: "ri-de"                      # es-419-commercial-11 spells "ri de" and says "raid" for "ride"; Whisper hears "ri-de" as ride
-music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}
+music: {prompt: "Energetic and optimistic mood, marimba and bright piano, crisp percussion with finger snaps, groovy bass line, playful and focused, tempo around 110 BPM, modern app explainer feel"}   # user chose preview "opcion b" (motivating, tutorial feel)
 parts:                               # N16; D-f
   - {n: 1, title: "Instalar la extensión"}
   - {n: 2, title: "Iniciar sesión y agregar cliente"}
@@ -437,4 +437,4 @@ videos:
       narration: "Aprendes a instalar y usar Perseo XML."
       text: "Necesitas Google Chrome, tu cuenta de Contafacil y la del SRI."
     # no closing (N27): the video ends on the recibidos download summary
-    music: {prompt: "Calm and focused mood, soft warm pads, gentle piano, slow tempo"}
+    music: {prompt: "Energetic and optimistic mood, marimba and bright piano, crisp percussion with finger snaps, groovy bass line, playful and focused, tempo around 110 BPM, modern app explainer feel"}   # user chose preview "opcion b" (motivating, tutorial feel)
