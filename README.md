@@ -82,7 +82,7 @@ Todas se corren desde la raíz: `.venv/Scripts/python.exe tools/<etapa>.py <slug
 | Etapa | Hace | Sale |
 | --- | --- | --- |
 | `lint` | valida `tutorial.yaml` contra las reglas antes de grabar (esquema, E1, E2, L1–L4, T1, T3, duraciones) | errores / avisos |
-| `capture` | ejecuta todos los pasos una vez en ego-lite y graba cuadros | `capture/` |
+| `capture [--by-part \| --part N]` | ejecuta todos los pasos una vez en ego-lite y graba cuadros; `--by-part` graba una toma por parte en `takes/part-<n>/` y las une, `--part N` regraba solo esa parte y vuelve a unir | `capture/` |
 | `tts [--offline]` | apertura, requisitos, pasos y cierre de cada video (con caché) | `audio/voice/<id>/` |
 | `edit` | reajusta el tiempo por video (tecleo C6, cargas C4, pausas TUT4/R2, silencios A2) | `edit/<id>/` |
 | `music [--offline] [--force]` | pista Lyria por video según su tipo; se reutiliza salvo `--force` | `audio/<id>/music.*` |

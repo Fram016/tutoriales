@@ -15,8 +15,13 @@ browser's download folder is never changed.
 I3 (§Parte 9): `--config install.yaml --out takes/install` records another take config of the project (same schema)
 into its own take dir, merged later with tools/merge_takes.py. I2: a `simulate_dialog.icon` path (relative to the
 project) is sent to the recorder as a data URL; top-level `hide` hides notices of the recording browser on the page.
+S7 (one take per part): `--by-part` records each `part` of tutorial.yaml (its steps only) into takes/part-<n> and
+merges them in part order into capture/ (merge_takes); `--part N` re-records only part N (the previous take kept as
+takes/part-N.prev-<timestamp>) and merges again. Each part opens a new tab at app_url with the app as it is (session,
+data: nothing is reset); a part that needs another screen starts with its own `goto`. A failed part leaves the other
+takes and capture/ untouched and names the command that re-records it.
 
-Usage: python tools/capture.py <slug> [--config FILE] [--out DIR]
+Usage: python tools/capture.py <slug> [--config FILE] [--out DIR] | [--by-part | --part N]
 """
 from __future__ import annotations
 
@@ -118,9 +123,39 @@ def keep_previous_take(pdir: Path, now: float | None = None, out_dir: Path | Non
     return dest
 
 
-def take_config(slug: str, file: str = "tutorial.yaml", out: str | None = None) -> tuple[dict, Path, dict]:
+PYTHON = ".venv/Scripts/python.exe"
+
+
+def part_steps(tut: dict, n: int) -> list[dict]:
+    """S7: the steps of part n, in order."""
+    steps = [s for s in tut["steps"] if s.get("part") == n]
+    if not steps:
+        raise PipelineError(f"la parte {n} no tiene pasos en tutorial.yaml (partes: "
+                            f"{', '.join(map(str, part_numbers(tut)))})")
+    return steps
+
+
+def part_numbers(tut: dict) -> list[int]:
+    """S7: the parts that have steps, in order."""
+    if not tut.get("parts"):
+        raise PipelineError(f"tutorial.yaml no tiene 'parts' (N16): graba la toma entera con "
+                            f"{PYTHON} tools/capture.py {tut['slug']}")
+    return sorted({s["part"] for s in tut["steps"] if "part" in s})
+
+
+def part_take_dir(n: int) -> str:
+    return f"takes/part-{n}"
+
+
+def rerecord_command(slug: str, n: int) -> str:
+    return f"{PYTHON} tools/capture.py {slug} --part {n}"
+
+
+def take_config(slug: str, file: str = "tutorial.yaml", out: str | None = None,
+                part: int | None = None) -> tuple[dict, Path, dict]:
     """(tutorial, take dir, recorder config) of a take: tutorial.yaml into capture/ by default; I3: another take
-    config of the project (install.yaml) into a take dir inside the project (takes/install)."""
+    config of the project (install.yaml) into a take dir inside the project (takes/install); S7: only the steps of
+    `part`."""
     tut = load_tutorial(slug, file)
     pdir = project_dir(slug)
     out_dir = pdir / out if out else pdir / "capture"
@@ -128,7 +163,7 @@ def take_config(slug: str, file: str = "tutorial.yaml", out: str | None = None) 
         raise PipelineError("--out tiene que quedar dentro del proyecto (p.ej. takes/install)")
     config = {
         "outDir": out_dir.as_posix(),
-        "steps": resolve_actions(tut["steps"], pdir),
+        "steps": resolve_actions(tut["steps"] if part is None else part_steps(tut, part), pdir),
         "viewport": tut.get("viewport", [1920, 1080]),
         "startUrl": resolve_env_ref(tut.get("app_url")),
         "censor": resolve_censor(tut.get("censor")),
@@ -138,8 +173,8 @@ def take_config(slug: str, file: str = "tutorial.yaml", out: str | None = None) 
     return tut, out_dir, config
 
 
-def capture(slug: str, file: str = "tutorial.yaml", out: str | None = None) -> dict:
-    tut, out_dir, config = take_config(slug, file, out)
+def capture(slug: str, file: str = "tutorial.yaml", out: str | None = None, part: int | None = None) -> dict:
+    tut, out_dir, config = take_config(slug, file, out, part)
     pdir = project_dir(slug)
     previous = keep_previous_take(pdir, out_dir=out_dir)
     if previous:
@@ -157,7 +192,8 @@ def capture(slug: str, file: str = "tutorial.yaml", out: str | None = None) -> d
         encoding="utf-8",
     )
     try:
-        print(f"[capture] grabando '{tut['title']}' en ego-lite ({len(config['steps'])} pasos)...")
+        which_part = f", parte {part}" if part is not None else ""
+        print(f"[capture] grabando '{tut['title']}' en ego-lite ({len(config['steps'])} pasos{which_part})...")
         result = run([which("ego-browser"), "nodejs", "-e", f"await import({json.dumps(take.as_uri())})"],
                      quiet=True, timeout=1800)
         for line in result.stdout.splitlines():
@@ -184,13 +220,48 @@ def capture(slug: str, file: str = "tutorial.yaml", out: str | None = None) -> d
     return actions
 
 
+def capture_parts(slug: str, part: int | None = None) -> dict:
+    """S7: record every part (or only `part`) into takes/part-<n>, then merge all part takes into capture/."""
+    import merge_takes  # merge_takes imports this module (keep_previous_take)
+    tut = load_tutorial(slug)
+    pdir = project_dir(slug)
+    numbers = part_numbers(tut)
+    if part is not None:
+        part_steps(tut, part)
+    todo = numbers if part is None else [part]
+    for n in todo:
+        try:
+            capture(slug, out=part_take_dir(n), part=n)
+        except PipelineError as exc:
+            pending = [str(m) for m in todo if m > n]
+            then = f" y después graba las partes que faltan: {', '.join(pending)} (--part N)." if pending else ""
+            raise PipelineError(f"La parte {n} falló: {exc} Las tomas de las otras partes quedan intactas y "
+                                f"capture/ no cambió. Regrábala sola con: {rerecord_command(slug, n)}{then}") from exc
+    missing = [n for n in numbers if not (pdir / part_take_dir(n) / "actions.json").is_file()]
+    if missing:
+        raise PipelineError(f"La toma de la parte {part} quedó en {part_take_dir(part)}, pero capture/ no se unió: "
+                            f"faltan las tomas de las partes {', '.join(map(str, missing))}. Grábalas con: "
+                            + "; ".join(rerecord_command(slug, n) for n in missing))
+    return merge_takes.merge_takes(pdir, [pdir / part_take_dir(n) for n in numbers])
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("slug")
     ap.add_argument("--config", default="tutorial.yaml", help="otra configuración de toma del proyecto (I3: install.yaml)")
     ap.add_argument("--out", help="carpeta de la toma dentro del proyecto (I3: takes/install); por defecto capture/")
+    by = ap.add_mutually_exclusive_group()
+    by.add_argument("--by-part", action="store_true",
+                    help="S7: una toma por parte de tutorial.yaml en takes/part-<n>, unidas en capture/")
+    by.add_argument("--part", type=int, metavar="N",
+                    help="S7: regraba solo la parte N en takes/part-N y vuelve a unir capture/")
     a = ap.parse_args()
-    capture(a.slug, a.config, a.out)
+    if a.by_part or a.part is not None:
+        if a.config != "tutorial.yaml" or a.out:
+            ap.error("--by-part y --part graban tutorial.yaml en takes/part-<n>: no van con --config ni --out")
+        capture_parts(a.slug, a.part)
+    else:
+        capture(a.slug, a.config, a.out)
 
 
 if __name__ == "__main__":

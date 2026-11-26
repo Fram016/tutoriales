@@ -4,7 +4,7 @@ description: "Trigger: ensayo, ensayar, grabar pantalla, captura, grabar la toma
 license: Apache-2.0
 metadata:
   author: tutoriales
-  version: "2.2"
+  version: "2.3"
 ---
 
 ## Activation Contract
@@ -35,6 +35,15 @@ Use after tutorial.yaml passes `tools/lint.py` and before tts/edit. Two phases: 
 
 - I2: what the recording browser cannot do or show like Chrome is simulated in the page, never done: `show_text` relabels ("Agregar a ego" → "Agregar a Chrome"), `simulate_dialog` draws Chrome's confirmation, `press_visual` presses its buttons, top-level `hide` removes ego's own notices. Never click the real "Agregar a ego". Censor the Google account (avatar link `a[href*="accounts.google.com/SignOutOptions"]`) and greetings with the user's name.
 - I3: a part that does not need the rest is its own take: `.venv/Scripts/python.exe tools/capture.py <slug> --config install.yaml --out takes/install`, then `.venv/Scripts/python.exe tools/merge_takes.py proyectos/<slug> proyectos/<slug>/takes/install <other take dir>` writes `capture/` (frames prefixed per take, times offset, step ids unique; the sources are only read).
+
+## Takes per part (S7)
+
+Long takes (several parts, ~8 min) are recorded one part at a time so a failure loses only that part:
+
+- `.venv/Scripts/python.exe tools/capture.py <slug> --by-part`: each `part` n of tutorial.yaml (its steps only) into `takes/part-<n>/`, then all part takes merged in part order into `capture/` (merge_takes). Stops at the first failed part; earlier takes and `capture/` stay intact and the error names the part and the command to re-record it.
+- `.venv/Scripts/python.exe tools/capture.py <slug> --part N`: re-records only part N (the previous take kept as `takes/part-N.prev-<timestamp>`) and merges again; it does not merge while another part has no take (the error lists the commands).
+- No state reset: each part opens a new tab at `app_url` with the app as the previous part left it (session, data). A part that needs another screen starts with its own `goto`; a part that needs a login done in an earlier part only works after that part ran.
+- Only tutorial.yaml steps: takes from another config (`--config install.yaml --out takes/install`) are merged by hand with merge_takes as in I3.
 
 ## Execution Steps
 
