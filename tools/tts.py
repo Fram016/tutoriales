@@ -3,20 +3,19 @@
 Usage: python tools/tts.py <slug> [--offline]
 
 For each video V writes proyectos/<slug>/audio/voice/V/{opening,requirements?,<step>,closing}.wav
-and V/durations.json {name: seconds}. The raw API audio is cached in audio/voice/_cache/ by
-text+voice+style hash, so the same text in two videos is synthesized once and editing one
-narration only re-synthesizes that clip. Every clip is trimmed of its leading/trailing silence
+and V/durations.json {name: seconds}. The raw API audio is cached per line in audio/voice/_cache/ (clip_key:
+model + voice + style + tempo + video + the line's spoken text). Every clip is trimmed of its leading/trailing silence
 (keeping TRIM_PAD) into _cache/trim-v<TRIM_VERSION>/ before it is measured, so edit and lint work
 with the real speech length; a new trim version re-derives from the raw cache, never re-billing.
 P2 (`pace: fast`): the trimmed clip is sped up by the video's tempo (ffmpeg atempo, no pitch change; default
 common.FAST_TEMPO, x1.05, also the most P4 allows under fast) into _cache/tempo-<factor>/ before it is measured;
 the raw API audio stays shared.
 D3: the API reads common.spoken_text(narration, tutorial.yaml `pronunciation`) (RIDE -> "ri de"); captions keep the
-written text. D5 (one voice tone): the clips of a video are one batch: every cache key carries the batch signature
-(model + voice + style + tempo + pronunciation map + the video's ordered narrations), so changing one narration
-re-synthesizes the whole video and clips of earlier runs are never mixed in. The batch is ONE request (one line per
-clip, _cache/batch-<signature>.wav) cut at its pauses into the clips (split_batch: the pauses nearest to where each
-clip should end by its characters); only when the cut is not trustworthy each clip is asked for alone (warned).
+written text. S9 (per-line cache): a rerun reuses the cached clip of every unchanged line and synthesizes only the
+changed or new lines; it prints how many lines were reused and synthesized. D5 (one voice tone): the lines to
+synthesize are one batch, ONE request (one line per clip, _cache/batch-<signature>.wav; with no cache that is the
+whole video) cut into the clips (split_batch: by the recognized words, else the pauses nearest to where each clip
+should end by its characters); only when the cut is not trustworthy each clip is asked for alone (warned).
 Every clip is then leveled to VOICE_LUFS (one gain per clip, ffmpeg volume) into _cache/level-v<LEVEL_VERSION>/
 before it is measured.
 --offline writes silent clips of estimated length (smoke tests without an API key; not trimmed).
@@ -78,8 +77,15 @@ def level_clip(src: Path, out: Path, target: float = VOICE_LUFS) -> Path:
 
 def batch_signature(model: str, voice: str, style: str, tempo: float, pronunciation: dict | None,
                     texts: list[str]) -> str:
-    """D5: what makes a video's clips one batch; any change re-synthesizes all of them together."""
+    """D5: what makes one batch request (the raw batch audio is cached by it)."""
     data = [BATCH_VERSION, model, voice, style, f"{tempo:g}", sorted((pronunciation or {}).items()), texts]
+    return hashlib.sha256(json.dumps(data, ensure_ascii=False).encode()).hexdigest()
+
+
+def clip_key(model: str, voice: str, style: str, tempo: float, video: str, spoken: str) -> str:
+    """S9: what makes one line's clip; an unchanged line keeps its clip when other lines of the video change. The
+    video is part of it (each video is read in its own batches, D5); `spoken` is the text after `pronunciation`."""
+    data = ["clip", BATCH_VERSION, model, voice, style, f"{tempo:g}", video, spoken]
     return hashlib.sha256(json.dumps(data, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -342,19 +348,20 @@ def tts(slug: str, offline: bool = False) -> dict:
         tempo = video["tempo"]
         durations = {}
         spoken = [(name, spoken_text(text, pronunciation)) for name, text in clips(video)]
-        batch = batch_signature("offline" if offline else model, voice, style, tempo, pronunciation,
-                                [text for _, text in spoken])
-        keys = {name: hashlib.sha256(f"{batch}|{text}".encode()).hexdigest() for name, text in spoken if text}
+        keys = {name: clip_key("offline" if offline else model, voice, style, tempo, video["id"], text)
+                for name, text in spoken if text}
         voiced = [(name, text) for name, text in spoken if text]
         missing = [(name, text) for name, text in voiced if not (cache_dir / f"{keys[name][:32]}.wav").exists()]
+        print(f"[tts] {video['id']}: {len(voiced) - len(missing)} frases reutilizadas, {len(missing)} a sintetizar")
         if missing and not offline:
-            # D5: the whole video in one request, cut at its pauses.
+            # S9 + D5: only the changed lines, in one request cut at its pauses.
+            batch = batch_signature(model, voice, style, tempo, pronunciation, [text for _, text in missing])
             if client is None:
                 client = make_client()
             # A long batch can be dropped by the server ("Server disconnected"): retry it, then fall back to the
             # fewest smaller batches (same voice, style and tempo), never to one request per clip at once.
             for split in (False, True):
-                groups = batch_groups(voiced, split)
+                groups = batch_groups(missing, split)
                 if split and len(groups) == 1:
                     raise PipelineError("La API de voz corta la conexión con la tanda completa y no se puede dividir")
                 if split:
@@ -370,7 +377,7 @@ def tts(slug: str, offline: bool = False) -> dict:
                             raw.write_bytes(synthesize_retry(client, model, text, voice, style))
                         if not split_batch(raw, [t for _, t in group],
                                            [cache_dir / f"{keys[n][:32]}.wav" for n, _ in group]):
-                            if not split and len(batch_groups(voiced, True)) > 1:
+                            if not split and len(batch_groups(missing, True)) > 1:
                                 raise BatchUncut()
                             print(f"[tts] aviso (D5) {video['id']}: no pude cortar la tanda en sus pausas; "
                                   "pido cada frase aparte")

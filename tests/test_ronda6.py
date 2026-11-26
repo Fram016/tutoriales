@@ -180,13 +180,14 @@ class OneVoiceToneTest(FakeApiCase):
             with self.subTest(clip=name):   # each line is a 1 s tone: trimmed, sped up x1.05
                 self.assertAlmostEqual(seconds, (1.0 + 2 * tts.TRIM_PAD) / 1.05, delta=0.06)
 
-    def test_one_changed_narration_resynthesizes_the_whole_video_only(self):
+    def test_one_changed_narration_resynthesizes_only_that_line(self):
+        # S9 (perseo-xml-v5): "Corregir una frase no regenera toda la narración."
         self.run_tts(TUTORIAL)
         data = copy.deepcopy(TUTORIAL)
         data["steps"][1]["narration"] = "Haz clic en Nuevo contacto."
         self.run_tts(data)
-        self.assertEqual(len(self.calls), 3)               # the tutorial again in one request, redes from the cache
-        self.assertEqual(len(self.calls[2].split(tts.BATCH_SEP)), 4)
+        self.assertEqual(len(self.calls), 3)               # one request for the tutorial, redes from the cache
+        self.assertEqual(self.calls[2].split(tts.BATCH_SEP), ["Haz clic en Nuevo contacto."])
         self.run_tts(data)
         self.assertEqual(len(self.calls), 3)               # unchanged batch: all from the cache
 
