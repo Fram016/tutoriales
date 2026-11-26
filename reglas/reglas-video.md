@@ -469,3 +469,15 @@ Cada observación se convierte en una regla verificable. ID entre corchetes.
 > “Tambien cambia la euforia y animo que hable mejor mas vendedor y con energia ahorita se escucha muy sozo y aburrido”
 
 - **[D6] Voz con energía de vendedor.** El estilo de la narración es entusiasta, sonriente y convincente, con ritmo ágil (nunca plano o monótono). Se fija en `voice.style` del tutorial y aplica a toda la lectura (D5).
+
+## Parte 11: Narración que explica, no dicta (texto del usuario)
+
+> “debes indicar como se ve el formulario de tegistrarse cuando muestras como hacer login, debes decir, "si eres usuario del sistema contafacil ingresa con tu contraseña y clave en caso de no tener credenciales llena el formulario de registro para hacer uso de la extemsion" cuando explicas como cambiar la carpeta de descargas debes explicar por que por ejemplo "vamos a cambiar la carpeta de descargas oara qur todos los xml que descarguemos del sri vayan a una carpeta especifica" o algo similar, en vez de decir clic en change deberias hablar en español y un poco descriptivo "se debe dar clic en cambiar o change para seleccionar la carpeta de adecuada", cuando seleccionas laa fechas del sri, no debes decir la fecha que deben escoger si no "seleccionan fecha" o algo similar, lo que te indique es para tu ejercicio no parte del tutorial, adicional para tutoriales la voz esta bien pero debe ser mas energica un poco mas animada.”
+
+### Reglas derivadas (ronda 9)
+
+- **[G1] Alternativas visibles.** Si una pantalla ofrece dos caminos (iniciar sesión o registrarse), el video muestra ambos: abre el formulario alternativo un momento y la narración dice cuándo usar cada uno (“Si ya eres usuario…, ingresa…; si no tienes credenciales, llena el formulario de registro…”).
+- **[G2] El porqué antes del cómo.** Un paso de configuración (carpeta, opción, ajuste) empieza diciendo para qué sirve (“para que todos los XML que descargues del SRI vayan a una carpeta específica”).
+- **[G3] Etiquetas en español.** Un botón con etiqueta en inglés se nombra primero en español y luego tal como aparece (“haz clic en Cambiar, o Change, para elegir la carpeta adecuada”); nunca solo el término en inglés.
+- **[G4] Los datos del ejercicio no se dictan.** Fechas, filtros y valores que el usuario indicó para la grabación son del ejercicio, no del tutorial: la narración dice la acción genérica (“selecciona la fecha”, “elige el periodo”), nunca el valor.
+- **[D6] revisada.** En tutoriales la voz es más enérgica y animada que en v4: entusiasta, con sonrisa, ritmo ágil y énfasis en los verbos de acción.
